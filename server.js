@@ -13,6 +13,12 @@ const PORT = process.env.PORT || 3000;
 const DOCTOR_PHONE = process.env.DOCTOR_PHONE;
 const CLINICEA_BASE_URL = process.env.CLINICEA_BASE_URL || 'https://app.clinicea.com/clinic.aspx';
 
+// Clinicea API configuration
+const CLINICEA_API_KEY = process.env.CLINICEA_API_KEY;
+const CLINICEA_STAFF_USERNAME = process.env.CLINICEA_STAFF_USERNAME;
+const CLINICEA_STAFF_PASSWORD = process.env.CLINICEA_STAFF_PASSWORD;
+const CLINICEA_API_BASE = 'https://api.clinicea.com';
+
 // --- SQLite Setup ---
 const db = new Database('calls.db');
 db.pragma('journal_mode = WAL');
@@ -29,8 +35,10 @@ db.exec(`
 const insertCall = db.prepare(
   'INSERT INTO calls (caller_number, call_sid, clinicea_url) VALUES (?, ?, ?)'
 );
-const recentCalls = db.prepare(
-  'SELECT * FROM calls ORDER BY timestamp DESC LIMIT 50'
+const PAGE_SIZE = 10;
+const countCalls = db.prepare('SELECT COUNT(*) as total FROM calls');
+const paginatedCalls = db.prepare(
+  'SELECT * FROM calls ORDER BY timestamp DESC LIMIT ? OFFSET ?'
 );
 
 // --- Middleware ---
@@ -74,10 +82,133 @@ app.post('/incoming_call', (req, res) => {
 </Response>`);
 });
 
-// API - recent call history
+// API - paginated call history
 app.get('/api/calls', (req, res) => {
-  const calls = recentCalls.all();
-  res.json(calls);
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || PAGE_SIZE));
+  const offset = (page - 1) * limit;
+  const { total } = countCalls.get();
+  const calls = paginatedCalls.all(limit, offset);
+  res.json({ calls, total, page, totalPages: Math.ceil(total / limit) });
+});
+
+// --- Clinicea API Integration (Next Meeting) ---
+let cliniceaToken = null;
+let tokenExpiry = 0;
+const meetingCache = new Map(); // phone -> { data, expiry }
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function isClinicaConfigured() {
+  return CLINICEA_API_KEY && CLINICEA_API_KEY !== 'your_api_key_here' &&
+         CLINICEA_STAFF_USERNAME && CLINICEA_STAFF_USERNAME !== 'your_staff_username_here' &&
+         CLINICEA_STAFF_PASSWORD && CLINICEA_STAFF_PASSWORD !== 'your_staff_password_here';
+}
+
+async function cliniceaLogin() {
+  const url = `${CLINICEA_API_BASE}/api/v2/login/getTokenByStaffUsernamePwd?apiKey=${encodeURIComponent(CLINICEA_API_KEY)}&loginUserName=${encodeURIComponent(CLINICEA_STAFF_USERNAME)}&pwd=${encodeURIComponent(CLINICEA_STAFF_PASSWORD)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Clinicea login failed: ${res.status}`);
+  const data = await res.json();
+  // Token is returned as a plain string
+  cliniceaToken = typeof data === 'string' ? data : (data.Token || data.token || data.sessionId);
+  tokenExpiry = Date.now() + 55 * 60 * 1000;
+  console.log('[CLINICEA] Logged in successfully');
+  return cliniceaToken;
+}
+
+async function getClinicaToken() {
+  if (!cliniceaToken || Date.now() > tokenExpiry) {
+    await cliniceaLogin();
+  }
+  return cliniceaToken;
+}
+
+// Clinicea uses api_key as query parameter for auth (NOT Bearer header)
+async function cliniceaFetch(endpoint) {
+  const token = await getClinicaToken();
+  const separator = endpoint.includes('?') ? '&' : '?';
+  const url = `${CLINICEA_API_BASE}${endpoint}${separator}api_key=${token}`;
+  const res = await fetch(url);
+  if (res.status === 401) {
+    await cliniceaLogin();
+    const retryUrl = `${CLINICEA_API_BASE}${endpoint}${separator}api_key=${cliniceaToken}`;
+    const retryRes = await fetch(retryUrl);
+    if (retryRes.status === 204) return [];
+    const retryText = await retryRes.text();
+    try { return JSON.parse(retryText); } catch { return []; }
+  }
+  if (res.status === 204) return [];
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    console.error('[CLINICEA] Non-JSON response:', text.substring(0, 100));
+    return [];
+  }
+}
+
+// Find PatientID by phone number using appointment changes
+async function findPatientByPhone(phone) {
+  const today = new Date();
+  const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+  // Use simple date format without encoding - Clinicea rejects encoded colons
+  const syncDate = thirtyDaysAgo.toISOString().split('.')[0];
+  const data = await cliniceaFetch(`/api/v2/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=1&pageSize=100`);
+  if (!Array.isArray(data)) return null;
+  // Match by phone number (try with and without +)
+  const cleanPhone = phone.replace(/[\s\-]/g, '');
+  const match = data.find(a =>
+    a.AppointmentWithPhone === cleanPhone ||
+    a.PatientMobile === cleanPhone ||
+    a.AppointmentWithPhone === cleanPhone.replace('+', '') ||
+    a.PatientMobile === cleanPhone.replace('+', '')
+  );
+  return match ? match.PatientID : null;
+}
+
+async function getNextAppointmentForPatient(patientID) {
+  // appointmentType=0 means upcoming, pageSize minimum is 10
+  const data = await cliniceaFetch(`/api/v2/appointments/getAppointmentsByPatient?patientID=${patientID}&appointmentType=0&pageNo=1&pageSize=10`);
+  if (!Array.isArray(data) || data.length === 0) return null;
+  // Sort by StartDateTime ascending and return the earliest upcoming
+  const now = new Date();
+  const upcoming = data
+    .filter(a => new Date(a.StartDateTime) >= now && a.AppointmentStatus !== 'Cancelled')
+    .sort((a, b) => new Date(a.StartDateTime) - new Date(b.StartDateTime));
+  return upcoming[0] || data[0];
+}
+
+// API - next meeting for a phone number
+app.get('/api/next-meeting/:phone', async (req, res) => {
+  const phone = decodeURIComponent(req.params.phone);
+
+  if (!isClinicaConfigured()) {
+    return res.json({ nextMeeting: null, error: 'Clinicea API not configured' });
+  }
+
+  // Check cache
+  const cached = meetingCache.get(phone);
+  if (cached && Date.now() < cached.expiry) {
+    return res.json(cached.data);
+  }
+
+  try {
+    const patientID = await findPatientByPhone(phone);
+
+    if (!patientID) {
+      const result = { nextMeeting: null };
+      meetingCache.set(phone, { data: result, expiry: Date.now() + CACHE_TTL });
+      return res.json(result);
+    }
+
+    const appointment = await getNextAppointmentForPatient(patientID);
+    const result = { nextMeeting: appointment };
+    meetingCache.set(phone, { data: result, expiry: Date.now() + CACHE_TTL });
+    return res.json(result);
+  } catch (err) {
+    console.error('[CLINICEA API ERROR]', err.message);
+    return res.json({ nextMeeting: null, error: err.message });
+  }
 });
 
 // --- Socket.IO ---
@@ -95,5 +226,6 @@ server.listen(PORT, () => {
   console.log(`Webhook:    http://localhost:${PORT}/incoming_call`);
   console.log(`Doctor:     ${DOCTOR_PHONE}`);
   console.log(`Clinicea:   ${CLINICEA_BASE_URL}`);
+  console.log(`Clinicea API: ${isClinicaConfigured() ? 'Configured' : 'Not configured (set CLINICEA_API_KEY, CLINICEA_STAFF_USERNAME, CLINICEA_STAFF_PASSWORD in .env)'}`);
   console.log(`===========================\n`);
 });
