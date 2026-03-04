@@ -304,12 +304,16 @@
       // Play notification sound
       playBeep();
 
-      // Auto-open Clinicea in new tab
-      const newTab = window.open(data.cliniceaUrl, '_blank');
-      if (!newTab) {
-        // Popup was blocked - the banner link is still available
-        console.warn('Popup blocked. Click the link in the notification to open Clinicea.');
-      }
+      // Auto-open Clinicea - use a named window so browser allows reuse
+      // and use an anchor click to bypass popup blocker
+      const autoLink = document.createElement('a');
+      autoLink.href = data.cliniceaUrl;
+      autoLink.target = 'clinicea_patient';
+      autoLink.rel = 'noopener';
+      autoLink.style.display = 'none';
+      document.body.appendChild(autoLink);
+      autoLink.click();
+      document.body.removeChild(autoLink);
 
       // Refresh call history (jump to page 1 for new call)
       loadCallHistory(1);
