@@ -354,174 +354,114 @@ app.get('/download/call-monitor-mac', requireAuth, (req, res) => {
 });
 
 function generateMacInstallerScript(baseUrl, secret) {
-  return `#!/bin/bash
-# ============================================
-# Clinicea Call Monitor - Mac Installer
-# One-click install: monitors iPhone calls via
-# macOS Continuity and notifies the dashboard.
-# ============================================
-
-WEBHOOK_URL="${baseUrl}/incoming_call"
-HEARTBEAT_URL="${baseUrl}/heartbeat"
-WEBHOOK_SECRET="${secret}"
-INSTALL_DIR="$HOME/.clinicea-call-monitor"
-PLIST_NAME="com.clinicea.callmonitor"
-
-echo ""
-echo "=== Clinicea Call Monitor - Mac Installer ==="
-echo ""
-
-# ── Step 1: Create install folder ──
-mkdir -p "$INSTALL_DIR"
-echo "[1/4] Install folder: $INSTALL_DIR"
-
-# ── Step 2: Write the monitor script ──
-cat > "$INSTALL_DIR/call_monitor.sh" << 'MONITOR_SCRIPT'
-#!/bin/bash
-WEBHOOK_URL="PLACEHOLDER_WEBHOOK"
-HEARTBEAT_URL="PLACEHOLDER_HEARTBEAT"
-WEBHOOK_SECRET="PLACEHOLDER_SECRET"
-
-SEEN_FILE="/tmp/clinicea_seen_calls"
-HEARTBEAT_FILE="/tmp/clinicea_last_heartbeat"
-touch "$SEEN_FILE"
-echo "0" > "$HEARTBEAT_FILE"
-
-while true; do
-    # Monitor macOS log for incoming FaceTime/phone calls via Continuity
-    # Read last 2 seconds of logs for call events
-    LOG_OUTPUT=$(log show --last 2s --predicate '
-        (process == "callservicesd" AND message CONTAINS "IncomingCallRequest") OR
-        (process == "FaceTime" AND message CONTAINS "incoming") OR
-        (process == "CommCenter" AND message CONTAINS "IncomingCall") OR
-        (process == "telephonyutilities" AND message CONTAINS "incoming")
-    ' 2>/dev/null)
-
-    if [ -n "$LOG_OUTPUT" ]; then
-        # Extract phone numbers from log output
-        PHONES=$(echo "$LOG_OUTPUT" | grep -oE '\\+?[0-9][0-9 \\-\\(\\)]{7,18}[0-9]' | sed 's/[[:space:]\\-()]//g' | sort -u)
-
-        for PHONE in $PHONES; do
-            # Skip short numbers (not real phone numbers)
-            if [ ${#PHONE} -lt 7 ]; then continue; fi
-
-            # Deduplicate: skip if seen in last 30 seconds
-            NOW=$(date +%s)
-            if grep -q "$PHONE:$((NOW/30))" "$SEEN_FILE" 2>/dev/null; then continue; fi
-            echo "$PHONE:$((NOW/30))" >> "$SEEN_FILE"
-
-            # POST to webhook
-            curl -s -X POST "$WEBHOOK_URL" \\
-                -H "X-Webhook-Secret: $WEBHOOK_SECRET" \\
-                -H "Content-Type: application/x-www-form-urlencoded" \\
-                -d "From=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PHONE'))")&CallSid=mac-$NOW" \\
-                --max-time 5 > /dev/null 2>&1
-        done
-    fi
-
-    # Also check CallKit notifications via notification center db
-    NOTIF_DB="$HOME/Library/Group Containers/group.com.apple.usernoted/db2/db"
-    if [ -f "$NOTIF_DB" ]; then
-        RECENT_CALLS=$(sqlite3 "$NOTIF_DB" "
-            SELECT json_extract(req.data, '$.req.body')
-            FROM record
-            WHERE app = 'com.apple.FaceTime'
-            AND delivered_date > strftime('%s','now') - 5
-            LIMIT 5
-        " 2>/dev/null)
-
-        if [ -n "$RECENT_CALLS" ]; then
-            NOTIF_PHONES=$(echo "$RECENT_CALLS" | grep -oE '\\+?[0-9][0-9 \\-\\(\\)]{7,18}[0-9]' | sed 's/[[:space:]\\-()]//g' | sort -u)
-            for PHONE in $NOTIF_PHONES; do
-                if [ ${#PHONE} -lt 7 ]; then continue; fi
-                NOW=$(date +%s)
-                if grep -q "$PHONE:$((NOW/30))" "$SEEN_FILE" 2>/dev/null; then continue; fi
-                echo "$PHONE:$((NOW/30))" >> "$SEEN_FILE"
-
-                curl -s -X POST "$WEBHOOK_URL" \\
-                    -H "X-Webhook-Secret: $WEBHOOK_SECRET" \\
-                    -H "Content-Type: application/x-www-form-urlencoded" \\
-                    -d "From=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PHONE'))")&CallSid=mac-$NOW" \\
-                    --max-time 5 > /dev/null 2>&1
-            done
-        fi
-    fi
-
-    # Clean seen file periodically
-    if [ $(wc -l < "$SEEN_FILE") -gt 500 ]; then
-        tail -100 "$SEEN_FILE" > "$SEEN_FILE.tmp" && mv "$SEEN_FILE.tmp" "$SEEN_FILE"
-    fi
-
-    # Send heartbeat every 30 seconds
-    NOW=$(date +%s)
-    LAST_HB=$(cat "$HEARTBEAT_FILE" 2>/dev/null || echo "0")
-    if [ $((NOW - LAST_HB)) -ge 30 ]; then
-        curl -s -X POST "$HEARTBEAT_URL" \\
-            -H "X-Webhook-Secret: $WEBHOOK_SECRET" \\
-            --max-time 5 > /dev/null 2>&1
-        echo "$NOW" > "$HEARTBEAT_FILE"
-    fi
-
-    sleep 2
-done
-MONITOR_SCRIPT
-
-# Replace placeholders with actual values
-sed -i '' "s|PLACEHOLDER_WEBHOOK|$WEBHOOK_URL|g" "$INSTALL_DIR/call_monitor.sh"
-sed -i '' "s|PLACEHOLDER_HEARTBEAT|$HEARTBEAT_URL|g" "$INSTALL_DIR/call_monitor.sh"
-sed -i '' "s|PLACEHOLDER_SECRET|$WEBHOOK_SECRET|g" "$INSTALL_DIR/call_monitor.sh"
-chmod +x "$INSTALL_DIR/call_monitor.sh"
-echo "[2/4] Monitor script saved"
-
-# ── Step 3: Create LaunchAgent for auto-start ──
-PLIST_DIR="$HOME/Library/LaunchAgents"
-mkdir -p "$PLIST_DIR"
-
-cat > "$PLIST_DIR/$PLIST_NAME.plist" << PLIST_EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>$PLIST_NAME</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/bash</string>
-        <string>$INSTALL_DIR/call_monitor.sh</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>$INSTALL_DIR/monitor.log</string>
-    <key>StandardErrorPath</key>
-    <string>$INSTALL_DIR/monitor_error.log</string>
-</dict>
-</plist>
-PLIST_EOF
-
-echo "[3/4] Added to macOS LaunchAgents (auto-start on login)"
-
-# ── Step 4: Start monitoring now ──
-launchctl unload "$PLIST_DIR/$PLIST_NAME.plist" 2>/dev/null
-launchctl load "$PLIST_DIR/$PLIST_NAME.plist"
-echo "[4/4] Monitor started!"
-
-echo ""
-echo "Installation complete!"
-echo "The monitor is running in the background and will auto-start on login."
-echo "Dashboard: ${baseUrl}"
-echo ""
-echo "IMPORTANT: You may need to grant Terminal/iTerm Full Disk Access:"
-echo "  System Settings > Privacy & Security > Full Disk Access"
-echo "  Add Terminal.app (or iTerm)"
-echo ""
-echo "To check logs:  tail -f $INSTALL_DIR/monitor.log"
-echo "To stop:        launchctl unload ~/Library/LaunchAgents/$PLIST_NAME.plist"
-echo "To uninstall:   launchctl unload ~/Library/LaunchAgents/$PLIST_NAME.plist && rm -rf $INSTALL_DIR ~/Library/LaunchAgents/$PLIST_NAME.plist"
-echo ""
-`;
+  // Use string concatenation to avoid template literal conflicts with bash ${}
+  var s = '#!/bin/bash\n';
+  s += '# Clinicea Call Monitor - Mac Installer\n';
+  s += '# One-click install: monitors iPhone calls via macOS Continuity\n\n';
+  s += 'WEBHOOK_URL="' + baseUrl + '/incoming_call"\n';
+  s += 'HEARTBEAT_URL="' + baseUrl + '/heartbeat"\n';
+  s += 'WEBHOOK_SECRET="' + secret + '"\n';
+  s += 'INSTALL_DIR="$HOME/.clinicea-call-monitor"\n';
+  s += 'PLIST_NAME="com.clinicea.callmonitor"\n\n';
+  s += 'echo ""\n';
+  s += 'echo "=== Clinicea Call Monitor - Mac Installer ==="\n';
+  s += 'echo ""\n\n';
+  s += 'mkdir -p "$INSTALL_DIR"\n';
+  s += 'echo "[1/4] Install folder: $INSTALL_DIR"\n\n';
+  s += "cat > \"$INSTALL_DIR/call_monitor.sh\" << 'MONITOR_SCRIPT'\n";
+  s += '#!/bin/bash\n';
+  s += 'WEBHOOK_URL="PLACEHOLDER_WEBHOOK"\n';
+  s += 'HEARTBEAT_URL="PLACEHOLDER_HEARTBEAT"\n';
+  s += 'WEBHOOK_SECRET="PLACEHOLDER_SECRET"\n\n';
+  s += 'SEEN_FILE="/tmp/clinicea_seen_calls"\n';
+  s += 'HEARTBEAT_FILE="/tmp/clinicea_last_heartbeat"\n';
+  s += 'touch "$SEEN_FILE"\n';
+  s += 'echo "0" > "$HEARTBEAT_FILE"\n\n';
+  s += 'while true; do\n';
+  s += '    LOG_OUTPUT=$(log show --last 2s --predicate \'(\n';
+  s += '        process == "callservicesd" AND message CONTAINS "IncomingCallRequest"\n';
+  s += '    ) OR (\n';
+  s += '        process == "FaceTime" AND message CONTAINS "incoming"\n';
+  s += '    ) OR (\n';
+  s += '        process == "CommCenter" AND message CONTAINS "IncomingCall"\n';
+  s += '    ) OR (\n';
+  s += '        process == "telephonyutilities" AND message CONTAINS "incoming"\n';
+  s += "    )' 2>/dev/null)\n\n";
+  s += '    if [ -n "$LOG_OUTPUT" ]; then\n';
+  s += '        PHONES=$(echo "$LOG_OUTPUT" | grep -oE \'\\+?[0-9][0-9 \\-\\(\\)]{7,18}[0-9]\' | sed \'s/[[:space:]\\-()]//g\' | sort -u)\n';
+  s += '        for PHONE in $PHONES; do\n';
+  s += '            if [ ${#PHONE} -lt 7 ]; then continue; fi\n';
+  s += '            NOW=$(date +%s)\n';
+  s += '            if grep -q "$PHONE:$((NOW/30))" "$SEEN_FILE" 2>/dev/null; then continue; fi\n';
+  s += '            echo "$PHONE:$((NOW/30))" >> "$SEEN_FILE"\n';
+  s += '            curl -s -X POST "$WEBHOOK_URL" \\\n';
+  s += '                -H "X-Webhook-Secret: $WEBHOOK_SECRET" \\\n';
+  s += '                -H "Content-Type: application/x-www-form-urlencoded" \\\n';
+  s += '                -d "From=$PHONE&CallSid=mac-$NOW" \\\n';
+  s += '                --max-time 5 > /dev/null 2>&1\n';
+  s += '        done\n';
+  s += '    fi\n\n';
+  s += '    if [ $(wc -l < "$SEEN_FILE" 2>/dev/null || echo 0) -gt 500 ]; then\n';
+  s += '        tail -100 "$SEEN_FILE" > "$SEEN_FILE.tmp" && mv "$SEEN_FILE.tmp" "$SEEN_FILE"\n';
+  s += '    fi\n\n';
+  s += '    NOW=$(date +%s)\n';
+  s += '    LAST_HB=$(cat "$HEARTBEAT_FILE" 2>/dev/null || echo "0")\n';
+  s += '    if [ $((NOW - LAST_HB)) -ge 30 ]; then\n';
+  s += '        curl -s -X POST "$HEARTBEAT_URL" \\\n';
+  s += '            -H "X-Webhook-Secret: $WEBHOOK_SECRET" \\\n';
+  s += '            --max-time 5 > /dev/null 2>&1\n';
+  s += '        echo "$NOW" > "$HEARTBEAT_FILE"\n';
+  s += '    fi\n\n';
+  s += '    sleep 2\n';
+  s += 'done\n';
+  s += 'MONITOR_SCRIPT\n\n';
+  s += 'sed -i \'\' "s|PLACEHOLDER_WEBHOOK|$WEBHOOK_URL|g" "$INSTALL_DIR/call_monitor.sh"\n';
+  s += 'sed -i \'\' "s|PLACEHOLDER_HEARTBEAT|$HEARTBEAT_URL|g" "$INSTALL_DIR/call_monitor.sh"\n';
+  s += 'sed -i \'\' "s|PLACEHOLDER_SECRET|$WEBHOOK_SECRET|g" "$INSTALL_DIR/call_monitor.sh"\n';
+  s += 'chmod +x "$INSTALL_DIR/call_monitor.sh"\n';
+  s += 'echo "[2/4] Monitor script saved"\n\n';
+  s += 'PLIST_DIR="$HOME/Library/LaunchAgents"\n';
+  s += 'mkdir -p "$PLIST_DIR"\n\n';
+  s += 'cat > "$PLIST_DIR/$PLIST_NAME.plist" << PLIST_EOF\n';
+  s += '<?xml version="1.0" encoding="UTF-8"?>\n';
+  s += '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n';
+  s += '<plist version="1.0">\n';
+  s += '<dict>\n';
+  s += '    <key>Label</key>\n';
+  s += '    <string>com.clinicea.callmonitor</string>\n';
+  s += '    <key>ProgramArguments</key>\n';
+  s += '    <array>\n';
+  s += '        <string>/bin/bash</string>\n';
+  s += '        <string>$INSTALL_DIR/call_monitor.sh</string>\n';
+  s += '    </array>\n';
+  s += '    <key>RunAtLoad</key>\n';
+  s += '    <true/>\n';
+  s += '    <key>KeepAlive</key>\n';
+  s += '    <true/>\n';
+  s += '    <key>StandardOutPath</key>\n';
+  s += '    <string>$INSTALL_DIR/monitor.log</string>\n';
+  s += '    <key>StandardErrorPath</key>\n';
+  s += '    <string>$INSTALL_DIR/monitor_error.log</string>\n';
+  s += '</dict>\n';
+  s += '</plist>\n';
+  s += 'PLIST_EOF\n\n';
+  s += 'echo "[3/4] Added to macOS LaunchAgents (auto-start on login)"\n\n';
+  s += 'launchctl unload "$PLIST_DIR/$PLIST_NAME.plist" 2>/dev/null\n';
+  s += 'launchctl load "$PLIST_DIR/$PLIST_NAME.plist"\n';
+  s += 'echo "[4/4] Monitor started!"\n\n';
+  s += 'echo ""\n';
+  s += 'echo "Installation complete!"\n';
+  s += 'echo "The monitor is running in the background and will auto-start on login."\n';
+  s += 'echo "Dashboard: ' + baseUrl + '"\n';
+  s += 'echo ""\n';
+  s += 'echo "IMPORTANT: You may need to grant Terminal Full Disk Access:"\n';
+  s += 'echo "  System Settings > Privacy & Security > Full Disk Access > Add Terminal"\n';
+  s += 'echo ""\n';
+  s += 'echo "To check logs:  tail -f ~/.clinicea-call-monitor/monitor.log"\n';
+  s += 'echo "To stop:        launchctl unload ~/Library/LaunchAgents/com.clinicea.callmonitor.plist"\n';
+  s += 'echo "To uninstall:   launchctl unload ~/Library/LaunchAgents/com.clinicea.callmonitor.plist && rm -rf ~/.clinicea-call-monitor ~/Library/LaunchAgents/com.clinicea.callmonitor.plist"\n';
+  s += 'echo ""\n';
+  return s;
 }
 
 // Protected dashboard - serve static files behind auth
