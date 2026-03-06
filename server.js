@@ -599,7 +599,21 @@ async function findPatientByPhone(phone) {
     a.PatientMobile === cleanPhone.replace('+', '')
   );
   if (!match) return null;
-  const patientName = match.AppointmentWithName || match.PatientName || match.PatientFirstName || null;
+
+  // Log all name-related fields for debugging
+  const nameFields = {};
+  for (const key of Object.keys(match)) {
+    if (/name|first|last|patient/i.test(key)) nameFields[key] = match[key];
+  }
+  logEvent('info', 'Patient match fields', JSON.stringify(nameFields));
+
+  // Build full name from available fields
+  let patientName = match.AppointmentWithName || match.PatientName || null;
+  if (!patientName) {
+    const first = match.PatientFirstName || match.FirstName || '';
+    const last = match.PatientLastName || match.LastName || '';
+    patientName = [first, last].filter(Boolean).join(' ') || null;
+  }
   return { patientID: match.PatientID, patientName };
 }
 
