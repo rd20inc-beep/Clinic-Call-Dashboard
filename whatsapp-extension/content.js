@@ -90,6 +90,21 @@
 
       const count = parseInt(badge.textContent.trim()) || 1;
 
+      // Skip groups - groups typically have high unread counts or group-like names
+      // Check for group indicators: multiple participants icon, or broadcast icon
+      const isGroup = row.querySelector('[data-testid="default-group"]') ||
+                      row.querySelector('[data-testid="group"]') ||
+                      row.querySelector('[data-icon="default-group"]') ||
+                      row.querySelector('[data-icon="group"]') ||
+                      row.querySelector('span[data-testid="last-msg-status"]')?.textContent?.includes(':') ||
+                      false;
+
+      // Also skip if name looks like a typical group (contains common group patterns)
+      const groupPatterns = /community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat/i;
+      if (isGroup || groupPatterns.test(name)) {
+        return; // skip groups
+      }
+
       // Avoid duplicates
       if (unread.some(u => u.name === name)) return;
 
@@ -104,23 +119,71 @@
   }
 
   // Click on a chat in the sidebar to open it
-  async function openChatByElement(element) {
-    // Try multiple click targets
-    const clickTarget = element.querySelector('[data-testid="cell-frame-container"]') ||
-                        element.querySelector('div[tabindex]') ||
-                        element;
+  async function openChatByElement(element, chatName) {
+    // Method 1: Try clicking the name span directly (most reliable)
+    const nameSpan = element.querySelector('span[title="' + CSS.escape(chatName) + '"]') ||
+                     element.querySelector('span[title]');
+    if (nameSpan) {
+      nameSpan.click();
+      await sleep(2000);
+      const header = document.querySelector('#main header');
+      if (header) return true;
+    }
 
-    // Simulate a real click
-    clickTarget.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-    await sleep(100);
-    clickTarget.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-    clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    clickTarget.click();
-    await sleep(2000); // wait for chat to load
+    // Method 2: Try clicking various child elements
+    const targets = [
+      element.querySelector('[data-testid="cell-frame-container"]'),
+      element.querySelector('div[role="row"]'),
+      element.querySelector('div[tabindex]'),
+      element.querySelector('img')?.parentElement, // avatar area
+      element
+    ].filter(Boolean);
 
-    // Verify chat opened
-    const header = document.querySelector('#main header');
-    return !!header;
+    for (const target of targets) {
+      target.click();
+      await sleep(1500);
+      const header = document.querySelector('#main header');
+      if (header) {
+        // Verify correct chat opened
+        const headerName = header.querySelector('span[title]');
+        if (headerName) return true;
+      }
+    }
+
+    // Method 3: Use search to open the chat instead
+    console.log('[WA Bot] Click failed, trying search for:', chatName);
+    const searchBox = document.querySelector('#side [data-testid="chat-list-search"]') ||
+                      document.querySelector('#side div[contenteditable="true"]') ||
+                      document.querySelector('[data-tab="3"]');
+    if (searchBox) {
+      searchBox.focus();
+      searchBox.click();
+      await sleep(300);
+      searchBox.textContent = '';
+      document.execCommand('insertText', false, chatName);
+      searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(2000);
+
+      // Click first search result
+      const results = document.querySelectorAll('#pane-side [role="listitem"] span[title]');
+      for (const r of results) {
+        if (r.getAttribute('title') === chatName || r.textContent.trim() === chatName) {
+          r.click();
+          await sleep(1500);
+          // Clear search
+          const esc = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true });
+          document.dispatchEvent(esc);
+          await sleep(500);
+          return !!document.querySelector('#main header');
+        }
+      }
+      // Clear search if no match
+      const esc = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true });
+      document.dispatchEvent(esc);
+      await sleep(500);
+    }
+
+    return false;
   }
 
   // Get the last few incoming messages from the currently open chat
@@ -278,7 +341,7 @@
         console.log('[WA Bot] Opening chat:', chat.name);
 
         // Click to open the chat
-        const opened = await openChatByElement(chat.element);
+        const opened = await openChatByElement(chat.element, chat.name);
         if (!opened) {
           console.log('[WA Bot] Failed to open chat:', chat.name);
           continue;
