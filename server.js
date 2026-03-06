@@ -652,10 +652,9 @@ async function findPatientByPhone(phone) {
   });
 
   if (!match) {
-    // Log why we couldn't find a match
-    const apiPhones = data.map(a => a.AppointmentWithPhone || a.PatientMobile).filter(Boolean).slice(0, 10);
-    logEvent('warn', 'No patient found for ' + cleanPhone, 'API phones sample: ' + apiPhones.join(', '));
-    return null;
+    // Fallback: search Clinicea directly by mobile number
+    logEvent('info', 'No match in appointments, trying direct patient search for ' + cleanPhone);
+    return await searchPatientByMobile(cleanPhone, variants);
   }
 
   // Log all name-related fields for debugging
@@ -673,6 +672,35 @@ async function findPatientByPhone(phone) {
     patientName = [first, last].filter(Boolean).join(' ') || null;
   }
   return { patientID: match.PatientID, patientName };
+}
+
+// Fallback: search patient directly by mobile number in Clinicea
+async function searchPatientByMobile(phone, variants) {
+  // Try each variant until we get a hit
+  const searchVariants = [...variants];
+  for (const v of searchVariants) {
+    try {
+      // Strip + for API call — Clinicea search expects digits only
+      const searchNum = v.replace('+', '');
+      const data = await cliniceaFetch(`/api/v1/patients/searchByMobileNumber?patMobile=${encodeURIComponent(searchNum)}`);
+      if (data && !Array.isArray(data) && data.PatientID) {
+        // Single patient object returned
+        const name = data.Name || data.PatientName || [data.FirstName, data.LastName].filter(Boolean).join(' ') || null;
+        logEvent('info', 'Patient found via mobile search: ' + (name || 'Unknown'), 'ID: ' + data.PatientID);
+        return { patientID: data.PatientID, patientName: name };
+      }
+      if (Array.isArray(data) && data.length > 0) {
+        const pat = data[0];
+        const name = pat.Name || pat.PatientName || [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || null;
+        logEvent('info', 'Patient found via mobile search: ' + (name || 'Unknown'), 'ID: ' + pat.PatientID);
+        return { patientID: pat.PatientID, patientName: name };
+      }
+    } catch (e) {
+      // Try next variant
+    }
+  }
+  logEvent('warn', 'No patient found via mobile search either', phone);
+  return null;
 }
 
 async function getNextAppointmentForPatient(patientID) {
