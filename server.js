@@ -676,30 +676,57 @@ async function findPatientByPhone(phone) {
 
 // Fallback: search patient directly by mobile number in Clinicea
 async function searchPatientByMobile(phone, variants) {
-  // Try each variant until we get a hit
-  const searchVariants = [...variants];
-  for (const v of searchVariants) {
+  // Build all possible search formats: +923216315551, 923216315551, 03216315551, 3216315551
+  const searchFormats = new Set();
+  for (const v of variants) {
+    searchFormats.add(v);
+    searchFormats.add(v.replace('+', ''));
+  }
+  // Also add the local part without country code (3216315551)
+  const clean = phone.replace(/[\s\-\(\)\+]/g, '');
+  if (clean.startsWith('92')) searchFormats.add(clean.substring(2));
+  if (clean.startsWith('0')) searchFormats.add(clean.substring(1));
+
+  // Try searchByMobileNumber with each format
+  for (const num of searchFormats) {
     try {
-      // Strip + for API call — Clinicea search expects digits only
-      const searchNum = v.replace('+', '');
-      const data = await cliniceaFetch(`/api/v1/patients/searchByMobileNumber?patMobile=${encodeURIComponent(searchNum)}`);
-      if (data && !Array.isArray(data) && data.PatientID) {
-        // Single patient object returned
-        const name = data.Name || data.PatientName || [data.FirstName, data.LastName].filter(Boolean).join(' ') || null;
-        logEvent('info', 'Patient found via mobile search: ' + (name || 'Unknown'), 'ID: ' + data.PatientID);
-        return { patientID: data.PatientID, patientName: name };
-      }
-      if (Array.isArray(data) && data.length > 0) {
-        const pat = data[0];
-        const name = pat.Name || pat.PatientName || [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || null;
-        logEvent('info', 'Patient found via mobile search: ' + (name || 'Unknown'), 'ID: ' + pat.PatientID);
-        return { patientID: pat.PatientID, patientName: name };
-      }
+      const data = await cliniceaFetch(`/api/v1/patients/searchByMobileNumber?patMobile=${encodeURIComponent(num)}`);
+      console.log(`[SEARCH] searchByMobileNumber(${num}) =>`, JSON.stringify(data).substring(0, 300));
+      const result = extractPatientFromSearch(data);
+      if (result) return result;
     } catch (e) {
-      // Try next variant
+      console.log(`[SEARCH] searchByMobileNumber(${num}) error:`, e.message);
     }
   }
+
+  // Fallback: try getPatientsBySearch
+  for (const num of searchFormats) {
+    try {
+      const data = await cliniceaFetch(`/api/v2/patients/getPatientsBySearch?searchString=${encodeURIComponent(num)}&pageNo=1&pageSize=5`);
+      console.log(`[SEARCH] getPatientsBySearch(${num}) =>`, JSON.stringify(data).substring(0, 300));
+      const result = extractPatientFromSearch(data);
+      if (result) return result;
+    } catch (e) {
+      console.log(`[SEARCH] getPatientsBySearch(${num}) error:`, e.message);
+    }
+  }
+
   logEvent('warn', 'No patient found via mobile search either', phone);
+  return null;
+}
+
+function extractPatientFromSearch(data) {
+  if (data && !Array.isArray(data) && (data.PatientID || data.patientID)) {
+    const name = data.Name || data.PatientName || [data.FirstName, data.LastName].filter(Boolean).join(' ') || null;
+    logEvent('info', 'Patient found via search: ' + (name || 'Unknown'), 'ID: ' + (data.PatientID || data.patientID));
+    return { patientID: data.PatientID || data.patientID, patientName: name };
+  }
+  if (Array.isArray(data) && data.length > 0) {
+    const pat = data[0];
+    const name = pat.Name || pat.PatientName || [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || null;
+    logEvent('info', 'Patient found via search: ' + (name || 'Unknown'), 'ID: ' + (pat.PatientID || pat.patientID));
+    return { patientID: pat.PatientID || pat.patientID, patientName: name };
+  }
   return null;
 }
 
