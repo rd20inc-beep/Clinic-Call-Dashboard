@@ -716,6 +716,116 @@ app.get('/api/patient-profile/:phone', requireAuth, async (req, res) => {
   }
 });
 
+// API - list all patients (paginated, with optional client-side search)
+app.get('/api/patients', requireAuth, async (req, res) => {
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const search = (req.query.search || '').trim().toLowerCase();
+
+  if (!isClinicaConfigured()) {
+    return res.json({ error: 'Clinicea API not configured', patients: [], total: 0 });
+  }
+
+  try {
+    const data = await cliniceaFetch(`/api/v1/patients?lastSyncDate=2000-01-01T00:00:00&intPageNo=${page}`);
+    let patients = Array.isArray(data) ? data : [];
+
+    // Map to consistent fields
+    patients = patients.map(p => ({
+      patientID: extractPatientId(p),
+      name: p.Name || p.PatientName || p.FullName || [p.FirstName, p.LastName].filter(Boolean).join(' ') || 'Unknown',
+      phone: p.Mobile || p.MobilePhone || p.PatientMobile || p.Phone || '',
+      email: p.Email || p.EmailAddress || '',
+      fileNo: p.FileNo || '',
+      gender: p.Gender || '',
+      createdDate: p.CreatedDatetime || p.CreatedDate || ''
+    }));
+
+    // Client-side search filter
+    if (search) {
+      patients = patients.filter(p =>
+        p.name.toLowerCase().includes(search) ||
+        p.phone.toLowerCase().includes(search) ||
+        p.email.toLowerCase().includes(search) ||
+        (p.fileNo && p.fileNo.toLowerCase().includes(search))
+      );
+    }
+
+    return res.json({ patients, page, hasMore: patients.length === 100 });
+  } catch (err) {
+    logEvent('error', 'Patients list fetch failed', err.message);
+    return res.json({ error: err.message, patients: [], total: 0 });
+  }
+});
+
+// API - appointments by date
+app.get('/api/appointments-by-date', requireAuth, async (req, res) => {
+  const date = req.query.date;
+  if (!date) {
+    return res.json({ error: 'date parameter required', appointments: [] });
+  }
+
+  if (!isClinicaConfigured()) {
+    return res.json({ error: 'Clinicea API not configured', appointments: [] });
+  }
+
+  try {
+    const data = await cliniceaFetch(`/api/v3/appointments/getAppointmentsByDate?appointmentDate=${encodeURIComponent(date)}&pageNo=1&pageSize=100`);
+    let appointments = Array.isArray(data) ? data : [];
+
+    // Map to consistent fields
+    appointments = appointments.map(a => ({
+      appointmentID: a.AppointmentID || a.ID || a.Id,
+      patientID: a.PatientID || a.patientID,
+      patientName: a.AppointmentWithName || a.PatientName || [a.PatientFirstName || a.FirstName, a.PatientLastName || a.LastName].filter(Boolean).join(' ') || 'Unknown',
+      startTime: a.StartDateTime || a.AppointmentDateTime || a.StartTime || '',
+      endTime: a.EndDateTime || a.EndTime || '',
+      duration: a.Duration || null,
+      status: a.AppointmentStatus || a.Status || 'Unknown',
+      service: a.ServiceName || a.Service || '',
+      doctor: a.DoctorName || a.Doctor || '',
+      phone: a.AppointmentWithPhone || a.PatientMobile || a.Mobile || '',
+      notes: a.Notes || a.AppointmentNotes || ''
+    }));
+
+    return res.json({ appointments, date });
+  } catch (err) {
+    logEvent('error', 'Appointments by date fetch failed', err.message);
+    return res.json({ error: err.message, appointments: [] });
+  }
+});
+
+// API - patient profile by patient ID (not phone)
+app.get('/api/patient-profile-by-id/:patientId', requireAuth, async (req, res) => {
+  const patientId = req.params.patientId;
+
+  if (!isClinicaConfigured()) {
+    return res.json({ error: 'Clinicea API not configured' });
+  }
+
+  try {
+    const [details, appointments, bills] = await Promise.all([
+      cliniceaFetch(`/api/v3/patients/getPatientByID?patientID=${patientId}`),
+      cliniceaFetch(`/api/v2/appointments/getAppointmentsByPatient?patientID=${patientId}&appointmentType=2&pageNo=1&pageSize=50`),
+      cliniceaFetch(`/api/v2/bills/getBillsByPatient?patientID=${patientId}&billStatus=0&pageNo=1&pageSize=50`)
+    ]);
+
+    const pat = Array.isArray(details) ? (details[0] || {}) : (details || {});
+    const patientName = pat.Name || pat.PatientName || pat.FullName ||
+                        [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || 'Unknown';
+
+    return res.json({
+      patient: details,
+      appointments: Array.isArray(appointments) ? appointments : [],
+      bills: Array.isArray(bills) ? bills : [],
+      patientName,
+      patientID: patientId
+    });
+  } catch (err) {
+    logEvent('error', 'Patient profile by ID fetch failed', err.message);
+    return res.json({ error: err.message });
+  }
+});
+
 // API - event log history
 app.get('/api/logs', requireAuth, (req, res) => {
   res.json({ logs: eventLog });

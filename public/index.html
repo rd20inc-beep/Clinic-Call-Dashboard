@@ -15,43 +15,186 @@
       color: #1a1a2e;
     }
 
-    .header {
+    /* ===== LAYOUT ===== */
+    .app-layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ===== SIDEBAR ===== */
+    .sidebar {
+      width: 240px;
       background: #1a1a2e;
       color: white;
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      z-index: 100;
+      transition: transform 0.3s ease;
+    }
+
+    .sidebar-logo {
+      padding: 24px 20px 20px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .sidebar-logo h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sidebar-logo h1 svg { flex-shrink: 0; }
+
+    .sidebar-nav {
+      flex: 1;
+      padding: 12px 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      color: rgba(255,255,255,0.6);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      border-left: 3px solid transparent;
+      user-select: none;
+    }
+
+    .nav-item:hover {
+      color: rgba(255,255,255,0.9);
+      background: rgba(255,255,255,0.05);
+    }
+
+    .nav-item.active {
+      color: white;
+      background: rgba(255,255,255,0.1);
+      border-left-color: #4f8cff;
+    }
+
+    .nav-item svg {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+
+    .nav-item.active svg { opacity: 1; }
+
+    .nav-spacer { flex: 1; }
+
+    .sidebar-footer {
+      padding: 16px 20px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .sidebar-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      margin-bottom: 8px;
+    }
+
+    .sidebar-status .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #e74c3c;
+      flex-shrink: 0;
+    }
+
+    .sidebar-status .status-dot.connected { background: #2ecc71; }
+
+    .sidebar-logout {
+      display: block;
+      color: rgba(255,255,255,0.4);
+      text-decoration: none;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    .sidebar-logout:hover { color: rgba(255,255,255,0.8); }
+
+    /* Mobile hamburger */
+    .hamburger {
+      display: none;
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      z-index: 200;
+      background: #1a1a2e;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      width: 44px;
+      height: 44px;
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 99;
+    }
+
+    /* ===== MAIN CONTENT ===== */
+    .main-content {
+      flex: 1;
+      margin-left: 240px;
+      min-height: 100vh;
+    }
+
+    .page-header {
+      background: white;
       padding: 20px 32px;
+      border-bottom: 1px solid #e9ecef;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
 
-    .header h1 { font-size: 22px; font-weight: 600; }
-
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 14px;
+    .page-header h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1a1a2e;
     }
 
-    .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #e74c3c;
+    .page-container {
+      display: none;
+      padding: 24px 32px;
+      max-width: 1200px;
     }
 
-    .status-dot.connected { background: #2ecc71; }
+    .page-container.active { display: block; }
 
-    .container { max-width: 960px; margin: 0 auto; padding: 24px; }
-
-    /* Live notification banner */
+    /* ===== NOTIFICATION BANNER (global) ===== */
     .notification {
       display: none;
       background: #fff3cd;
       border: 2px solid #ffc107;
       border-radius: 10px;
       padding: 20px 24px;
-      margin-bottom: 24px;
+      margin: 16px 32px 0;
       animation: pulse 1s ease-in-out 3;
     }
 
@@ -85,7 +228,7 @@
       50% { transform: scale(1.01); box-shadow: 0 0 20px rgba(255, 193, 7, 0.4); }
     }
 
-    /* Call history */
+    /* ===== CALL HISTORY TABLE ===== */
     .section-title {
       font-size: 18px;
       font-weight: 600;
@@ -124,15 +267,9 @@
     .call-table tr:last-child td { border-bottom: none; }
     .call-table tr:hover td { background: #f8f9fa; }
 
-    .call-table a {
-      color: #0066cc;
-      text-decoration: none;
-      font-weight: 500;
-    }
-
+    .call-table a { color: #0066cc; text-decoration: none; font-weight: 500; }
     .call-table a:hover { text-decoration: underline; }
 
-    /* WhatsApp icon */
     .whatsapp-link {
       display: inline-flex;
       align-items: center;
@@ -141,24 +278,11 @@
       text-decoration: none;
     }
 
-    .whatsapp-link svg {
-      width: 22px;
-      height: 22px;
-      fill: #25D366;
-      transition: transform 0.15s;
-    }
+    .whatsapp-link svg { width: 22px; height: 22px; fill: #25D366; transition: transform 0.15s; }
+    .whatsapp-link:hover svg { transform: scale(1.15); }
 
-    .whatsapp-link:hover svg {
-      transform: scale(1.15);
-    }
+    .caller-number-wrap { display: inline-flex; align-items: center; gap: 8px; }
 
-    .caller-number-wrap {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    /* Next meeting badge */
     .meeting-badge {
       display: inline-block;
       padding: 4px 10px;
@@ -167,19 +291,9 @@
       font-weight: 500;
     }
 
-    .meeting-badge.upcoming {
-      background: #d4edda;
-      color: #155724;
-    }
-
-    .meeting-badge.none {
-      color: #999;
-      font-style: italic;
-    }
-
-    .meeting-badge.loading {
-      color: #6c757d;
-    }
+    .meeting-badge.upcoming { background: #d4edda; color: #155724; }
+    .meeting-badge.none { color: #999; font-style: italic; }
+    .meeting-badge.loading { color: #6c757d; }
 
     /* Pagination */
     .pagination {
@@ -203,23 +317,9 @@
     }
 
     .pagination button:hover:not(:disabled) { background: #f0f2f5; }
-
-    .pagination button:disabled {
-      opacity: 0.4;
-      cursor: default;
-    }
-
-    .pagination button.active {
-      background: #1a1a2e;
-      color: white;
-      border-color: #1a1a2e;
-    }
-
-    .pagination .page-info {
-      font-size: 14px;
-      color: #6c757d;
-      padding: 0 8px;
-    }
+    .pagination button:disabled { opacity: 0.4; cursor: default; }
+    .pagination button.active { background: #1a1a2e; color: white; border-color: #1a1a2e; }
+    .pagination .page-info { font-size: 14px; color: #6c757d; padding: 0 8px; }
 
     .empty-state {
       text-align: center;
@@ -232,7 +332,7 @@
 
     .empty-state p { font-size: 16px; }
 
-    /* Event log panel */
+    /* Event log */
     .log-panel {
       margin-top: 24px;
       background: white;
@@ -252,14 +352,7 @@
       user-select: none;
     }
 
-    .log-header h3 {
-      font-size: 14px;
-      font-weight: 600;
-      color: #6c757d;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
+    .log-header h3 { font-size: 14px; font-weight: 600; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px; }
     .log-header .toggle { font-size: 12px; color: #6c757d; }
 
     .log-body {
@@ -280,7 +373,6 @@
     }
 
     .log-entry:last-child { border-bottom: none; }
-
     .log-time { color: #999; white-space: nowrap; min-width: 70px; }
 
     .log-badge {
@@ -300,7 +392,6 @@
 
     .log-msg { color: #333; word-break: break-word; }
     .log-details { color: #888; font-style: italic; }
-
     .log-empty { padding: 20px 16px; color: #999; text-align: center; }
 
     .error-count {
@@ -320,7 +411,7 @@
 
     .error-count.hidden { display: none; }
 
-    /* Profile button */
+    /* Profile / Clinicea buttons */
     .btn-profile {
       display: inline-flex;
       align-items: center;
@@ -358,7 +449,7 @@
 
     .btn-clinicea:hover { background: #f0f2f5; border-color: #0066cc; }
 
-    /* Patient Profile Modal */
+    /* ===== PATIENT PROFILE MODAL ===== */
     .modal-overlay {
       display: none;
       position: fixed;
@@ -401,11 +492,7 @@
 
     .modal-header h2 { font-size: 18px; font-weight: 600; }
 
-    .modal-header-actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    .modal-header-actions { display: flex; align-items: center; gap: 12px; }
 
     .modal-header a {
       color: #a0aec0;
@@ -430,7 +517,6 @@
 
     .modal-close:hover { opacity: 1; }
 
-    /* Modal tabs */
     .modal-tabs {
       display: flex;
       background: white;
@@ -489,11 +575,9 @@
       border-radius: 10px;
     }
 
-    /* Tab content */
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
-    /* Info cards grid */
     .info-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -528,7 +612,6 @@
     }
 
     .info-row:not(:last-child) { border-bottom: 1px solid #f8f9fa; }
-
     .info-label { color: #6c757d; font-weight: 500; }
     .info-value { color: #1a1a2e; font-weight: 500; text-align: right; max-width: 60%; }
 
@@ -543,7 +626,7 @@
       justify-content: center;
       font-size: 24px;
       font-weight: 600;
-      margin-bottom: 12px;
+      flex-shrink: 0;
     }
 
     .patient-header-card {
@@ -560,12 +643,7 @@
     .patient-header-info h3 { font-size: 20px; font-weight: 600; color: #1a1a2e; }
     .patient-header-info p { font-size: 14px; color: #6c757d; margin-top: 4px; }
 
-    .patient-tags {
-      display: flex;
-      gap: 8px;
-      margin-top: 8px;
-      flex-wrap: wrap;
-    }
+    .patient-tags { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 
     .patient-tag {
       display: inline-block;
@@ -580,7 +658,6 @@
     .patient-tag.due { background: #fce4ec; color: #c62828; }
     .patient-tag.paid { background: #e8f5e9; color: #2e7d32; }
 
-    /* Appointment & bill list */
     .apt-list { display: flex; flex-direction: column; gap: 10px; }
 
     .apt-item {
@@ -606,15 +683,12 @@
 
     .apt-status.completed { background: #e8f5e9; color: #2e7d32; }
     .apt-status.upcoming { background: #e3f2fd; color: #1565c0; }
+    .apt-status.confirmed { background: #e3f2fd; color: #1565c0; }
+    .apt-status.pending { background: #fff3cd; color: #856404; }
     .apt-status.cancelled { background: #f5f5f5; color: #999; }
     .apt-status.noshow { background: #fff3e0; color: #e65100; }
 
-    .bill-amount {
-      font-size: 16px;
-      font-weight: 700;
-      color: #1a1a2e;
-    }
-
+    .bill-amount { font-size: 16px; font-weight: 700; color: #1a1a2e; }
     .bill-due { color: #c62828; }
 
     .empty-tab {
@@ -624,67 +698,400 @@
       font-size: 14px;
     }
 
-    @media (max-width: 600px) {
+    /* ===== CALENDAR PAGE ===== */
+    .calendar-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .calendar-toolbar input[type="date"] {
+      padding: 10px 14px;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: inherit;
+      color: #1a1a2e;
+    }
+
+    .calendar-toolbar input[type="date"]:focus {
+      outline: none;
+      border-color: #4f8cff;
+      box-shadow: 0 0 0 2px rgba(79,140,255,0.2);
+    }
+
+    .calendar-toolbar button {
+      padding: 10px 16px;
+      border: 1px solid #dee2e6;
+      background: white;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: 500;
+      color: #1a1a2e;
+      transition: all 0.15s;
+    }
+
+    .calendar-toolbar button:hover { background: #f0f2f5; }
+
+    .calendar-toolbar button.active {
+      background: #1a1a2e;
+      color: white;
+      border-color: #1a1a2e;
+    }
+
+    .calendar-date-label {
+      font-size: 16px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-left: 8px;
+    }
+
+    .calendar-count {
+      font-size: 13px;
+      color: #6c757d;
+      margin-left: auto;
+    }
+
+    .calendar-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .calendar-card {
+      background: white;
+      border-radius: 10px;
+      padding: 16px 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      transition: box-shadow 0.15s;
+      border-left: 4px solid #e9ecef;
+    }
+
+    .calendar-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.12); }
+
+    .calendar-card.status-confirmed { border-left-color: #1565c0; }
+    .calendar-card.status-pending { border-left-color: #f9a825; }
+    .calendar-card.status-cancelled { border-left-color: #bdbdbd; }
+    .calendar-card.status-completed { border-left-color: #2e7d32; }
+    .calendar-card.status-checkedin { border-left-color: #2e7d32; }
+
+    .calendar-card-left { flex: 1; }
+
+    .calendar-card-left h4 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+    }
+
+    .calendar-card-left p {
+      font-size: 13px;
+      color: #6c757d;
+    }
+
+    .calendar-card-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .calendar-time {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1a1a2e;
+      white-space: nowrap;
+    }
+
+    /* ===== PATIENTS PAGE ===== */
+    .patients-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .patients-toolbar input[type="text"] {
+      flex: 1;
+      max-width: 400px;
+      padding: 10px 16px;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      font-size: 15px;
+      font-family: inherit;
+      color: #1a1a2e;
+    }
+
+    .patients-toolbar input[type="text"]:focus {
+      outline: none;
+      border-color: #4f8cff;
+      box-shadow: 0 0 0 2px rgba(79,140,255,0.2);
+    }
+
+    .patients-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .patient-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      cursor: pointer;
+      transition: box-shadow 0.15s, transform 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .patient-card:hover {
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      transform: translateY(-1px);
+    }
+
+    .patient-card-avatar {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #1a1a2e;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .patient-card-info { flex: 1; min-width: 0; }
+
+    .patient-card-info h4 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .patient-card-info p {
+      font-size: 13px;
+      color: #6c757d;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .load-more-wrap {
+      text-align: center;
+      margin-top: 24px;
+    }
+
+    .btn-load-more {
+      padding: 12px 32px;
+      background: #1a1a2e;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-load-more:hover { background: #2d2d5e; }
+    .btn-load-more:disabled { opacity: 0.5; cursor: default; }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+      }
+
+      .sidebar.open {
+        transform: translateX(0);
+      }
+
+      .sidebar-overlay.active {
+        display: block;
+      }
+
+      .hamburger {
+        display: flex;
+      }
+
+      .main-content {
+        margin-left: 0;
+      }
+
+      .page-header {
+        padding: 20px 16px 20px 68px;
+      }
+
+      .notification {
+        margin: 16px 16px 0;
+      }
+
+      .page-container {
+        padding: 16px;
+      }
+
       .info-grid { grid-template-columns: 1fr; }
       .modal { max-height: 95vh; }
       .modal-body { padding: 16px; }
       .patient-header-card { flex-direction: column; text-align: center; }
+      .patients-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>Clinic Call Dashboard</h1>
-    <div style="display:flex;align-items:center;gap:20px;">
-      <div class="status">
-        <div class="status-dot" id="statusDot"></div>
-        <span id="statusText">Disconnected</span>
-      </div>
-      <div class="status">
-        <div class="status-dot" id="monitorDot"></div>
-        <span id="monitorText">Monitor: Unknown</span>
-      </div>
-    </div>
-  </div>
 
-  <div class="container">
-    <div class="notification" id="notification">
-      <h3>Incoming Call</h3>
-      <p id="patientNameBanner" style="font-size:20px;font-weight:700;color:#1a1a2e;margin-bottom:4px;display:none;"></p>
-      <div class="caller-number" id="callerNumber">
-        <span id="callerNumberText"></span>
-        <a id="callerWhatsapp" class="whatsapp-link" href="#" target="_blank" title="Message on WhatsApp">
-          <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16.004 0h-.008C7.174 0 0 7.176 0 16c0 3.5 1.128 6.744 3.046 9.378L1.054 31.29l6.118-1.962A15.91 15.91 0 0016.004 32C24.826 32 32 24.822 32 16S24.826 0 16.004 0zm9.334 22.594c-.39 1.1-1.932 2.014-3.164 2.28-.844.18-1.946.324-5.66-1.216-4.752-1.97-7.812-6.79-8.046-7.104-.226-.314-1.886-2.512-1.886-4.79s1.194-3.4 1.618-3.866c.424-.466.924-.582 1.232-.582.308 0 .616.002.884.016.284.014.664-.108 1.04.792.39.93 1.326 3.232 1.442 3.466.116.234.194.508.038.82-.156.314-.234.508-.466.784-.232.276-.488.616-.698.826-.232.232-.474.484-.204.95.27.466 1.2 1.98 2.578 3.208 1.772 1.578 3.266 2.068 3.732 2.302.466.234.738.194 1.01-.116.27-.312 1.16-1.35 1.468-1.816.308-.466.616-.39 1.04-.234.424.156 2.692 1.27 3.156 1.5.466.234.774.35.89.54.116.194.116 1.1-.274 2.2z"/></svg>
+  <!-- Hamburger button (mobile) -->
+  <button class="hamburger" id="hamburger" onclick="toggleSidebar()">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
+
+  <!-- Sidebar overlay (mobile) -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <div class="app-layout">
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <h1>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/>
+          </svg>
+          Clinic Dashboard
+        </h1>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="nav-item active" data-page="dashboard" onclick="showPage('dashboard')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
+          </svg>
+          Dashboard
         </a>
-      </div>
-      <p id="callTime"></p>
-      <a id="cliniceaLink" href="#" target="_blank">Open Patient Profile in Clinicea</a>
-    </div>
-
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-      <h2 class="section-title" style="margin-bottom:0;">Call History</h2>
-      <div style="display:flex;gap:8px;">
-        <a href="/download/call-monitor" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:#1a1a2e;color:white;text-decoration:none;border-radius:6px;font-size:13px;font-weight:600;">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Install Call Monitor
+        <a class="nav-item" data-page="calendar" onclick="showPage('calendar')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Calendar
         </a>
-      </div>
-    </div>
-    <div id="callHistory">
-      <div class="empty-state">
-        <p>No calls yet. Waiting for incoming calls...</p>
-      </div>
-    </div>
+        <a class="nav-item" data-page="patients" onclick="showPage('patients')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          All Patients
+        </a>
 
-    <div class="log-panel">
-      <div class="log-header" onclick="toggleLog()">
-        <h3>Event Log <span class="error-count hidden" id="errorCount">0</span></h3>
-        <span class="toggle" id="logToggle">Show</span>
+        <div class="nav-spacer"></div>
+
+        <a class="nav-item" href="/download/call-monitor">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Install Monitor
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="sidebar-status">
+          <div class="status-dot" id="statusDot"></div>
+          <span id="statusText">Disconnected</span>
+        </div>
+        <div class="sidebar-status">
+          <div class="status-dot" id="monitorDot"></div>
+          <span id="monitorText">Monitor: Unknown</span>
+        </div>
+        <a href="/logout" class="sidebar-logout">Sign Out</a>
       </div>
-      <div class="log-body collapsed" id="logBody">
-        <div class="log-empty" id="logEmpty">No events yet</div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="main-content">
+
+      <!-- Global notification banner -->
+      <div class="notification" id="notification">
+        <h3>Incoming Call</h3>
+        <p id="patientNameBanner" style="font-size:20px;font-weight:700;color:#1a1a2e;margin-bottom:4px;display:none;"></p>
+        <div class="caller-number" id="callerNumber">
+          <span id="callerNumberText"></span>
+          <a id="callerWhatsapp" class="whatsapp-link" href="#" target="_blank" title="Message on WhatsApp">
+            <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16.004 0h-.008C7.174 0 0 7.176 0 16c0 3.5 1.128 6.744 3.046 9.378L1.054 31.29l6.118-1.962A15.91 15.91 0 0016.004 32C24.826 32 32 24.822 32 16S24.826 0 16.004 0zm9.334 22.594c-.39 1.1-1.932 2.014-3.164 2.28-.844.18-1.946.324-5.66-1.216-4.752-1.97-7.812-6.79-8.046-7.104-.226-.314-1.886-2.512-1.886-4.79s1.194-3.4 1.618-3.866c.424-.466.924-.582 1.232-.582.308 0 .616.002.884.016.284.014.664-.108 1.04.792.39.93 1.326 3.232 1.442 3.466.116.234.194.508.038.82-.156.314-.234.508-.466.784-.232.276-.488.616-.698.826-.232.232-.474.484-.204.95.27.466 1.2 1.98 2.578 3.208 1.772 1.578 3.266 2.068 3.732 2.302.466.234.738.194 1.01-.116.27-.312 1.16-1.35 1.468-1.816.308-.466.616-.39 1.04-.234.424.156 2.692 1.27 3.156 1.5.466.234.774.35.89.54.116.194.116 1.1-.274 2.2z"/></svg>
+          </a>
+        </div>
+        <p id="callTime"></p>
+        <a id="cliniceaLink" href="#" target="_blank">Open Patient Profile in Clinicea</a>
       </div>
-    </div>
+
+      <!-- ===== DASHBOARD PAGE ===== -->
+      <div class="page-container active" id="page-dashboard">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h2 class="section-title" style="margin-bottom:0;">Call History</h2>
+        </div>
+        <div id="callHistory">
+          <div class="empty-state">
+            <p>No calls yet. Waiting for incoming calls...</p>
+          </div>
+        </div>
+
+        <div class="log-panel">
+          <div class="log-header" onclick="toggleLog()">
+            <h3>Event Log <span class="error-count hidden" id="errorCount">0</span></h3>
+            <span class="toggle" id="logToggle">Show</span>
+          </div>
+          <div class="log-body collapsed" id="logBody">
+            <div class="log-empty" id="logEmpty">No events yet</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== CALENDAR PAGE ===== -->
+      <div class="page-container" id="page-calendar">
+        <div class="calendar-toolbar">
+          <button onclick="calendarPrevDay()">&#8592; Prev</button>
+          <input type="date" id="calendarDate" onchange="loadCalendar()">
+          <button onclick="calendarNextDay()">Next &#8594;</button>
+          <button onclick="calendarToday()" class="active">Today</button>
+          <span class="calendar-date-label" id="calendarDateLabel"></span>
+          <span class="calendar-count" id="calendarCount"></span>
+        </div>
+        <div id="calendarList" class="calendar-list">
+          <div class="empty-state"><p>Select a date to view appointments</p></div>
+        </div>
+      </div>
+
+      <!-- ===== PATIENTS PAGE ===== -->
+      <div class="page-container" id="page-patients">
+        <div class="patients-toolbar">
+          <input type="text" id="patientSearch" placeholder="Search patients by name, phone, or email..." oninput="onPatientSearch()">
+        </div>
+        <div id="patientsGrid" class="patients-grid"></div>
+        <div class="load-more-wrap" id="loadMoreWrap" style="display:none;">
+          <button class="btn-load-more" id="btnLoadMore" onclick="loadMorePatients()">Load More</button>
+        </div>
+        <div id="patientsLoading" class="empty-state" style="display:none;">
+          <div class="modal-loading"><div class="spinner"></div><p>Loading patients...</p></div>
+        </div>
+        <div id="patientsEmpty" class="empty-state" style="display:none;">
+          <p>No patients found</p>
+        </div>
+      </div>
+
+    </main>
   </div>
 
   <!-- Patient Profile Modal -->
@@ -732,10 +1139,58 @@
       return 'https://wa.me/' + phone.replace(/[\s\-\+]/g, '');
     }
 
-    // Connection status
+    // ===== SIDEBAR & ROUTING =====
+    function showPage(page) {
+      // Update URL hash
+      window.location.hash = page;
+
+      // Hide all pages
+      document.querySelectorAll('.page-container').forEach(p => p.classList.remove('active'));
+
+      // Show target page
+      const target = document.getElementById('page-' + page);
+      if (target) target.classList.add('active');
+
+      // Update sidebar active state
+      document.querySelectorAll('.nav-item[data-page]').forEach(item => {
+        item.classList.toggle('active', item.dataset.page === page);
+      });
+
+      // Close mobile sidebar
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebarOverlay').classList.remove('active');
+
+      // Initialize page data on first visit
+      if (page === 'calendar' && !calendarInitialized) {
+        calendarInitialized = true;
+        calendarToday();
+      }
+      if (page === 'patients' && !patientsInitialized) {
+        patientsInitialized = true;
+        loadPatients(1);
+      }
+    }
+
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebarOverlay');
+      sidebar.classList.toggle('open');
+      overlay.classList.toggle('active');
+    }
+
+    // Hash-based routing
+    function handleRoute() {
+      const hash = window.location.hash.replace('#', '') || 'dashboard';
+      const validPages = ['dashboard', 'calendar', 'patients'];
+      showPage(validPages.includes(hash) ? hash : 'dashboard');
+    }
+
+    window.addEventListener('hashchange', handleRoute);
+
+    // ===== CONNECTION STATUS =====
     socket.on('connect', () => {
       statusDot.classList.add('connected');
-      statusText.textContent = 'Connected - Listening for calls';
+      statusText.textContent = 'Connected';
     });
 
     socket.on('disconnect', () => {
@@ -743,20 +1198,18 @@
       statusText.textContent = 'Disconnected';
     });
 
-    // Monitor status
     function setMonitorStatus(alive) {
       if (alive) {
         monitorDot.classList.add('connected');
-        monitorText.textContent = 'Monitor: Connected';
+        monitorText.textContent = 'Monitor: On';
       } else {
         monitorDot.classList.remove('connected');
-        monitorText.textContent = 'Monitor: Disconnected';
+        monitorText.textContent = 'Monitor: Off';
       }
     }
 
     socket.on('monitor_status', (data) => setMonitorStatus(data.alive));
 
-    // Check monitor status on load and every 30s
     async function checkMonitorStatus() {
       try {
         const res = await fetch('/api/monitor-status');
@@ -767,16 +1220,14 @@
     checkMonitorStatus();
     setInterval(checkMonitorStatus, 15000);
 
-    // Patient info updates (arrives after call, once API responds)
+    // ===== INCOMING CALL HANDLER =====
     const patientNameBanner = document.getElementById('patientNameBanner');
 
     socket.on('patient_info', (data) => {
-      // Update notification banner if still visible
       if (data.patientName) {
         patientNameBanner.textContent = data.patientName;
         patientNameBanner.style.display = 'block';
       }
-      // Update call history table if the row exists
       const nameEl = document.getElementById('name-' + data.callId);
       if (nameEl) {
         nameEl.textContent = data.patientName;
@@ -784,9 +1235,7 @@
       }
     });
 
-    // Incoming call handler
     socket.on('incoming_call', (data) => {
-      // Show notification banner
       patientNameBanner.textContent = '';
       patientNameBanner.style.display = 'none';
       callerNumberText.textContent = data.caller;
@@ -795,11 +1244,8 @@
       cliniceaLink.href = data.cliniceaUrl;
       notification.classList.add('active');
 
-      // Play notification sound
       playBeep();
 
-      // Auto-open Clinicea - use a named window so browser allows reuse
-      // and use an anchor click to bypass popup blocker
       const autoLink = document.createElement('a');
       autoLink.href = data.cliniceaUrl;
       autoLink.target = 'clinicea_patient';
@@ -809,16 +1255,14 @@
       autoLink.click();
       document.body.removeChild(autoLink);
 
-      // Refresh call history (jump to page 1 for new call)
       loadCallHistory(1);
 
-      // Hide notification after 30 seconds
       setTimeout(() => {
         notification.classList.remove('active');
       }, 30000);
     });
 
-    // Load call history from API
+    // ===== CALL HISTORY =====
     async function loadCallHistory(page) {
       if (page !== undefined) currentPage = page;
       try {
@@ -843,33 +1287,32 @@
             </tr>
           </thead><tbody>`;
 
-        calls.forEach((call, i) => {
+        calls.forEach((call) => {
           const time = new Date(call.timestamp + 'Z').toLocaleString();
           const waUrl = getWhatsappUrl(call.caller_number);
           const nameDisplay = call.patient_name
-            ? `<span class="meeting-badge upcoming" id="name-${call.id}">${call.patient_name}</span>`
+            ? `<span class="meeting-badge upcoming" id="name-${call.id}">${escapeHtml(call.patient_name)}</span>`
             : `<span class="meeting-badge loading" id="name-${call.id}">--</span>`;
           html += `<tr>
             <td>${call.id}</td>
             <td>
               <span class="caller-number-wrap">
-                <strong>${call.caller_number}</strong>
+                <strong>${escapeHtml(call.caller_number)}</strong>
                 <a href="${waUrl}" target="_blank" class="whatsapp-link" title="Message on WhatsApp">${whatsappSvg}</a>
               </span>
             </td>
             <td>${nameDisplay}</td>
-            <td>${time}</td>
+            <td>${escapeHtml(time)}</td>
             <td><span class="meeting-badge loading" id="meeting-${call.id}">Loading...</span></td>
             <td style="display:flex;gap:6px;align-items:center;">
-              <button class="btn-profile" onclick="openProfile('${call.caller_number}','${call.clinicea_url}')">View Profile</button>
-              <a href="${call.clinicea_url}" target="_blank" class="btn-clinicea">Clinicea</a>
+              <button class="btn-profile" onclick="openProfile('${escapeHtml(call.caller_number)}','${escapeHtml(call.clinicea_url)}')">View Profile</button>
+              <a href="${escapeHtml(call.clinicea_url)}" target="_blank" class="btn-clinicea">Clinicea</a>
             </td>
           </tr>`;
         });
 
         html += '</tbody></table></div>';
 
-        // Pagination controls
         if (totalPages > 1) {
           html += '<div class="pagination">';
           html += `<button onclick="loadCallHistory(1)" ${currentPage === 1 ? 'disabled' : ''}>&laquo;</button>`;
@@ -889,7 +1332,6 @@
 
         callHistory.innerHTML = html;
 
-        // Fetch next meeting for each unique caller on this page
         const uniqueCallers = [...new Set(calls.map(c => c.caller_number))];
         for (const phone of uniqueCallers) {
           fetchNextMeeting(phone, calls.filter(c => c.caller_number === phone).map(c => c.id));
@@ -899,14 +1341,12 @@
       }
     }
 
-    // Fetch next meeting from Clinicea API
     async function fetchNextMeeting(phone, callIds) {
       try {
         const res = await fetch(`/api/next-meeting/${encodeURIComponent(phone)}`);
         const data = await res.json();
         const els = callIds.map(id => document.getElementById(`meeting-${id}`)).filter(Boolean);
 
-        // Update patient name cells if API returned a name
         if (data.patientName) {
           callIds.forEach(id => {
             const nameEl = document.getElementById('name-' + id);
@@ -918,10 +1358,7 @@
         }
 
         if (data.error === 'Clinicea API not configured') {
-          els.forEach(el => {
-            el.textContent = 'Not configured';
-            el.className = 'meeting-badge none';
-          });
+          els.forEach(el => { el.textContent = 'Not configured'; el.className = 'meeting-badge none'; });
           return;
         }
 
@@ -932,32 +1369,20 @@
             const d = new Date(dateStr);
             const formatted = d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const label = apt.ServiceName ? formatted + ' - ' + apt.ServiceName : formatted;
-            els.forEach(el => {
-              el.textContent = label;
-              el.className = 'meeting-badge upcoming';
-            });
+            els.forEach(el => { el.textContent = label; el.className = 'meeting-badge upcoming'; });
           } else {
-            els.forEach(el => {
-              el.textContent = 'No upcoming';
-              el.className = 'meeting-badge none';
-            });
+            els.forEach(el => { el.textContent = 'No upcoming'; el.className = 'meeting-badge none'; });
           }
         } else {
-          els.forEach(el => {
-            el.textContent = 'No upcoming';
-            el.className = 'meeting-badge none';
-          });
+          els.forEach(el => { el.textContent = 'No upcoming'; el.className = 'meeting-badge none'; });
         }
       } catch (err) {
         const els = callIds.map(id => document.getElementById(`meeting-${id}`)).filter(Boolean);
-        els.forEach(el => {
-          el.textContent = 'Error';
-          el.className = 'meeting-badge none';
-        });
+        els.forEach(el => { el.textContent = 'Error'; el.className = 'meeting-badge none'; });
       }
     }
 
-    // Simple beep notification
+    // ===== BEEP SOUND =====
     function playBeep() {
       try {
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -981,12 +1406,10 @@
           osc2.start();
           osc2.stop(ctx.currentTime + 0.3);
         }, 350);
-      } catch (e) {
-        // Audio not supported
-      }
+      } catch (e) {}
     }
 
-    // --- Event Log ---
+    // ===== EVENT LOG =====
     const logBody = document.getElementById('logBody');
     const logEmpty = document.getElementById('logEmpty');
     const logToggle = document.getElementById('logToggle');
@@ -1018,15 +1441,12 @@
       div.innerHTML = html;
       logBody.appendChild(div);
 
-      // Keep max 50 entries in DOM
-      while (logBody.children.length > 51) { // 51 because of logEmpty
+      while (logBody.children.length > 51) {
         logBody.removeChild(logBody.children[1]);
       }
 
-      // Auto-scroll if log is open
       if (logOpen) logBody.scrollTop = logBody.scrollHeight;
 
-      // Flash error count if log is closed and it's an error
       if (!logOpen && (entry.type === 'error' || entry.type === 'warn')) {
         errorCount++;
         errorCountEl.textContent = errorCount;
@@ -1040,10 +1460,8 @@
       return d.innerHTML;
     }
 
-    // Listen for real-time log events
     socket.on('server_log', (entry) => addLogEntry(entry));
 
-    // Load existing logs on page load
     async function loadLogs() {
       try {
         const res = await fetch('/api/logs');
@@ -1053,7 +1471,7 @@
     }
     loadLogs();
 
-    // --- Patient Profile Modal ---
+    // ===== PATIENT PROFILE MODAL =====
     const profileModal = document.getElementById('profileModal');
     const modalBody = document.getElementById('modalBody');
     const modalTitle = document.getElementById('modalTitle');
@@ -1063,7 +1481,7 @@
 
     function openProfile(phone, clinicaUrl) {
       profileModal.classList.add('active');
-      modalClinicaLink.href = clinicaUrl;
+      modalClinicaLink.href = clinicaUrl || '#';
       modalTitle.textContent = 'Patient Profile';
       modalBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div><p>Loading patient profile...</p></div>';
       modalTabs.querySelectorAll('.modal-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
@@ -1077,6 +1495,32 @@
           }
           profileData = data;
           modalTitle.textContent = data.patientName || 'Patient Profile';
+          if (data.patientID) {
+            modalClinicaLink.href = modalClinicaLink.href || '#';
+          }
+          renderOverview();
+        })
+        .catch(err => {
+          modalBody.innerHTML = '<div class="modal-error">Failed to load profile: ' + escapeHtml(err.message) + '</div>';
+        });
+    }
+
+    function openProfileById(patientId, patientName) {
+      profileModal.classList.add('active');
+      modalClinicaLink.href = '#';
+      modalTitle.textContent = patientName || 'Patient Profile';
+      modalBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div><p>Loading patient profile...</p></div>';
+      modalTabs.querySelectorAll('.modal-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+
+      fetch('/api/patient-profile-by-id/' + encodeURIComponent(patientId))
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            modalBody.innerHTML = '<div class="modal-error">' + escapeHtml(data.error) + '</div>';
+            return;
+          }
+          profileData = data;
+          modalTitle.textContent = data.patientName || patientName || 'Patient Profile';
           renderOverview();
         })
         .catch(err => {
@@ -1089,7 +1533,6 @@
       profileData = null;
     }
 
-    // Close on Escape key
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeProfile(); });
 
     function switchTab(tab) {
@@ -1122,6 +1565,13 @@
              d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
 
+    function formatTime(dateStr) {
+      if (!dateStr) return '--';
+      const d = new Date(dateStr);
+      if (isNaN(d)) return dateStr;
+      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    }
+
     function infoRow(label, value) {
       if (!value && value !== 0) return '';
       return '<div class="info-row"><span class="info-label">' + escapeHtml(label) + '</span><span class="info-value">' + escapeHtml(String(value)) + '</span></div>';
@@ -1129,7 +1579,6 @@
 
     function renderOverview() {
       const p = profileData.patient || {};
-      // Patient could be an object or an array with one item
       const pat = Array.isArray(p) ? (p[0] || {}) : p;
 
       const name = pat.Name || pat.PatientName || profileData.patientName ||
@@ -1164,7 +1613,6 @@
 
       html += '<div class="info-grid">';
 
-      // Personal Information
       html += '<div class="info-card"><h4>Personal Information</h4>';
       html += infoRow('Full Name', name);
       html += infoRow('Date of Birth', formatDate(dob));
@@ -1175,7 +1623,6 @@
       html += infoRow('File No', pat.FileNo);
       html += '</div>';
 
-      // Contact Information
       html += '<div class="info-card"><h4>Contact Information</h4>';
       html += infoRow('Mobile', pat.Mobile || pat.MobilePhone || pat.PatientMobile);
       html += infoRow('Email', pat.Email || pat.EmailAddress);
@@ -1187,7 +1634,6 @@
       html += infoRow('Postal Code', pat.PostalCode || pat.ZipCode);
       html += '</div>';
 
-      // Medical Info
       html += '<div class="info-card"><h4>Medical Information</h4>';
       html += infoRow('Blood Group', pat.BloodGroup);
       html += infoRow('Allergies', pat.Allergies);
@@ -1197,7 +1643,6 @@
       html += infoRow('Primary Doctor', pat.PrimaryDoctor || pat.DoctorName);
       html += '</div>';
 
-      // Account Summary
       html += '<div class="info-card"><h4>Account Summary</h4>';
       html += infoRow('Total Due', pat.BillDueAmount ? 'PKR ' + pat.BillDueAmount : 'None');
       html += infoRow('Total Appointments', String(profileData.appointments.length));
@@ -1217,7 +1662,6 @@
         return;
       }
 
-      // Sort by date descending
       const sorted = [...apts].sort((a, b) => new Date(b.StartDateTime || b.AppointmentDateTime || 0) - new Date(a.StartDateTime || a.AppointmentDateTime || 0));
 
       let html = '<div class="apt-list">';
@@ -1268,7 +1712,7 @@
 
         html += '<div class="apt-item">';
         html += '<div class="apt-item-left">';
-        html += '<h4>' + escapeHtml(items || ('Bill #' + (billNo || '—'))) + '</h4>';
+        html += '<h4>' + escapeHtml(items || ('Bill #' + (billNo || '\u2014'))) + '</h4>';
         html += '<p>' + escapeHtml(formatDate(dateStr));
         if (billNo) html += ' &middot; #' + escapeHtml(billNo);
         if (status) html += ' &middot; ' + escapeHtml(status);
@@ -1285,8 +1729,212 @@
       modalBody.innerHTML = html;
     }
 
-    // Load history on page load
+    // ===== CALENDAR PAGE =====
+    let calendarInitialized = false;
+
+    function calendarToday() {
+      const today = new Date();
+      document.getElementById('calendarDate').value = today.toISOString().split('T')[0];
+      loadCalendar();
+    }
+
+    function calendarPrevDay() {
+      const input = document.getElementById('calendarDate');
+      const d = new Date(input.value);
+      d.setDate(d.getDate() - 1);
+      input.value = d.toISOString().split('T')[0];
+      loadCalendar();
+    }
+
+    function calendarNextDay() {
+      const input = document.getElementById('calendarDate');
+      const d = new Date(input.value);
+      d.setDate(d.getDate() + 1);
+      input.value = d.toISOString().split('T')[0];
+      loadCalendar();
+    }
+
+    async function loadCalendar() {
+      const date = document.getElementById('calendarDate').value;
+      if (!date) return;
+
+      const dateObj = new Date(date + 'T00:00:00');
+      document.getElementById('calendarDateLabel').textContent =
+        dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+      const listEl = document.getElementById('calendarList');
+      const countEl = document.getElementById('calendarCount');
+
+      listEl.innerHTML = '<div class="empty-state"><div class="modal-loading"><div class="spinner"></div><p>Loading appointments...</p></div></div>';
+      countEl.textContent = '';
+
+      try {
+        const res = await fetch(`/api/appointments-by-date?date=${encodeURIComponent(date)}`);
+        const data = await res.json();
+
+        if (data.error && data.error !== 'Clinicea API not configured') {
+          listEl.innerHTML = '<div class="empty-state"><p>Error: ' + escapeHtml(data.error) + '</p></div>';
+          return;
+        }
+
+        const appointments = data.appointments || [];
+        countEl.textContent = appointments.length + ' appointment' + (appointments.length !== 1 ? 's' : '');
+
+        if (appointments.length === 0) {
+          listEl.innerHTML = '<div class="empty-state"><p>No appointments for this date</p></div>';
+          return;
+        }
+
+        // Sort by start time
+        appointments.sort((a, b) => new Date(a.startTime || 0) - new Date(b.startTime || 0));
+
+        let html = '';
+        appointments.forEach(apt => {
+          const status = (apt.status || 'unknown').toLowerCase();
+          let statusClass = 'status-pending';
+          if (status.includes('confirm')) statusClass = 'status-confirmed';
+          else if (status.includes('cancel')) statusClass = 'status-cancelled';
+          else if (status.includes('complet') || status.includes('checked') || status.includes('arrived')) statusClass = 'status-completed';
+
+          let aptStatusBadge = 'pending';
+          if (status.includes('confirm')) aptStatusBadge = 'confirmed';
+          else if (status.includes('cancel')) aptStatusBadge = 'cancelled';
+          else if (status.includes('complet') || status.includes('checked') || status.includes('arrived')) aptStatusBadge = 'completed';
+
+          const timeStr = formatTime(apt.startTime);
+          const endTimeStr = apt.endTime ? ' - ' + formatTime(apt.endTime) : '';
+          const durationStr = apt.duration ? ' (' + apt.duration + ' min)' : '';
+
+          html += `<div class="calendar-card ${statusClass}" onclick="openProfileById('${escapeHtml(String(apt.patientID))}', '${escapeHtml(apt.patientName)}')">`;
+          html += '<div class="calendar-card-left">';
+          html += '<h4>' + escapeHtml(apt.patientName) + '</h4>';
+          html += '<p>' + escapeHtml(apt.service || 'Appointment');
+          if (apt.doctor) html += ' &middot; ' + escapeHtml(apt.doctor);
+          html += '</p>';
+          html += '</div>';
+          html += '<div class="calendar-card-right">';
+          html += '<span class="calendar-time">' + escapeHtml(timeStr + endTimeStr + durationStr) + '</span>';
+          html += '<span class="apt-status ' + aptStatusBadge + '">' + escapeHtml(apt.status) + '</span>';
+          html += '</div>';
+          html += '</div>';
+        });
+
+        listEl.innerHTML = html;
+      } catch (err) {
+        listEl.innerHTML = '<div class="empty-state"><p>Failed to load appointments</p></div>';
+        console.error('Calendar load error:', err);
+      }
+    }
+
+    // ===== PATIENTS PAGE =====
+    let patientsInitialized = false;
+    let patientsPage = 1;
+    let allPatients = [];
+    let patientsHasMore = true;
+    let patientsLoading = false;
+    let searchTimeout = null;
+
+    function onPatientSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        allPatients = [];
+        patientsPage = 1;
+        patientsHasMore = true;
+        loadPatients(1);
+      }, 300);
+    }
+
+    async function loadPatients(page) {
+      if (patientsLoading) return;
+      patientsLoading = true;
+
+      const search = document.getElementById('patientSearch').value.trim();
+      const gridEl = document.getElementById('patientsGrid');
+      const loadMoreEl = document.getElementById('loadMoreWrap');
+      const loadingEl = document.getElementById('patientsLoading');
+      const emptyEl = document.getElementById('patientsEmpty');
+      const btnLoadMore = document.getElementById('btnLoadMore');
+
+      if (page === 1) {
+        gridEl.innerHTML = '';
+        allPatients = [];
+      }
+
+      loadingEl.style.display = 'block';
+      emptyEl.style.display = 'none';
+      btnLoadMore.disabled = true;
+      btnLoadMore.textContent = 'Loading...';
+
+      try {
+        const url = `/api/patients?page=${page}` + (search ? `&search=${encodeURIComponent(search)}` : '');
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (data.error && data.error !== 'Clinicea API not configured') {
+          loadingEl.style.display = 'none';
+          emptyEl.style.display = 'block';
+          emptyEl.querySelector('p').textContent = 'Error: ' + data.error;
+          loadMoreEl.style.display = 'none';
+          patientsLoading = false;
+          return;
+        }
+
+        const patients = data.patients || [];
+        patientsHasMore = data.hasMore || false;
+        patientsPage = page;
+
+        allPatients = allPatients.concat(patients);
+
+        // Render patient cards
+        patients.forEach(p => {
+          const card = document.createElement('div');
+          card.className = 'patient-card';
+          card.onclick = () => openProfileById(p.patientID, p.name);
+
+          const initials = getInitials(p.name);
+          let contactLine = [p.phone, p.email].filter(Boolean).join(' | ') || 'No contact info';
+
+          card.innerHTML = `
+            <div class="patient-card-avatar">${escapeHtml(initials)}</div>
+            <div class="patient-card-info">
+              <h4>${escapeHtml(p.name)}</h4>
+              <p>${escapeHtml(contactLine)}</p>
+            </div>
+          `;
+          gridEl.appendChild(card);
+        });
+
+        loadingEl.style.display = 'none';
+
+        if (allPatients.length === 0) {
+          emptyEl.style.display = 'block';
+          loadMoreEl.style.display = 'none';
+        } else {
+          emptyEl.style.display = 'none';
+          loadMoreEl.style.display = patientsHasMore ? 'block' : 'none';
+        }
+
+        btnLoadMore.disabled = false;
+        btnLoadMore.textContent = 'Load More';
+      } catch (err) {
+        loadingEl.style.display = 'none';
+        emptyEl.style.display = 'block';
+        emptyEl.querySelector('p').textContent = 'Failed to load patients';
+        console.error('Patients load error:', err);
+      }
+
+      patientsLoading = false;
+    }
+
+    function loadMorePatients() {
+      if (patientsHasMore && !patientsLoading) {
+        loadPatients(patientsPage + 1);
+      }
+    }
+
+    // ===== INITIALIZATION =====
     loadCallHistory();
+    handleRoute();
   </script>
 </body>
 </html>
