@@ -145,103 +145,143 @@
     await sleep(300);
   }
 
-  // Click on a chat in the sidebar to open it
+  // Open a chat by name using the search box + keyboard navigation
   async function openChatByElement(element, chatName) {
-    // Remember current header to detect change
     const prevHeader = document.querySelector('#main header span[title]');
     const prevName = prevHeader ? prevHeader.getAttribute('title') : null;
 
-    // Method 1: Try clicking the name span directly
-    const nameSpan = element.querySelector('span[title="' + CSS.escape(chatName) + '"]') ||
-                     element.querySelector('span[title]');
-    if (nameSpan) {
-      nameSpan.click();
-      await sleep(2000);
-      const header = document.querySelector('#main header span[title]');
-      const newName = header ? header.getAttribute('title') : null;
-      if (header && newName !== prevName) {
-        console.log('[WA Bot] Opened via name click:', newName);
-        return true;
-      }
-    }
-
-    // Method 2: Use search bar (most reliable)
-    console.log('[WA Bot] Trying search for:', chatName);
+    // Always clear any leftover search first
     await clearSearch();
     await sleep(500);
 
-    // Find and focus search box
-    const searchBox = document.querySelector('#side [data-tab="3"]') ||
-                      document.querySelector('#side div[contenteditable="true"][role="textbox"]') ||
-                      document.querySelector('#side [data-testid="chat-list-search"]');
+    // Find ALL contenteditable divs in the side panel
+    const editables = document.querySelectorAll('#side div[contenteditable="true"]');
+    let searchBox = null;
 
-    if (!searchBox) {
-      // Click the search icon/area to activate search
-      const searchArea = document.querySelector('#side header [data-testid="chat-list-search"]') ||
-                         document.querySelector('#side [data-tab="3"]');
-      if (searchArea) searchArea.click();
-      await sleep(500);
-    }
-
-    const activeSearch = document.querySelector('#side [data-tab="3"]') ||
-                         document.querySelector('#side div[contenteditable="true"][role="textbox"]') ||
-                         document.querySelector('#side div[contenteditable="true"]');
-
-    if (!activeSearch) {
-      console.log('[WA Bot] Cannot find search box');
-      return false;
-    }
-
-    // Clear and type
-    activeSearch.focus();
-    await sleep(200);
-    // Select all and delete to clear
-    activeSearch.textContent = '';
-    activeSearch.innerHTML = '';
-    activeSearch.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(300);
-
-    // Type the search term
-    document.execCommand('insertText', false, chatName);
-    activeSearch.dispatchEvent(new Event('input', { bubbles: true }));
-    await sleep(2500); // wait for search results
-
-    // Find matching result and click it
-    const resultNames = document.querySelectorAll('#pane-side span[title]');
-    let clicked = false;
-    for (const r of resultNames) {
-      const title = r.getAttribute('title') || r.textContent.trim();
-      if (title === chatName) {
-        // Click the parent row, not just the span
-        const row = r.closest('[role="listitem"]') || r.closest('[data-testid="cell-frame-container"]')?.parentElement || r.parentElement?.parentElement?.parentElement;
-        if (row) row.click();
-        else r.click();
-        clicked = true;
+    // The search box is the one in the header area (not inside a chat)
+    for (const el of editables) {
+      const rect = el.getBoundingClientRect();
+      // Search box is near the top of the side panel
+      if (rect.top < 200 && rect.width > 100) {
+        searchBox = el;
         break;
       }
     }
 
-    if (!clicked && resultNames.length > 0) {
-      // Just click the first result as fallback
-      const firstRow = resultNames[0].closest('[role="listitem"]') || resultNames[0].parentElement?.parentElement?.parentElement;
-      if (firstRow) firstRow.click();
-      else resultNames[0].click();
-      clicked = true;
+    if (!searchBox) {
+      console.log('[WA Bot] Cannot find search box, trying to click search area');
+      // Try clicking the search placeholder area
+      const placeholder = document.querySelector('#side [data-testid="chat-list-search"]') ||
+                          document.querySelector('#side p.selectable-text');
+      if (placeholder) {
+        placeholder.click();
+        await sleep(500);
+        // Try again
+        const editables2 = document.querySelectorAll('#side div[contenteditable="true"]');
+        for (const el of editables2) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top < 200 && rect.width > 100) {
+            searchBox = el;
+            break;
+          }
+        }
+      }
     }
 
+    if (!searchBox) {
+      console.log('[WA Bot] Search box not found at all');
+      return false;
+    }
+
+    // Focus and clear
+    searchBox.focus();
+    await sleep(200);
+    searchBox.textContent = '';
+    searchBox.innerHTML = '';
+    searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(200);
+
+    // Type the chat name
+    document.execCommand('insertText', false, chatName);
+    searchBox.dispatchEvent(new Event('input', { bubbles: true }));
+    console.log('[WA Bot] Typed in search:', chatName);
+    await sleep(2500);
+
+    // Method 1: Press ArrowDown then Enter to select first result
+    searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, bubbles: true }));
+    await sleep(300);
+    searchBox.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
     await sleep(2000);
 
-    // Always clear search after attempting
-    await clearSearch();
+    let header = document.querySelector('#main header span[title]');
+    let newName = header ? header.getAttribute('title') : null;
+    if (header && newName && newName !== prevName) {
+      console.log('[WA Bot] Opened via search+Enter:', newName);
+      await clearSearch();
+      return true;
+    }
 
-    if (clicked) {
-      const header = document.querySelector('#main header span[title]');
+    // Method 2: Find the first visible chat result and simulate mousedown+click
+    console.log('[WA Bot] Enter didnt work, trying direct click on results');
+    const pane = document.querySelector('#pane-side') || document.querySelector('#side');
+    if (pane) {
+      // Get all span[title] that match our search
+      const allTitles = pane.querySelectorAll('span[title]');
+      for (const span of allTitles) {
+        const t = span.getAttribute('title');
+        if (!t) continue;
+        // Match exact or close
+        if (t.toLowerCase() === chatName.toLowerCase() || t.toLowerCase().includes(chatName.toLowerCase())) {
+          // Walk up to find largest clickable ancestor that's still inside the pane
+          let target = span;
+          let el = span.parentElement;
+          for (let i = 0; i < 10 && el && el !== pane; i++) {
+            const rect = el.getBoundingClientRect();
+            if (rect.height > 40 && rect.height < 120 && rect.width > 200) {
+              target = el;
+              break;
+            }
+            el = el.parentElement;
+          }
+
+          // Full mouse event sequence
+          target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+          await sleep(50);
+          target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+          target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          console.log('[WA Bot] Clicked search result element for:', t);
+          await sleep(2000);
+
+          header = document.querySelector('#main header span[title]');
+          newName = header ? header.getAttribute('title') : null;
+          if (header && newName && newName !== prevName) {
+            console.log('[WA Bot] Opened via result click:', newName);
+            await clearSearch();
+            return true;
+          }
+          break;
+        }
+      }
+    }
+
+    // Method 3: Use WhatsApp deep link URL hack
+    // Navigate to wa.me link format which WhatsApp Web handles
+    // Only works for phone numbers
+    if (chatName.match(/^\+?\d[\d\s]{7,}/)) {
+      const cleanPhone = chatName.replace(/[\s\-\+]/g, '');
+      console.log('[WA Bot] Trying URL navigation for phone:', cleanPhone);
+      // Use the WhatsApp Web URL API
+      const currentUrl = window.location.href;
+      window.location.href = 'https://web.whatsapp.com/send?phone=' + cleanPhone;
+      await sleep(3000);
+      header = document.querySelector('#main header span[title]');
       if (header) {
-        console.log('[WA Bot] Opened via search:', header.getAttribute('title'));
+        console.log('[WA Bot] Opened via URL:', header.getAttribute('title'));
         return true;
       }
     }
 
+    await clearSearch();
     console.log('[WA Bot] All methods failed for:', chatName);
     return false;
   }
@@ -403,8 +443,9 @@
         // Click to open the chat
         const opened = await openChatByElement(chat.element, chat.name);
         if (!opened) {
-          console.log('[WA Bot] Failed to open chat:', chat.name);
-          continue;
+          console.log('[WA Bot] Failed to open chat:', chat.name, '- stopping this scan cycle');
+          await clearSearch();
+          break; // stop this cycle, retry next scan
         }
 
         await sleep(1000);
