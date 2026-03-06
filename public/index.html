@@ -318,6 +318,317 @@
     }
 
     .error-count.hidden { display: none; }
+
+    /* Profile button */
+    .btn-profile {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      background: #1a1a2e;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .btn-profile:hover { background: #2d2d5e; }
+    .btn-profile:disabled { opacity: 0.5; cursor: default; }
+
+    .btn-clinicea {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      background: transparent;
+      color: #0066cc;
+      border: 1px solid #dee2e6;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+
+    .btn-clinicea:hover { background: #f0f2f5; border-color: #0066cc; }
+
+    /* Patient Profile Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-overlay.active { display: flex; }
+
+    .modal {
+      background: #f0f2f5;
+      border-radius: 16px;
+      width: 100%;
+      max-width: 800px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      animation: modalSlideIn 0.25s ease-out;
+    }
+
+    @keyframes modalSlideIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .modal-header {
+      background: #1a1a2e;
+      color: white;
+      padding: 20px 24px;
+      border-radius: 16px 16px 0 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-header h2 { font-size: 18px; font-weight: 600; }
+
+    .modal-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .modal-header a {
+      color: #a0aec0;
+      text-decoration: none;
+      font-size: 13px;
+      transition: color 0.15s;
+    }
+
+    .modal-header a:hover { color: white; }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+      opacity: 0.7;
+      transition: opacity 0.15s;
+    }
+
+    .modal-close:hover { opacity: 1; }
+
+    /* Modal tabs */
+    .modal-tabs {
+      display: flex;
+      background: white;
+      border-bottom: 2px solid #e9ecef;
+      padding: 0 24px;
+    }
+
+    .modal-tab {
+      padding: 12px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      color: #6c757d;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.15s;
+    }
+
+    .modal-tab:hover { color: #1a1a2e; }
+
+    .modal-tab.active {
+      color: #1a1a2e;
+      border-bottom-color: #1a1a2e;
+      font-weight: 600;
+    }
+
+    .modal-body {
+      padding: 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-loading {
+      text-align: center;
+      padding: 60px 24px;
+      color: #6c757d;
+    }
+
+    .modal-loading .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #e9ecef;
+      border-top-color: #1a1a2e;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .modal-error {
+      text-align: center;
+      padding: 40px 24px;
+      color: #721c24;
+      background: #f8d7da;
+      border-radius: 10px;
+    }
+
+    /* Tab content */
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Info cards grid */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .info-card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .info-card.full-width { grid-column: 1 / -1; }
+
+    .info-card h4 {
+      font-size: 12px;
+      font-weight: 600;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      font-size: 14px;
+    }
+
+    .info-row:not(:last-child) { border-bottom: 1px solid #f8f9fa; }
+
+    .info-label { color: #6c757d; font-weight: 500; }
+    .info-value { color: #1a1a2e; font-weight: 500; text-align: right; max-width: 60%; }
+
+    .patient-avatar {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: #1a1a2e;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .patient-header-card {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+
+    .patient-header-info h3 { font-size: 20px; font-weight: 600; color: #1a1a2e; }
+    .patient-header-info p { font-size: 14px; color: #6c757d; margin-top: 4px; }
+
+    .patient-tags {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    .patient-tag {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .patient-tag.gender { background: #e8f4fd; color: #1565c0; }
+    .patient-tag.file { background: #f3e5f5; color: #7b1fa2; }
+    .patient-tag.due { background: #fce4ec; color: #c62828; }
+    .patient-tag.paid { background: #e8f5e9; color: #2e7d32; }
+
+    /* Appointment & bill list */
+    .apt-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .apt-item {
+      background: white;
+      border-radius: 10px;
+      padding: 16px 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .apt-item-left h4 { font-size: 14px; color: #1a1a2e; font-weight: 600; margin-bottom: 4px; }
+    .apt-item-left p { font-size: 13px; color: #6c757d; }
+
+    .apt-status {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .apt-status.completed { background: #e8f5e9; color: #2e7d32; }
+    .apt-status.upcoming { background: #e3f2fd; color: #1565c0; }
+    .apt-status.cancelled { background: #f5f5f5; color: #999; }
+    .apt-status.noshow { background: #fff3e0; color: #e65100; }
+
+    .bill-amount {
+      font-size: 16px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+
+    .bill-due { color: #c62828; }
+
+    .empty-tab {
+      text-align: center;
+      padding: 40px 20px;
+      color: #999;
+      font-size: 14px;
+    }
+
+    @media (max-width: 600px) {
+      .info-grid { grid-template-columns: 1fr; }
+      .modal { max-height: 95vh; }
+      .modal-body { padding: 16px; }
+      .patient-header-card { flex-direction: column; text-align: center; }
+    }
   </style>
 </head>
 <body>
@@ -375,6 +686,30 @@
       </div>
       <div class="log-body collapsed" id="logBody">
         <div class="log-empty" id="logEmpty">No events yet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Patient Profile Modal -->
+  <div class="modal-overlay" id="profileModal" onclick="if(event.target===this)closeProfile()">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle">Patient Profile</h2>
+        <div class="modal-header-actions">
+          <a id="modalClinicaLink" href="#" target="_blank">Open in Clinicea</a>
+          <button class="modal-close" onclick="closeProfile()">&times;</button>
+        </div>
+      </div>
+      <div class="modal-tabs" id="modalTabs">
+        <div class="modal-tab active" onclick="switchTab('overview')">Overview</div>
+        <div class="modal-tab" onclick="switchTab('appointments')">Appointments</div>
+        <div class="modal-tab" onclick="switchTab('bills')">Bills</div>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <div class="modal-loading" id="modalLoading">
+          <div class="spinner"></div>
+          <p>Loading patient profile...</p>
+        </div>
       </div>
     </div>
   </div>
@@ -528,7 +863,10 @@
             <td>${nameDisplay}</td>
             <td>${time}</td>
             <td><span class="meeting-badge loading" id="meeting-${call.id}">Loading...</span></td>
-            <td><a href="${call.clinicea_url}" target="_blank">Open in Clinicea</a></td>
+            <td style="display:flex;gap:6px;align-items:center;">
+              <button class="btn-profile" onclick="openProfile('${call.caller_number}','${call.clinicea_url}')">View Profile</button>
+              <a href="${call.clinicea_url}" target="_blank" class="btn-clinicea">Clinicea</a>
+            </td>
           </tr>`;
         });
 
@@ -717,6 +1055,238 @@
       } catch (e) {}
     }
     loadLogs();
+
+    // --- Patient Profile Modal ---
+    const profileModal = document.getElementById('profileModal');
+    const modalBody = document.getElementById('modalBody');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalClinicaLink = document.getElementById('modalClinicaLink');
+    const modalTabs = document.getElementById('modalTabs');
+    let profileData = null;
+
+    function openProfile(phone, clinicaUrl) {
+      profileModal.classList.add('active');
+      modalClinicaLink.href = clinicaUrl;
+      modalTitle.textContent = 'Patient Profile';
+      modalBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div><p>Loading patient profile...</p></div>';
+      modalTabs.querySelectorAll('.modal-tab').forEach((t, i) => t.classList.toggle('active', i === 0));
+
+      fetch('/api/patient-profile/' + encodeURIComponent(phone))
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            modalBody.innerHTML = '<div class="modal-error">' + escapeHtml(data.error) + '</div>';
+            return;
+          }
+          profileData = data;
+          modalTitle.textContent = data.patientName || 'Patient Profile';
+          renderOverview();
+        })
+        .catch(err => {
+          modalBody.innerHTML = '<div class="modal-error">Failed to load profile: ' + escapeHtml(err.message) + '</div>';
+        });
+    }
+
+    function closeProfile() {
+      profileModal.classList.remove('active');
+      profileData = null;
+    }
+
+    // Close on Escape key
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeProfile(); });
+
+    function switchTab(tab) {
+      modalTabs.querySelectorAll('.modal-tab').forEach(t => {
+        t.classList.toggle('active', t.textContent.toLowerCase().includes(tab));
+      });
+      if (!profileData) return;
+      if (tab === 'overview') renderOverview();
+      else if (tab === 'appointments') renderAppointments();
+      else if (tab === 'bills') renderBills();
+    }
+
+    function getInitials(name) {
+      if (!name) return '?';
+      return name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 2);
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return '--';
+      const d = new Date(dateStr);
+      if (isNaN(d)) return dateStr;
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+
+    function formatDateTime(dateStr) {
+      if (!dateStr) return '--';
+      const d = new Date(dateStr);
+      if (isNaN(d)) return dateStr;
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ' ' +
+             d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function infoRow(label, value) {
+      if (!value && value !== 0) return '';
+      return '<div class="info-row"><span class="info-label">' + escapeHtml(label) + '</span><span class="info-value">' + escapeHtml(String(value)) + '</span></div>';
+    }
+
+    function renderOverview() {
+      const p = profileData.patient || {};
+      // Patient could be an object or an array with one item
+      const pat = Array.isArray(p) ? (p[0] || {}) : p;
+
+      const name = pat.Name || pat.PatientName || profileData.patientName ||
+                   [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || 'Unknown';
+      const initials = getInitials(name);
+
+      let tags = '';
+      if (pat.Gender) tags += '<span class="patient-tag gender">' + escapeHtml(pat.Gender) + '</span>';
+      if (pat.FileNo) tags += '<span class="patient-tag file">File #' + escapeHtml(pat.FileNo) + '</span>';
+      if (pat.BillDueAmount && parseFloat(pat.BillDueAmount) > 0) {
+        tags += '<span class="patient-tag due">Due: ' + escapeHtml(String(pat.BillDueAmount)) + '</span>';
+      } else {
+        tags += '<span class="patient-tag paid">No Dues</span>';
+      }
+
+      let dob = pat.DOB || pat.DateOfBirth || '';
+      let age = '';
+      if (dob) {
+        const bd = new Date(dob);
+        if (!isNaN(bd)) {
+          age = String(Math.floor((Date.now() - bd.getTime()) / (365.25 * 24 * 60 * 60 * 1000))) + ' years';
+        }
+      }
+
+      let html = '<div class="patient-header-card">';
+      html += '<div class="patient-avatar">' + escapeHtml(initials) + '</div>';
+      html += '<div class="patient-header-info">';
+      html += '<h3>' + escapeHtml(name) + '</h3>';
+      html += '<p>' + escapeHtml([pat.Mobile || pat.MobilePhone || '', pat.Email || ''].filter(Boolean).join(' | ') || 'No contact info') + '</p>';
+      html += '<div class="patient-tags">' + tags + '</div>';
+      html += '</div></div>';
+
+      html += '<div class="info-grid">';
+
+      // Personal Information
+      html += '<div class="info-card"><h4>Personal Information</h4>';
+      html += infoRow('Full Name', name);
+      html += infoRow('Date of Birth', formatDate(dob));
+      html += infoRow('Age', age);
+      html += infoRow('Gender', pat.Gender);
+      html += infoRow('Marital Status', pat.MaritalStatus);
+      html += infoRow('Nationality', pat.Nationality);
+      html += infoRow('File No', pat.FileNo);
+      html += '</div>';
+
+      // Contact Information
+      html += '<div class="info-card"><h4>Contact Information</h4>';
+      html += infoRow('Mobile', pat.Mobile || pat.MobilePhone || pat.PatientMobile);
+      html += infoRow('Email', pat.Email || pat.EmailAddress);
+      html += infoRow('Phone', pat.Phone || pat.HomePhone);
+      html += infoRow('Address', [pat.Address1, pat.Address2].filter(Boolean).join(', '));
+      html += infoRow('City', pat.City);
+      html += infoRow('State', pat.State);
+      html += infoRow('Country', pat.Country);
+      html += infoRow('Postal Code', pat.PostalCode || pat.ZipCode);
+      html += '</div>';
+
+      // Medical Info
+      html += '<div class="info-card"><h4>Medical Information</h4>';
+      html += infoRow('Blood Group', pat.BloodGroup);
+      html += infoRow('Allergies', pat.Allergies);
+      html += infoRow('Medical History', pat.MedicalHistory);
+      html += infoRow('Notes', pat.Notes || pat.PatientNotes);
+      html += infoRow('Referring Doctor', pat.ReferringDoctor || pat.ReferredBy);
+      html += infoRow('Primary Doctor', pat.PrimaryDoctor || pat.DoctorName);
+      html += '</div>';
+
+      // Account Summary
+      html += '<div class="info-card"><h4>Account Summary</h4>';
+      html += infoRow('Total Due', pat.BillDueAmount ? 'PKR ' + pat.BillDueAmount : 'None');
+      html += infoRow('Total Appointments', String(profileData.appointments.length));
+      html += infoRow('Total Bills', String(profileData.bills.length));
+      html += infoRow('Patient Since', formatDate(pat.CreatedDatetime || pat.CreatedDate || pat.RegistrationDate));
+      html += infoRow('Patient ID', profileData.patientID);
+      html += '</div>';
+
+      html += '</div>';
+      modalBody.innerHTML = html;
+    }
+
+    function renderAppointments() {
+      const apts = profileData.appointments;
+      if (!apts || apts.length === 0) {
+        modalBody.innerHTML = '<div class="empty-tab">No appointments found</div>';
+        return;
+      }
+
+      // Sort by date descending
+      const sorted = [...apts].sort((a, b) => new Date(b.StartDateTime || b.AppointmentDateTime || 0) - new Date(a.StartDateTime || a.AppointmentDateTime || 0));
+
+      let html = '<div class="apt-list">';
+      sorted.forEach(apt => {
+        const dateStr = apt.StartDateTime || apt.AppointmentDateTime || '';
+        const status = apt.AppointmentStatus || apt.Status || 'Unknown';
+        const service = apt.ServiceName || apt.Service || '';
+        const doctor = apt.DoctorName || apt.Doctor || '';
+        const duration = apt.Duration ? apt.Duration + ' min' : '';
+
+        let statusClass = 'upcoming';
+        const sl = status.toLowerCase();
+        if (sl.includes('complet') || sl.includes('checked') || sl.includes('arrived')) statusClass = 'completed';
+        else if (sl.includes('cancel')) statusClass = 'cancelled';
+        else if (sl.includes('no show') || sl.includes('noshow')) statusClass = 'noshow';
+
+        html += '<div class="apt-item">';
+        html += '<div class="apt-item-left">';
+        html += '<h4>' + escapeHtml(service || 'Appointment') + '</h4>';
+        html += '<p>' + escapeHtml(formatDateTime(dateStr));
+        if (doctor) html += ' &middot; ' + escapeHtml(doctor);
+        if (duration) html += ' &middot; ' + escapeHtml(duration);
+        html += '</p></div>';
+        html += '<span class="apt-status ' + statusClass + '">' + escapeHtml(status) + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+      modalBody.innerHTML = html;
+    }
+
+    function renderBills() {
+      const bills = profileData.bills;
+      if (!bills || bills.length === 0) {
+        modalBody.innerHTML = '<div class="empty-tab">No bills found</div>';
+        return;
+      }
+
+      const sorted = [...bills].sort((a, b) => new Date(b.BillDate || b.CreatedDate || 0) - new Date(a.BillDate || a.CreatedDate || 0));
+
+      let html = '<div class="apt-list">';
+      sorted.forEach(bill => {
+        const dateStr = bill.BillDate || bill.CreatedDate || '';
+        const billNo = bill.BillNo || bill.BillNumber || bill.InvoiceNo || '';
+        const total = bill.TotalAmount || bill.GrossAmount || bill.Amount || 0;
+        const due = bill.DueAmount || bill.BalanceDue || 0;
+        const status = bill.BillStatus || bill.Status || '';
+        const items = bill.ServiceName || bill.Description || bill.Items || '';
+
+        html += '<div class="apt-item">';
+        html += '<div class="apt-item-left">';
+        html += '<h4>' + escapeHtml(items || ('Bill #' + (billNo || '—'))) + '</h4>';
+        html += '<p>' + escapeHtml(formatDate(dateStr));
+        if (billNo) html += ' &middot; #' + escapeHtml(billNo);
+        if (status) html += ' &middot; ' + escapeHtml(status);
+        html += '</p></div>';
+        html += '<div style="text-align:right">';
+        html += '<div class="bill-amount">PKR ' + escapeHtml(String(total)) + '</div>';
+        if (parseFloat(due) > 0) {
+          html += '<div class="bill-due" style="font-size:12px;">Due: PKR ' + escapeHtml(String(due)) + '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      modalBody.innerHTML = html;
+    }
 
     // Load history on page load
     loadCallHistory();

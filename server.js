@@ -48,14 +48,18 @@ db.exec(`
   )
 `);
 
-// Add patient_name column if missing (existing DBs)
+// Add patient_name and patient_id columns if missing (existing DBs)
 try { db.exec('ALTER TABLE calls ADD COLUMN patient_name TEXT'); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN patient_id TEXT'); } catch (e) { /* already exists */ }
 
 const insertCall = db.prepare(
   'INSERT INTO calls (caller_number, call_sid, clinicea_url) VALUES (?, ?, ?)'
 );
 const updateCallPatientName = db.prepare(
   'UPDATE calls SET patient_name = ? WHERE id = ?'
+);
+const updateCallPatientId = db.prepare(
+  'UPDATE calls SET patient_id = ? WHERE id = ?'
 );
 const PAGE_SIZE = 10;
 const countCalls = db.prepare('SELECT COUNT(*) as total FROM calls');
@@ -188,10 +192,15 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
   // Async: look up patient name and push update to dashboard
   if (isClinicaConfigured()) {
     findPatientByPhone(caller).then(patient => {
-      if (patient && patient.patientName) {
-        updateCallPatientName.run(patient.patientName, callId);
-        io.emit('patient_info', { caller, callId, patientName: patient.patientName });
-        logEvent('info', 'Patient identified: ' + patient.patientName, caller);
+      if (patient) {
+        if (patient.patientName) {
+          updateCallPatientName.run(patient.patientName, callId);
+        }
+        if (patient.patientID) {
+          updateCallPatientId.run(patient.patientID, callId);
+        }
+        io.emit('patient_info', { caller, callId, patientName: patient.patientName, patientID: patient.patientID });
+        logEvent('info', 'Patient identified: ' + (patient.patientName || 'Unknown'), caller);
       }
     }).catch(() => {});
   }
@@ -695,6 +704,40 @@ app.get('/api/next-meeting/:phone', requireAuth, async (req, res) => {
   } catch (err) {
     logEvent('error', 'Clinicea API error', err.message);
     return res.json({ nextMeeting: null, patientName: null, error: err.message });
+  }
+});
+
+// API - full patient profile from Clinicea
+app.get('/api/patient-profile/:phone', requireAuth, async (req, res) => {
+  const phone = decodeURIComponent(req.params.phone);
+
+  if (!isClinicaConfigured()) {
+    return res.json({ error: 'Clinicea API not configured' });
+  }
+
+  try {
+    const patient = await findPatientByPhone(phone);
+    if (!patient || !patient.patientID) {
+      return res.json({ error: 'Patient not found in Clinicea' });
+    }
+
+    // Fetch all patient data in parallel
+    const [details, appointments, bills] = await Promise.all([
+      cliniceaFetch(`/api/v3/patients/getPatientByID?patientID=${patient.patientID}`),
+      cliniceaFetch(`/api/v2/appointments/getAppointmentsByPatient?patientID=${patient.patientID}&appointmentType=2&pageNo=1&pageSize=50`),
+      cliniceaFetch(`/api/v2/bills/getBillsByPatient?patientID=${patient.patientID}&billStatus=0&pageNo=1&pageSize=50`)
+    ]);
+
+    return res.json({
+      patient: details,
+      appointments: Array.isArray(appointments) ? appointments : [],
+      bills: Array.isArray(bills) ? bills : [],
+      patientName: patient.patientName,
+      patientID: patient.patientID
+    });
+  } catch (err) {
+    logEvent('error', 'Patient profile fetch failed', err.message);
+    return res.json({ error: err.message });
   }
 });
 
