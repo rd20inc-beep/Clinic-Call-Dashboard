@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Clinic Call Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📞</text></svg>">
   <script src="/socket.io/socket.io.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -715,7 +716,7 @@
   </div>
 
   <script>
-    const socket = io();
+    const socket = io({ transports: ['websocket'] });
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
     const monitorDot = document.getElementById('monitorDot');
