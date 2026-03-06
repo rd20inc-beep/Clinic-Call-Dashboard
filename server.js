@@ -5,6 +5,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
+const archiver = require('archiver');
 const OpenAI = require('openai');
 
 const app = express();
@@ -274,6 +276,53 @@ app.get('/download/call-monitor', requireAuth, (req, res) => {
   res.setHeader('Content-Type', 'application/octet-stream');
   res.setHeader('Content-Disposition', 'attachment; filename="Install_Call_Monitor.bat"');
   res.send(bat);
+});
+
+// --- Download WhatsApp extension (pre-configured zip) ---
+app.get('/download/whatsapp-extension', requireAuth, (req, res) => {
+  const extDir = path.join(__dirname, 'whatsapp-extension');
+  if (!fs.existsSync(extDir)) {
+    return res.status(404).send('WhatsApp extension not found');
+  }
+
+  const host = req.get('host');
+  const protocol = req.protocol;
+  const serverUrl = `${protocol}://${host}`;
+
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="WhatsApp_Extension.zip"');
+
+  const archive = archiver('zip', { zlib: { level: 9 } });
+  archive.on('error', err => res.status(500).send('Zip error: ' + err.message));
+  archive.pipe(res);
+
+  // Add all extension files, but patch background.js with the current server URL
+  const files = fs.readdirSync(extDir);
+  for (const file of files) {
+    const filePath = path.join(extDir, file);
+    if (!fs.statSync(filePath).isFile()) continue;
+
+    if (file === 'background.js') {
+      let content = fs.readFileSync(filePath, 'utf8');
+      content = content.replace(
+        /const DEFAULT_SERVER_URL = '[^']*'/,
+        `const DEFAULT_SERVER_URL = '${serverUrl}'`
+      );
+      archive.append(content, { name: file });
+    } else if (file === 'manifest.json') {
+      let content = fs.readFileSync(filePath, 'utf8');
+      const manifest = JSON.parse(content);
+      const hostPerm = serverUrl.replace(/\/$/, '') + '/*';
+      if (!manifest.host_permissions.includes(hostPerm)) {
+        manifest.host_permissions.push(hostPerm);
+      }
+      archive.append(JSON.stringify(manifest, null, 2), { name: file });
+    } else {
+      archive.file(filePath, { name: file });
+    }
+  }
+
+  archive.finalize();
 });
 
 function generateMonitorScript(baseUrl, secret) {
