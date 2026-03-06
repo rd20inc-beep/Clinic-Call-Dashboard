@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; }
+    .header { background: #1a1a2e; color: white; padding: 16px; text-align: center; }
+    .header h1 { font-size: 15px; font-weight: 600; }
+    .header p { font-size: 11px; opacity: 0.7; margin-top: 4px; }
+    .content { padding: 16px; }
+    .status { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; padding: 12px; background: white; border-radius: 8px; border: 1px solid #e0e0e0; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.on { background: #27ae60; }
+    .dot.off { background: #e74c3c; }
+    .status-text { font-size: 13px; font-weight: 500; }
+    .toggle-btn { width: 100%; padding: 10px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 12px; }
+    .toggle-btn.enable { background: #27ae60; color: white; }
+    .toggle-btn.disable { background: #e74c3c; color: white; }
+    label { font-size: 12px; font-weight: 600; color: #555; display: block; margin-bottom: 4px; }
+    input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+    .save-btn { width: 100%; padding: 8px; background: #1a1a2e; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
+    .save-btn:hover { background: #2d2d5e; }
+    .stats { font-size: 11px; color: #888; margin-top: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Clinicea WhatsApp Bot</h1>
+    <p>Dr. Nakhoda's Skin Institute</p>
+  </div>
+  <div class="content">
+    <div class="status">
+      <div class="dot" id="statusDot"></div>
+      <span class="status-text" id="statusText">Checking...</span>
+    </div>
+    <button class="toggle-btn" id="toggleBtn" onclick="toggleBot()">Loading...</button>
+
+    <label>Server URL</label>
+    <input type="text" id="serverUrl" placeholder="http://localhost:3000">
+    <button class="save-btn" onclick="saveUrl()">Save Server URL</button>
+
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <script>
+    let currentEnabled = true;
+
+    function updateUI(enabled, processedCount) {
+      currentEnabled = enabled;
+      document.getElementById('statusDot').className = 'dot ' + (enabled ? 'on' : 'off');
+      document.getElementById('statusText').textContent = enabled ? 'Bot Active' : 'Bot Paused';
+      const btn = document.getElementById('toggleBtn');
+      btn.textContent = enabled ? 'Pause Bot' : 'Enable Bot';
+      btn.className = 'toggle-btn ' + (enabled ? 'disable' : 'enable');
+      if (processedCount !== undefined) {
+        document.getElementById('stats').textContent = 'Messages processed: ' + processedCount;
+      }
+    }
+
+    function toggleBot() {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0] && tabs[0].url.includes('web.whatsapp.com')) {
+          chrome.tabs.sendMessage(tabs[0].id, { type: 'SET_ENABLED', enabled: !currentEnabled }, (resp) => {
+            if (resp) updateUI(!currentEnabled);
+          });
+        }
+      });
+    }
+
+    function saveUrl() {
+      const url = document.getElementById('serverUrl').value.trim();
+      if (url) {
+        chrome.runtime.sendMessage({ type: 'SET_SERVER_URL', url: url });
+        alert('Server URL saved!');
+      }
+    }
+
+    // Load saved URL
+    chrome.storage.local.get(['serverUrl'], (result) => {
+      document.getElementById('serverUrl').value = result.serverUrl || 'http://localhost:3000';
+    });
+
+    // Get status from content script
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].url && tabs[0].url.includes('web.whatsapp.com')) {
+        chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_STATUS' }, (resp) => {
+          if (resp) {
+            updateUI(resp.enabled, resp.processedCount);
+          } else {
+            updateUI(false, 0);
+            document.getElementById('statusText').textContent = 'Open WhatsApp Web first';
+          }
+        });
+      } else {
+        updateUI(false, 0);
+        document.getElementById('statusText').textContent = 'Open WhatsApp Web first';
+      }
+    });
+  </script>
+</body>
+</html>

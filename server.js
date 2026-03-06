@@ -5,6 +5,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const Database = require('better-sqlite3');
 const path = require('path');
+const OpenAI = require('openai');
 
 const app = express();
 const server = http.createServer(app);
@@ -16,10 +17,15 @@ const CLINICEA_BASE_URL = process.env.CLINICEA_BASE_URL || 'https://app.clinicea
 const SESSION_SECRET = process.env.SESSION_SECRET;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
 if (!SESSION_SECRET) {
   console.error('ERROR: SESSION_SECRET is not set in .env');
   process.exit(1);
 }
+
+// --- OpenAI Setup ---
+const openai = OPENAI_API_KEY ? new OpenAI({ apiKey: OPENAI_API_KEY }) : null;
 
 // Trust Nginx proxy (needed for secure cookies behind reverse proxy)
 app.set('trust proxy', 1);
@@ -95,6 +101,17 @@ function logEvent(type, message, details) {
 }
 
 // --- Middleware ---
+// CORS for Chrome extension
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && (origin.includes('web.whatsapp.com') || origin.includes('chrome-extension'))) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
 app.use(express.urlencoded({ extended: false })); // Twilio sends form-encoded
 app.use(express.json());
 app.use(session({
@@ -876,6 +893,360 @@ app.get('/api/logs', requireAuth, (req, res) => {
   res.json({ logs: eventLog });
 });
 
+// =========================================================
+// --- WhatsApp Bot + GPT + Appointment Reminders ---
+// =========================================================
+
+// --- WhatsApp DB Tables ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS wa_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone TEXT NOT NULL,
+    chat_name TEXT,
+    direction TEXT NOT NULL, -- 'in' or 'out'
+    message TEXT NOT NULL,
+    message_type TEXT DEFAULT 'chat', -- 'chat', 'confirmation', 'reminder'
+    status TEXT DEFAULT 'sent', -- 'sent', 'pending', 'failed'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS wa_appointment_tracking (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    appointment_id TEXT UNIQUE NOT NULL,
+    patient_id TEXT,
+    patient_name TEXT,
+    patient_phone TEXT,
+    appointment_date TEXT,
+    doctor_name TEXT,
+    service TEXT,
+    confirmation_sent INTEGER DEFAULT 0,
+    reminder_sent INTEGER DEFAULT 0,
+    confirmation_sent_at DATETIME,
+    reminder_sent_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+const insertWaMessage = db.prepare(
+  'INSERT INTO wa_messages (phone, chat_name, direction, message, message_type, status) VALUES (?, ?, ?, ?, ?, ?)'
+);
+const getPendingOutgoing = db.prepare(
+  "SELECT * FROM wa_messages WHERE direction = 'out' AND status = 'pending' ORDER BY created_at ASC LIMIT 5"
+);
+const markMessageSent = db.prepare(
+  "UPDATE wa_messages SET status = 'sent' WHERE id = ?"
+);
+const markMessageFailed = db.prepare(
+  "UPDATE wa_messages SET status = 'failed' WHERE id = ?"
+);
+const getConversationHistory = db.prepare(
+  "SELECT direction, message, created_at FROM wa_messages WHERE phone = ? ORDER BY created_at DESC LIMIT 20"
+);
+const upsertAppointmentTracking = db.prepare(`
+  INSERT INTO wa_appointment_tracking (appointment_id, patient_id, patient_name, patient_phone, appointment_date, doctor_name, service)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(appointment_id) DO UPDATE SET
+    patient_name = excluded.patient_name,
+    patient_phone = excluded.patient_phone,
+    appointment_date = excluded.appointment_date,
+    doctor_name = excluded.doctor_name,
+    service = excluded.service
+`);
+const getUnsentConfirmations = db.prepare(
+  "SELECT * FROM wa_appointment_tracking WHERE confirmation_sent = 0 AND patient_phone IS NOT NULL AND patient_phone != ''"
+);
+const getUnsentReminders = db.prepare(
+  "SELECT * FROM wa_appointment_tracking WHERE reminder_sent = 0 AND confirmation_sent = 1 AND patient_phone IS NOT NULL AND patient_phone != ''"
+);
+const markConfirmationSent = db.prepare(
+  "UPDATE wa_appointment_tracking SET confirmation_sent = 1, confirmation_sent_at = datetime('now') WHERE id = ?"
+);
+const markReminderSent = db.prepare(
+  "UPDATE wa_appointment_tracking SET reminder_sent = 1, reminder_sent_at = datetime('now') WHERE id = ?"
+);
+
+// --- GPT System Prompt ---
+const CLINIC_SYSTEM_PROMPT = `You are the WhatsApp assistant for Dr. Nakhoda's Skin Institute, a premier dermatology and aesthetic clinic in Karachi, Pakistan.
+
+CLINIC INFO:
+- Name: Dr. Nakhoda's Skin Institute
+- Lead Doctor: Dr. Tasneem Nakhoda - Board Certified Dermatologist, 20+ years experience, trained in Pakistan & USA
+- Location: GPC 11, Rojhan Street, Block 5, Clifton, Karachi
+- Phone: +92-300-2105374, +92-321-3822113
+- Hours: 9 AM to 11 PM (call to book)
+
+SERVICES:
+- Skin Rejuvenation: PicoWay, Ultherapy, ThermiSmooth, RevLite, Fractional CO2, Botox, Fillers, Chemical Peels, Dermapen 4, HydraFacial, Thread Lift, PRP
+- Laser Hair Removal: Permanent facial & full-body (Soprano Ice)
+- Weight Loss & Body Contouring: CoolSculpting, Kybella, Emsculpt Neo
+- Dermatology: Acne, Vitiligo, Psoriasis, Fungal infections, all skin diseases
+- Hair Restoration: RegeneraActiva, PRP, Mesotherapy, Hair Fillers
+- Other: Tattoo removal, Birthmark removal, Mole removal, Lip augmentation, Vaginal rejuvenation (THERMIva)
+- Technology: PicoWay, Ultherapy, Soprano Ice, Thermage, Sofwave, Emface, CoolSculpting, Emsculpt Neo
+- Onsite pharmacy with skincare products
+
+RULES:
+- Reply in short, friendly sentences (2-3 lines max)
+- Use the same language the patient writes in (Urdu/Roman Urdu or English)
+- If asked about pricing, say "Prices vary by treatment. Would you like me to schedule a consultation so the doctor can assess and give you exact pricing?"
+- Always try to guide toward booking an appointment
+- Be warm, professional, and helpful
+- If you don't know something specific, say you'll check with the doctor and get back
+- For emergencies, tell them to call the clinic directly
+- Never make up medical advice or diagnoses
+- If someone confirms an appointment reminder, say "Great! We look forward to seeing you. If you need to reschedule, just let us know."
+- Sign off messages naturally, no need for formal signatures`;
+
+// --- GPT Chat Function ---
+async function getGPTReply(phone, incomingText, chatName) {
+  if (!openai) {
+    return "Thank you for your message. Our team will get back to you shortly. For immediate assistance, call us at +92-300-2105374.";
+  }
+
+  // Get conversation history for context
+  const history = getConversationHistory.all(phone).reverse();
+  const messages = [{ role: 'system', content: CLINIC_SYSTEM_PROMPT }];
+
+  // Add patient context if available
+  if (chatName) {
+    messages.push({ role: 'system', content: `Current patient's WhatsApp name: ${chatName}` });
+  }
+
+  // Add conversation history
+  for (const msg of history) {
+    messages.push({
+      role: msg.direction === 'in' ? 'user' : 'assistant',
+      content: msg.message
+    });
+  }
+
+  // Add the new message
+  messages.push({ role: 'user', content: incomingText });
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: messages,
+      max_tokens: 200,
+      temperature: 0.7
+    });
+    return completion.choices[0].message.content.trim();
+  } catch (err) {
+    logEvent('error', 'GPT API error', err.message);
+    return "Thank you for reaching out! Our team will respond shortly. For urgent matters, please call +92-300-2105374.";
+  }
+}
+
+// --- WhatsApp API Routes (used by Chrome Extension) ---
+
+// Incoming message from WhatsApp (via extension)
+app.post('/api/whatsapp/incoming', async (req, res) => {
+  const { messageId, text, phone, chatName, timestamp } = req.body;
+
+  if (!text || (!phone && !chatName)) {
+    return res.json({ reply: null });
+  }
+
+  const contactId = phone || chatName || 'unknown';
+  logEvent('info', `WA message from ${chatName || phone}: ${text.substring(0, 50)}`);
+
+  // Store incoming message
+  insertWaMessage.run(contactId, chatName || null, 'in', text, 'chat', 'sent');
+
+  // Get GPT reply
+  const reply = await getGPTReply(contactId, text, chatName);
+
+  // Store outgoing reply
+  insertWaMessage.run(contactId, chatName || null, 'out', reply, 'chat', 'sent');
+
+  logEvent('info', `WA reply to ${chatName || phone}: ${reply.substring(0, 50)}`);
+  io.emit('wa_message', { phone: contactId, chatName, direction: 'in', text, reply, timestamp: new Date().toISOString() });
+
+  return res.json({ reply });
+});
+
+// Poll for pending outgoing messages (confirmations, reminders)
+app.get('/api/whatsapp/outgoing', (req, res) => {
+  const pending = getPendingOutgoing.all();
+  const messages = pending.map(m => ({
+    id: m.id,
+    phone: m.phone,
+    text: m.message,
+    type: m.message_type
+  }));
+  return res.json({ messages });
+});
+
+// Confirm a message was sent by the extension
+app.post('/api/whatsapp/sent', (req, res) => {
+  const { id, phone, success } = req.body;
+  if (id) {
+    if (success) {
+      markMessageSent.run(id);
+      logEvent('info', `WA scheduled message delivered to ${phone}`);
+    } else {
+      markMessageFailed.run(id);
+      logEvent('warn', `WA scheduled message failed for ${phone}`);
+    }
+  }
+  return res.json({ ok: true });
+});
+
+// Queue a manual message from the dashboard
+app.post('/api/whatsapp/send', requireAuth, (req, res) => {
+  const { phone, message } = req.body;
+  if (!phone || !message) return res.json({ error: 'phone and message required' });
+
+  insertWaMessage.run(phone, null, 'out', message, 'chat', 'pending');
+  logEvent('info', `WA manual message queued for ${phone}`);
+  return res.json({ ok: true });
+});
+
+// Get conversation history for a phone
+app.get('/api/whatsapp/history/:phone', requireAuth, (req, res) => {
+  const phone = decodeURIComponent(req.params.phone);
+  const messages = db.prepare(
+    "SELECT * FROM wa_messages WHERE phone = ? ORDER BY created_at DESC LIMIT 50"
+  ).all(phone);
+  return res.json({ messages: messages.reverse() });
+});
+
+// Get all recent WA conversations (grouped by phone)
+app.get('/api/whatsapp/conversations', requireAuth, (req, res) => {
+  const conversations = db.prepare(`
+    SELECT phone, chat_name,
+           MAX(created_at) as last_message_at,
+           COUNT(*) as message_count,
+           (SELECT message FROM wa_messages w2 WHERE w2.phone = w1.phone ORDER BY created_at DESC LIMIT 1) as last_message
+    FROM wa_messages w1
+    GROUP BY phone
+    ORDER BY last_message_at DESC
+    LIMIT 50
+  `).all();
+  return res.json({ conversations });
+});
+
+// Get WA bot stats
+app.get('/api/whatsapp/stats', requireAuth, (req, res) => {
+  const totalMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages").get().count;
+  const todayMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE date(created_at) = date('now')").get().count;
+  const pendingMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE status = 'pending'").get().count;
+  const totalConfirmations = db.prepare("SELECT COUNT(*) as count FROM wa_appointment_tracking WHERE confirmation_sent = 1").get().count;
+  const totalReminders = db.prepare("SELECT COUNT(*) as count FROM wa_appointment_tracking WHERE reminder_sent = 1").get().count;
+  const pendingConfirmations = db.prepare("SELECT COUNT(*) as count FROM wa_appointment_tracking WHERE confirmation_sent = 0 AND patient_phone IS NOT NULL AND patient_phone != ''").get().count;
+  return res.json({ totalMessages, todayMessages, pendingMessages, totalConfirmations, totalReminders, pendingConfirmations });
+});
+
+// --- Appointment Scheduler ---
+// Syncs appointments from Clinicea and queues confirmation + reminder messages
+
+async function syncAppointmentsAndScheduleMessages() {
+  if (!isClinicaConfigured()) return;
+
+  try {
+    // Fetch appointments for the next 7 days
+    const today = new Date();
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
+      dates.push(d.toISOString().split('T')[0]);
+    }
+
+    for (const date of dates) {
+      const data = await cliniceaFetch(`/api/v3/appointments/getAppointmentsByDate?appointmentDate=${date}&pageNo=1&pageSize=100`);
+      const appointments = Array.isArray(data) ? data : [];
+
+      for (const apt of appointments) {
+        const appointmentId = String(apt.AppointmentID || apt.ID || apt.Id || '');
+        if (!appointmentId) continue;
+
+        const status = apt.AppointmentStatus || apt.Status || '';
+        if (status === 'Cancelled') continue;
+
+        const patientName = apt.AppointmentWithName || apt.PatientName ||
+          [apt.PatientFirstName || apt.FirstName, apt.PatientLastName || apt.LastName].filter(Boolean).join(' ') || 'Patient';
+        const patientPhone = apt.AppointmentWithPhone || apt.PatientMobile || apt.Mobile || '';
+        const patientId = String(apt.PatientID || apt.patientID || '');
+        const doctorName = apt.DoctorName || apt.Doctor || 'Dr. Nakhoda';
+        const service = apt.ServiceName || apt.Service || '';
+        const aptDate = apt.StartDateTime || apt.AppointmentDateTime || date;
+
+        // Normalize phone
+        let phone = patientPhone.replace(/[\s\-\(\)]/g, '');
+        if (!phone) continue;
+        if (phone.startsWith('03') && phone.length === 11) phone = '+92' + phone.substring(1);
+        else if (phone.startsWith('92') && !phone.startsWith('+')) phone = '+' + phone;
+        else if (!phone.startsWith('+')) phone = '+' + phone;
+
+        // Upsert tracking record
+        upsertAppointmentTracking.run(appointmentId, patientId, patientName, phone, aptDate, doctorName, service);
+      }
+    }
+
+    // --- Send Confirmation Messages ---
+    const unsent = getUnsentConfirmations.all();
+    for (const apt of unsent) {
+      const aptDate = new Date(apt.appointment_date);
+      const dateStr = aptDate.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      const timeStr = aptDate.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+      let msg = `Assalam o Alaikum ${apt.patient_name}! Your appointment at Dr. Nakhoda's Skin Institute has been scheduled.\n\n`;
+      msg += `Date: ${dateStr}\n`;
+      msg += `Time: ${timeStr}\n`;
+      if (apt.service) msg += `Treatment: ${apt.service}\n`;
+      if (apt.doctor_name) msg += `Doctor: ${apt.doctor_name}\n`;
+      msg += `\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\n`;
+      msg += `\nPlease reply "CONFIRM" to confirm or call +92-300-2105374 to reschedule. We look forward to seeing you!`;
+
+      // Queue the message
+      insertWaMessage.run(apt.patient_phone, null, 'out', msg, 'confirmation', 'pending');
+      markConfirmationSent.run(apt.id);
+      logEvent('info', `WA confirmation queued for ${apt.patient_name} (${apt.patient_phone})`);
+    }
+
+    // --- Send Reminder Messages (2 days before) ---
+    const reminderCandidates = getUnsentReminders.all();
+    const twoDaysFromNow = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000);
+    const twoDaysDate = twoDaysFromNow.toISOString().split('T')[0];
+
+    for (const apt of reminderCandidates) {
+      const aptDateStr = apt.appointment_date.split('T')[0];
+
+      // Only send reminder if appointment is exactly 2 days away (or tomorrow/today if we missed it)
+      const aptDate = new Date(aptDateStr);
+      const daysUntil = Math.ceil((aptDate - today) / (24 * 60 * 60 * 1000));
+
+      if (daysUntil <= 2 && daysUntil >= 0) {
+        const dateDisplay = aptDate.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long' });
+        const timeStr = new Date(apt.appointment_date).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+        let dayWord = 'soon';
+        if (daysUntil === 0) dayWord = 'today';
+        else if (daysUntil === 1) dayWord = 'tomorrow';
+        else if (daysUntil === 2) dayWord = 'in 2 days';
+
+        let msg = `Reminder: Assalam o Alaikum ${apt.patient_name}! This is a friendly reminder that your appointment at Dr. Nakhoda's Skin Institute is ${dayWord}.\n\n`;
+        msg += `Date: ${dateDisplay}\nTime: ${timeStr}\n`;
+        if (apt.service) msg += `Treatment: ${apt.service}\n`;
+        msg += `\nPlease arrive 10 minutes early. If you need to reschedule, call +92-300-2105374. See you soon!`;
+
+        insertWaMessage.run(apt.patient_phone, null, 'out', msg, 'reminder', 'pending');
+        markReminderSent.run(apt.id);
+        logEvent('info', `WA reminder queued for ${apt.patient_name} (${apt.patient_phone}) - appointment ${dayWord}`);
+      }
+    }
+
+    logEvent('info', 'Appointment sync complete');
+  } catch (err) {
+    logEvent('error', 'Appointment sync failed', err.message);
+  }
+}
+
+// Run appointment sync every 30 minutes
+setInterval(syncAppointmentsAndScheduleMessages, 30 * 60 * 1000);
+
 // --- Socket.IO ---
 io.on('connection', (socket) => {
   logEvent('info', 'Dashboard client connected');
@@ -903,5 +1274,8 @@ server.listen(PORT, () => {
 
     // Preload patient list
     loadAllPatients().catch(() => {});
+
+    // Initial WhatsApp appointment sync (after 10s to let caches warm up)
+    setTimeout(() => syncAppointmentsAndScheduleMessages(), 10000);
   }
 });
