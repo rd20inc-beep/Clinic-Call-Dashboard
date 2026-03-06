@@ -1,10 +1,11 @@
 // Background service worker - relays messages between content script and server
-let serverUrl = '';
+const DEFAULT_SERVER_URL = 'https://clinicea.scalamatic.com';
+let serverUrl = DEFAULT_SERVER_URL;
 
-// Load saved URL on startup
+// Load saved URL on startup (falls back to hardcoded default)
 chrome.storage.local.get(['serverUrl'], (result) => {
-  if (result.serverUrl) serverUrl = result.serverUrl;
-  console.log('[WA Bot BG] Server URL:', serverUrl || '(not set)');
+  serverUrl = result.serverUrl || DEFAULT_SERVER_URL;
+  console.log('[WA Bot BG] Server URL:', serverUrl);
 });
 
 // Also listen for storage changes

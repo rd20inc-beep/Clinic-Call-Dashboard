@@ -118,71 +118,131 @@
     return unread;
   }
 
+  // Helper: clear the search box completely
+  async function clearSearch() {
+    // Try clicking the X/back button to exit search
+    const clearBtn = document.querySelector('[data-testid="x-alt"]') ||
+                     document.querySelector('[data-testid="back-btn"]') ||
+                     document.querySelector('#side [data-testid="search-clear-btn"]') ||
+                     document.querySelector('#side [data-icon="x-alt"]')?.closest('button') ||
+                     document.querySelector('#side [data-icon="back"]')?.closest('button') ||
+                     document.querySelector('#side span[data-icon="x-alt"]')?.parentElement ||
+                     document.querySelector('#side span[data-icon="back"]')?.parentElement;
+    if (clearBtn) {
+      clearBtn.click();
+      await sleep(500);
+    }
+    // Also press Escape as backup
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+    await sleep(300);
+    // Clear the search input text directly
+    const searchInputs = document.querySelectorAll('#side div[contenteditable="true"], #side [data-tab="3"]');
+    searchInputs.forEach(el => {
+      el.textContent = '';
+      el.innerHTML = '';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await sleep(300);
+  }
+
   // Click on a chat in the sidebar to open it
   async function openChatByElement(element, chatName) {
-    // Method 1: Try clicking the name span directly (most reliable)
+    // Remember current header to detect change
+    const prevHeader = document.querySelector('#main header span[title]');
+    const prevName = prevHeader ? prevHeader.getAttribute('title') : null;
+
+    // Method 1: Try clicking the name span directly
     const nameSpan = element.querySelector('span[title="' + CSS.escape(chatName) + '"]') ||
                      element.querySelector('span[title]');
     if (nameSpan) {
       nameSpan.click();
       await sleep(2000);
-      const header = document.querySelector('#main header');
-      if (header) return true;
-    }
-
-    // Method 2: Try clicking various child elements
-    const targets = [
-      element.querySelector('[data-testid="cell-frame-container"]'),
-      element.querySelector('div[role="row"]'),
-      element.querySelector('div[tabindex]'),
-      element.querySelector('img')?.parentElement, // avatar area
-      element
-    ].filter(Boolean);
-
-    for (const target of targets) {
-      target.click();
-      await sleep(1500);
-      const header = document.querySelector('#main header');
-      if (header) {
-        // Verify correct chat opened
-        const headerName = header.querySelector('span[title]');
-        if (headerName) return true;
+      const header = document.querySelector('#main header span[title]');
+      const newName = header ? header.getAttribute('title') : null;
+      if (header && newName !== prevName) {
+        console.log('[WA Bot] Opened via name click:', newName);
+        return true;
       }
     }
 
-    // Method 3: Use search to open the chat instead
-    console.log('[WA Bot] Click failed, trying search for:', chatName);
-    const searchBox = document.querySelector('#side [data-testid="chat-list-search"]') ||
-                      document.querySelector('#side div[contenteditable="true"]') ||
-                      document.querySelector('[data-tab="3"]');
-    if (searchBox) {
-      searchBox.focus();
-      searchBox.click();
-      await sleep(300);
-      searchBox.textContent = '';
-      document.execCommand('insertText', false, chatName);
-      searchBox.dispatchEvent(new Event('input', { bubbles: true }));
-      await sleep(2000);
+    // Method 2: Use search bar (most reliable)
+    console.log('[WA Bot] Trying search for:', chatName);
+    await clearSearch();
+    await sleep(500);
 
-      // Click first search result
-      const results = document.querySelectorAll('#pane-side [role="listitem"] span[title]');
-      for (const r of results) {
-        if (r.getAttribute('title') === chatName || r.textContent.trim() === chatName) {
-          r.click();
-          await sleep(1500);
-          // Clear search
-          const esc = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true });
-          document.dispatchEvent(esc);
-          await sleep(500);
-          return !!document.querySelector('#main header');
-        }
-      }
-      // Clear search if no match
-      const esc = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true });
-      document.dispatchEvent(esc);
+    // Find and focus search box
+    const searchBox = document.querySelector('#side [data-tab="3"]') ||
+                      document.querySelector('#side div[contenteditable="true"][role="textbox"]') ||
+                      document.querySelector('#side [data-testid="chat-list-search"]');
+
+    if (!searchBox) {
+      // Click the search icon/area to activate search
+      const searchArea = document.querySelector('#side header [data-testid="chat-list-search"]') ||
+                         document.querySelector('#side [data-tab="3"]');
+      if (searchArea) searchArea.click();
       await sleep(500);
     }
 
+    const activeSearch = document.querySelector('#side [data-tab="3"]') ||
+                         document.querySelector('#side div[contenteditable="true"][role="textbox"]') ||
+                         document.querySelector('#side div[contenteditable="true"]');
+
+    if (!activeSearch) {
+      console.log('[WA Bot] Cannot find search box');
+      return false;
+    }
+
+    // Clear and type
+    activeSearch.focus();
+    await sleep(200);
+    // Select all and delete to clear
+    activeSearch.textContent = '';
+    activeSearch.innerHTML = '';
+    activeSearch.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(300);
+
+    // Type the search term
+    document.execCommand('insertText', false, chatName);
+    activeSearch.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(2500); // wait for search results
+
+    // Find matching result and click it
+    const resultNames = document.querySelectorAll('#pane-side span[title]');
+    let clicked = false;
+    for (const r of resultNames) {
+      const title = r.getAttribute('title') || r.textContent.trim();
+      if (title === chatName) {
+        // Click the parent row, not just the span
+        const row = r.closest('[role="listitem"]') || r.closest('[data-testid="cell-frame-container"]')?.parentElement || r.parentElement?.parentElement?.parentElement;
+        if (row) row.click();
+        else r.click();
+        clicked = true;
+        break;
+      }
+    }
+
+    if (!clicked && resultNames.length > 0) {
+      // Just click the first result as fallback
+      const firstRow = resultNames[0].closest('[role="listitem"]') || resultNames[0].parentElement?.parentElement?.parentElement;
+      if (firstRow) firstRow.click();
+      else resultNames[0].click();
+      clicked = true;
+    }
+
+    await sleep(2000);
+
+    // Always clear search after attempting
+    await clearSearch();
+
+    if (clicked) {
+      const header = document.querySelector('#main header span[title]');
+      if (header) {
+        console.log('[WA Bot] Opened via search:', header.getAttribute('title'));
+        return true;
+      }
+    }
+
+    console.log('[WA Bot] All methods failed for:', chatName);
     return false;
   }
 

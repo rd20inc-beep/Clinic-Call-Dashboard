@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load saved URL
   chrome.storage.local.get(['serverUrl'], (result) => {
-    document.getElementById('serverUrl').value = result.serverUrl || '';
+    document.getElementById('serverUrl').value = result.serverUrl || 'https://clinicea.scalamatic.com';
   });
 
   // Find WhatsApp tab and get status
