@@ -52,6 +52,19 @@ db.exec(`
 try { db.exec('ALTER TABLE calls ADD COLUMN patient_name TEXT'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN patient_id TEXT'); } catch (e) { /* already exists */ }
 
+// One-time migration: normalize all existing 03XXX numbers to +92XXX
+const oldNumbers = db.prepare("SELECT id, caller_number FROM calls WHERE caller_number LIKE '03%' AND length(caller_number) = 11").all();
+if (oldNumbers.length > 0) {
+  const updateNum = db.prepare('UPDATE calls SET caller_number = ? WHERE id = ?');
+  const migrate = db.transaction(() => {
+    for (const row of oldNumbers) {
+      updateNum.run('+92' + row.caller_number.substring(1), row.id);
+    }
+  });
+  migrate();
+  console.log(`[MIGRATION] Normalized ${oldNumbers.length} phone numbers from 03XXX to +92XXX`);
+}
+
 const insertCall = db.prepare(
   'INSERT INTO calls (caller_number, call_sid, clinicea_url) VALUES (?, ?, ?)'
 );
