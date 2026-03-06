@@ -13,15 +13,21 @@
     .dot { width: 10px; height: 10px; border-radius: 50%; }
     .dot.on { background: #27ae60; }
     .dot.off { background: #e74c3c; }
+    .dot.waiting { background: #f39c12; }
     .status-text { font-size: 13px; font-weight: 500; }
     .toggle-btn { width: 100%; padding: 10px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; margin-bottom: 12px; }
     .toggle-btn.enable { background: #27ae60; color: white; }
     .toggle-btn.disable { background: #e74c3c; color: white; }
+    .toggle-btn.waiting { background: #f39c12; color: white; }
     label { font-size: 12px; font-weight: 600; color: #555; display: block; margin-bottom: 4px; }
-    input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+    input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
+    input:focus { outline: none; border-color: #25d366; }
     .save-btn { width: 100%; padding: 8px; background: #1a1a2e; color: white; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; }
     .save-btn:hover { background: #2d2d5e; }
+    .save-msg { font-size: 11px; color: #27ae60; margin-top: 6px; display: none; text-align: center; }
     .stats { font-size: 11px; color: #888; margin-top: 12px; text-align: center; }
+    .help { font-size: 11px; color: #999; margin-top: 12px; line-height: 1.5; }
+    .help b { color: #555; }
   </style>
 </head>
 <body>
@@ -31,20 +37,24 @@
   </div>
   <div class="content">
     <div class="status">
-      <div class="dot" id="statusDot"></div>
+      <div class="dot waiting" id="statusDot"></div>
       <span class="status-text" id="statusText">Checking...</span>
     </div>
-    <button class="toggle-btn" id="toggleBtn" onclick="toggleBot()">Loading...</button>
+    <button class="toggle-btn waiting" id="toggleBtn" onclick="toggleBot()">Checking...</button>
 
     <label>Server URL</label>
-    <input type="text" id="serverUrl" placeholder="http://localhost:3000">
+    <input type="text" id="serverUrl" placeholder="https://clinicea.scalamatic.com">
     <button class="save-btn" onclick="saveUrl()">Save Server URL</button>
+    <div class="save-msg" id="saveMsg">Saved successfully!</div>
 
     <div class="stats" id="stats"></div>
+
+    <div class="help" id="helpText"></div>
   </div>
 
   <script>
-    let currentEnabled = true;
+    let currentEnabled = false;
+    let waTabFound = false;
 
     function updateUI(enabled, processedCount) {
       currentEnabled = enabled;
@@ -54,14 +64,42 @@
       btn.textContent = enabled ? 'Pause Bot' : 'Enable Bot';
       btn.className = 'toggle-btn ' + (enabled ? 'disable' : 'enable');
       if (processedCount !== undefined) {
-        document.getElementById('stats').textContent = 'Messages processed: ' + processedCount;
+        document.getElementById('stats').textContent = 'Messages seen: ' + processedCount;
       }
     }
 
+    function showWaiting(msg) {
+      document.getElementById('statusDot').className = 'dot waiting';
+      document.getElementById('statusText').textContent = msg;
+      document.getElementById('toggleBtn').textContent = msg;
+      document.getElementById('toggleBtn').className = 'toggle-btn waiting';
+    }
+
     function toggleBot() {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0] && tabs[0].url.includes('web.whatsapp.com')) {
-          chrome.tabs.sendMessage(tabs[0].id, { type: 'SET_ENABLED', enabled: !currentEnabled }, (resp) => {
+      if (!waTabFound) {
+        // Try to find any WhatsApp tab
+        chrome.tabs.query({}, (tabs) => {
+          const waTab = tabs.find(t => t.url && t.url.includes('web.whatsapp.com'));
+          if (waTab) {
+            chrome.tabs.sendMessage(waTab.id, { type: 'SET_ENABLED', enabled: !currentEnabled }, (resp) => {
+              if (chrome.runtime.lastError) {
+                document.getElementById('helpText').innerHTML = '<b>Tip:</b> Reload the WhatsApp Web tab after installing the extension, then try again.';
+                return;
+              }
+              if (resp) { waTabFound = true; updateUI(!currentEnabled); }
+            });
+          } else {
+            document.getElementById('helpText').innerHTML = '<b>Tip:</b> Open <a href="https://web.whatsapp.com" target="_blank">web.whatsapp.com</a> first, then come back here.';
+          }
+        });
+        return;
+      }
+
+      chrome.tabs.query({}, (tabs) => {
+        const waTab = tabs.find(t => t.url && t.url.includes('web.whatsapp.com'));
+        if (waTab) {
+          chrome.tabs.sendMessage(waTab.id, { type: 'SET_ENABLED', enabled: !currentEnabled }, (resp) => {
+            if (chrome.runtime.lastError) return;
             if (resp) updateUI(!currentEnabled);
           });
         }
@@ -70,31 +108,47 @@
 
     function saveUrl() {
       const url = document.getElementById('serverUrl').value.trim();
-      if (url) {
-        chrome.runtime.sendMessage({ type: 'SET_SERVER_URL', url: url });
-        alert('Server URL saved!');
-      }
+      if (!url) return;
+
+      // Save to chrome.storage
+      chrome.storage.local.set({ serverUrl: url }, () => {
+        // Also tell background script
+        chrome.runtime.sendMessage({ type: 'SET_SERVER_URL', url: url }, (resp) => {
+          if (chrome.runtime.lastError) { /* ignore */ }
+        });
+
+        const msg = document.getElementById('saveMsg');
+        msg.style.display = 'block';
+        msg.textContent = 'Saved: ' + url;
+        setTimeout(() => { msg.style.display = 'none'; }, 3000);
+      });
     }
 
     // Load saved URL
     chrome.storage.local.get(['serverUrl'], (result) => {
-      document.getElementById('serverUrl').value = result.serverUrl || 'http://localhost:3000';
+      document.getElementById('serverUrl').value = result.serverUrl || '';
     });
 
-    // Get status from content script
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0] && tabs[0].url && tabs[0].url.includes('web.whatsapp.com')) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_STATUS' }, (resp) => {
+    // Find WhatsApp tab and get status
+    chrome.tabs.query({}, (tabs) => {
+      const waTab = tabs.find(t => t.url && t.url.includes('web.whatsapp.com'));
+      if (waTab) {
+        waTabFound = true;
+        chrome.tabs.sendMessage(waTab.id, { type: 'GET_STATUS' }, (resp) => {
+          if (chrome.runtime.lastError) {
+            showWaiting('Extension not loaded');
+            document.getElementById('helpText').innerHTML = '<b>Tip:</b> Reload the WhatsApp Web tab (Ctrl+R) so the extension can inject into it.';
+            return;
+          }
           if (resp) {
             updateUI(resp.enabled, resp.processedCount);
           } else {
-            updateUI(false, 0);
-            document.getElementById('statusText').textContent = 'Open WhatsApp Web first';
+            showWaiting('Connecting...');
           }
         });
       } else {
-        updateUI(false, 0);
-        document.getElementById('statusText').textContent = 'Open WhatsApp Web first';
+        showWaiting('WhatsApp Web not open');
+        document.getElementById('helpText').innerHTML = '<b>Tip:</b> Open <a href="https://web.whatsapp.com" target="_blank">web.whatsapp.com</a> in a tab, then come back here.';
       }
     });
   </script>

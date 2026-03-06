@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Clinicea WhatsApp Assistant",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Auto-reply WhatsApp messages with AI for Dr. Nakhoda's Skin Institute",
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs", "activeTab"],
   "host_permissions": ["https://web.whatsapp.com/*"],
   "content_scripts": [
     {
