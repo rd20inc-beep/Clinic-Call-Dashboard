@@ -432,11 +432,12 @@
       display: none;
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.55);
       z-index: 1000;
       align-items: center;
       justify-content: center;
       padding: 20px;
+      backdrop-filter: blur(4px);
     }
 
     .modal-overlay.active { display: flex; }
@@ -445,21 +446,21 @@
       background: #f0f2f5;
       border-radius: 16px;
       width: 100%;
-      max-width: 800px;
+      max-width: 900px;
       max-height: 90vh;
       display: flex;
       flex-direction: column;
       box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      animation: modalSlideIn 0.25s ease-out;
+      animation: modalSlideIn 0.3s ease-out;
     }
 
     @keyframes modalSlideIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
+      from { opacity: 0; transform: translateY(20px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
     .modal-header {
-      background: #1a1a2e;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
       color: white;
       padding: 20px 24px;
       border-radius: 16px 16px 0 0;
@@ -477,29 +478,33 @@
       text-decoration: none;
       font-size: 13px;
       transition: color 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 4px;
     }
 
     .modal-header a:hover { color: white; }
 
     .modal-close {
-      background: none;
+      background: rgba(255,255,255,0.1);
       border: none;
       color: white;
-      font-size: 24px;
+      font-size: 20px;
       cursor: pointer;
-      padding: 0 4px;
+      padding: 4px 8px;
       line-height: 1;
-      opacity: 0.7;
-      transition: opacity 0.15s;
+      border-radius: 6px;
+      transition: background 0.15s;
     }
 
-    .modal-close:hover { opacity: 1; }
+    .modal-close:hover { background: rgba(255,255,255,0.2); }
 
     .modal-tabs {
       display: flex;
       background: white;
       border-bottom: 2px solid #e9ecef;
       padding: 0 24px;
+      gap: 4px;
     }
 
     .modal-tab {
@@ -511,14 +516,31 @@
       border-bottom: 2px solid transparent;
       margin-bottom: -2px;
       transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
-    .modal-tab:hover { color: #1a1a2e; }
+    .modal-tab:hover { color: #1a1a2e; background: #f8f9fa; border-radius: 8px 8px 0 0; }
 
     .modal-tab.active {
       color: #1a1a2e;
       border-bottom-color: #1a1a2e;
       font-weight: 600;
+    }
+
+    .modal-tab .tab-count {
+      background: #e9ecef;
+      color: #6c757d;
+      font-size: 11px;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    .modal-tab.active .tab-count {
+      background: #1a1a2e;
+      color: white;
     }
 
     .modal-body {
@@ -556,6 +578,171 @@
     .tab-content { display: none; }
     .tab-content.active { display: block; }
 
+    /* Patient Profile Header */
+    .patient-hero {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+      border-radius: 14px;
+      padding: 28px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .patient-hero::before {
+      content: '';
+      position: absolute;
+      top: -50%; right: -20%;
+      width: 300px; height: 300px;
+      background: radial-gradient(circle, rgba(79,140,255,0.1) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+
+    .patient-avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4f8cff, #6c5ce7);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      font-weight: 700;
+      flex-shrink: 0;
+      box-shadow: 0 4px 15px rgba(79,140,255,0.3);
+      border: 3px solid rgba(255,255,255,0.2);
+    }
+
+    .patient-hero-info { flex: 1; position: relative; z-index: 1; }
+
+    .patient-hero-info h3 {
+      font-size: 22px;
+      font-weight: 700;
+      color: white;
+      margin-bottom: 6px;
+    }
+
+    .patient-hero-info .hero-subtitle {
+      font-size: 14px;
+      color: rgba(255,255,255,0.65);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .hero-subtitle svg { width: 14px; height: 14px; opacity: 0.7; }
+    .hero-divider { opacity: 0.3; }
+
+    .patient-tags { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+    .patient-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      backdrop-filter: blur(4px);
+    }
+
+    .patient-tag.gender { background: rgba(79,140,255,0.2); color: #93bbff; }
+    .patient-tag.file { background: rgba(108,92,231,0.2); color: #b8acff; }
+    .patient-tag.age-tag { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.8); }
+    .patient-tag.due { background: rgba(235,87,87,0.2); color: #ff8a8a; }
+    .patient-tag.paid { background: rgba(46,125,50,0.2); color: #81c784; }
+    .patient-tag.blood { background: rgba(229,57,53,0.15); color: #ef9a9a; }
+    .patient-tag.since { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); font-weight: 400; }
+
+    .patient-hero-stats {
+      display: flex;
+      gap: 16px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-stat {
+      text-align: center;
+      min-width: 70px;
+    }
+
+    .hero-stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: white;
+    }
+
+    .hero-stat-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.5);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+
+    /* Quick Stats Grid */
+    .quick-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .quick-stat-card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    .quick-stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .quick-stat-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .quick-stat-icon svg { width: 20px; height: 20px; }
+
+    .quick-stat-icon.blue { background: #e3f2fd; color: #1565c0; }
+    .quick-stat-icon.green { background: #e8f5e9; color: #2e7d32; }
+    .quick-stat-icon.purple { background: #f3e5f5; color: #7b1fa2; }
+    .quick-stat-icon.orange { background: #fff3e0; color: #e65100; }
+    .quick-stat-icon.red { background: #fce4ec; color: #c62828; }
+    .quick-stat-icon.teal { background: #e0f2f1; color: #00695c; }
+
+    .quick-stat-text { flex: 1; min-width: 0; }
+
+    .quick-stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1a1a2e;
+      line-height: 1.2;
+    }
+
+    .quick-stat-label {
+      font-size: 12px;
+      color: #6c757d;
+      margin-top: 2px;
+    }
+
+    /* Info Grid */
     .info-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -564,95 +751,291 @@
 
     .info-card {
       background: white;
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 20px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      transition: box-shadow 0.15s;
     }
+
+    .info-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,0.08); }
 
     .info-card.full-width { grid-column: 1 / -1; }
 
+    .info-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #f0f2f5;
+    }
+
+    .info-card-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .info-card-icon svg { width: 16px; height: 16px; }
+    .info-card-icon.blue { background: #e3f2fd; color: #1565c0; }
+    .info-card-icon.green { background: #e8f5e9; color: #2e7d32; }
+    .info-card-icon.purple { background: #f3e5f5; color: #7b1fa2; }
+    .info-card-icon.red { background: #fce4ec; color: #c62828; }
+    .info-card-icon.teal { background: #e0f2f1; color: #00695c; }
+
     .info-card h4 {
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
-      color: #6c757d;
+      color: #1a1a2e;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid #f0f0f0;
     }
 
     .info-row {
       display: flex;
       justify-content: space-between;
-      padding: 6px 0;
+      align-items: center;
+      padding: 8px 0;
       font-size: 14px;
     }
 
     .info-row:not(:last-child) { border-bottom: 1px solid #f8f9fa; }
-    .info-label { color: #6c757d; font-weight: 500; }
-    .info-value { color: #1a1a2e; font-weight: 500; text-align: right; max-width: 60%; }
 
-    .patient-avatar {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      background: #1a1a2e;
-      color: white;
+    .info-label {
+      color: #6c757d;
+      font-weight: 500;
       display: flex;
       align-items: center;
+      gap: 6px;
+    }
+
+    .info-value { color: #1a1a2e; font-weight: 500; text-align: right; max-width: 60%; }
+
+    /* Appointment Donut Chart */
+    .chart-section {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .donut-chart-card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      flex: 0 0 200px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       justify-content: center;
-      font-size: 24px;
+    }
+
+    .donut-chart-card h4 {
+      font-size: 12px;
       font-weight: 600;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
+    }
+
+    .donut-svg { width: 130px; height: 130px; }
+
+    .donut-center-text {
+      font-size: 22px;
+      font-weight: 700;
+      fill: #1a1a2e;
+    }
+
+    .donut-center-label {
+      font-size: 10px;
+      fill: #6c757d;
+      text-transform: uppercase;
+    }
+
+    .donut-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      margin-top: 14px;
+      justify-content: center;
+    }
+
+    .donut-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #6c757d;
+    }
+
+    .donut-legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
       flex-shrink: 0;
     }
 
-    .patient-header-card {
-      display: flex;
-      align-items: center;
-      gap: 20px;
+    /* Financial Summary Bar */
+    .finance-overview {
       background: white;
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 16px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      border-radius: 12px;
+      padding: 20px 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      flex: 1;
     }
 
-    .patient-header-info h3 { font-size: 20px; font-weight: 600; color: #1a1a2e; }
-    .patient-header-info p { font-size: 14px; color: #6c757d; margin-top: 4px; }
-
-    .patient-tags { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-
-    .patient-tag {
-      display: inline-block;
-      padding: 3px 10px;
-      border-radius: 20px;
+    .finance-overview h4 {
       font-size: 12px;
-      font-weight: 500;
+      font-weight: 600;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 16px;
     }
 
-    .patient-tag.gender { background: #e8f4fd; color: #1565c0; }
-    .patient-tag.file { background: #f3e5f5; color: #7b1fa2; }
-    .patient-tag.due { background: #fce4ec; color: #c62828; }
-    .patient-tag.paid { background: #e8f5e9; color: #2e7d32; }
+    .finance-stat-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
 
+    .finance-stat {
+      flex: 1;
+      text-align: center;
+      padding: 14px;
+      border-radius: 10px;
+    }
+
+    .finance-stat.billed { background: #e3f2fd; }
+    .finance-stat.paid { background: #e8f5e9; }
+    .finance-stat.due { background: #fce4ec; }
+
+    .finance-stat-value {
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .finance-stat.billed .finance-stat-value { color: #1565c0; }
+    .finance-stat.paid .finance-stat-value { color: #2e7d32; }
+    .finance-stat.due .finance-stat-value { color: #c62828; }
+
+    .finance-stat-label {
+      font-size: 11px;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-top: 4px;
+    }
+
+    .progress-bar-container {
+      background: #e9ecef;
+      border-radius: 8px;
+      height: 10px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 8px;
+      transition: width 0.6s ease;
+      background: linear-gradient(90deg, #2e7d32, #4caf50);
+    }
+
+    .progress-bar-label {
+      font-size: 12px;
+      color: #6c757d;
+      text-align: right;
+    }
+
+    /* Appointment Summary Stats */
+    .apt-summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .apt-summary-card {
+      background: white;
+      border-radius: 12px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      text-align: center;
+      border-left: 3px solid transparent;
+    }
+
+    .apt-summary-card.total { border-left-color: #1a1a2e; }
+    .apt-summary-card.done { border-left-color: #2e7d32; }
+    .apt-summary-card.upcoming-s { border-left-color: #1565c0; }
+    .apt-summary-card.missed { border-left-color: #e65100; }
+
+    .apt-summary-value { font-size: 22px; font-weight: 700; color: #1a1a2e; }
+    .apt-summary-label { font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 2px; }
+
+    /* Appointment List */
     .apt-list { display: flex; flex-direction: column; gap: 10px; }
 
     .apt-item {
       background: white;
-      border-radius: 10px;
+      border-radius: 12px;
       padding: 16px 20px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
       display: flex;
       justify-content: space-between;
       align-items: center;
+      border-left: 3px solid transparent;
+      transition: transform 0.1s, box-shadow 0.15s;
     }
 
-    .apt-item-left h4 { font-size: 14px; color: #1a1a2e; font-weight: 600; margin-bottom: 4px; }
+    .apt-item:hover {
+      transform: translateX(2px);
+      box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+    }
+
+    .apt-item.completed { border-left-color: #2e7d32; }
+    .apt-item.upcoming { border-left-color: #1565c0; }
+    .apt-item.cancelled { border-left-color: #bdbdbd; }
+    .apt-item.noshow { border-left-color: #e65100; }
+
+    .apt-item-left { flex: 1; min-width: 0; }
+
+    .apt-item-left h4 {
+      font-size: 14px;
+      color: #1a1a2e;
+      font-weight: 600;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
     .apt-item-left p { font-size: 13px; color: #6c757d; }
 
+    .apt-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: #999;
+      margin-top: 4px;
+    }
+
+    .apt-meta span {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .apt-meta svg { width: 12px; height: 12px; }
+
     .apt-status {
-      padding: 4px 12px;
+      padding: 5px 14px;
       border-radius: 20px;
       font-size: 12px;
       font-weight: 600;
@@ -666,14 +1049,86 @@
     .apt-status.cancelled { background: #f5f5f5; color: #999; }
     .apt-status.noshow { background: #fff3e0; color: #e65100; }
 
-    .bill-amount { font-size: 16px; font-weight: 700; color: #1a1a2e; }
-    .bill-due { color: #c62828; }
+    /* Bill Cards */
+    .bill-card {
+      background: white;
+      border-radius: 12px;
+      padding: 18px 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: transform 0.1s;
+    }
+
+    .bill-card:hover { transform: translateX(2px); }
+
+    .bill-left { flex: 1; min-width: 0; }
+    .bill-left h4 { font-size: 14px; color: #1a1a2e; font-weight: 600; margin-bottom: 4px; }
+    .bill-left p { font-size: 13px; color: #6c757d; }
+
+    .bill-right { text-align: right; flex-shrink: 0; }
+
+    .bill-amount { font-size: 17px; font-weight: 700; color: #1a1a2e; }
+
+    .bill-due-badge {
+      display: inline-block;
+      background: #fce4ec;
+      color: #c62828;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-top: 4px;
+    }
+
+    .bill-paid-badge {
+      display: inline-block;
+      background: #e8f5e9;
+      color: #2e7d32;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      margin-top: 4px;
+    }
+
+    .bill-progress {
+      width: 80px;
+      height: 6px;
+      background: #fce4ec;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 6px;
+      margin-left: auto;
+    }
+
+    .bill-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #2e7d32, #4caf50);
+      border-radius: 4px;
+    }
 
     .empty-tab {
       text-align: center;
-      padding: 40px 20px;
+      padding: 60px 20px;
       color: #999;
       font-size: 14px;
+    }
+
+    .empty-tab svg { width: 48px; height: 48px; color: #ddd; margin-bottom: 12px; }
+
+    /* Responsive for modal */
+    @media (max-width: 700px) {
+      .quick-stats { grid-template-columns: repeat(2, 1fr); }
+      .apt-summary { grid-template-columns: repeat(2, 1fr); }
+      .info-grid { grid-template-columns: 1fr; }
+      .chart-section { flex-direction: column; }
+      .donut-chart-card { flex: auto; }
+      .patient-hero { flex-direction: column; text-align: center; }
+      .patient-hero-stats { justify-content: center; }
+      .patient-tags { justify-content: center; }
+      .finance-stat-row { flex-direction: column; gap: 10px; }
     }
 
     /* ===== CALENDAR PAGE ===== */
@@ -926,7 +1381,12 @@
       .info-grid { grid-template-columns: 1fr; }
       .modal { max-height: 95vh; }
       .modal-body { padding: 16px; }
-      .patient-header-card { flex-direction: column; text-align: center; }
+      .patient-hero { flex-direction: column; text-align: center; }
+      .patient-hero-stats { justify-content: center; }
+      .quick-stats { grid-template-columns: repeat(2, 1fr); }
+      .apt-summary { grid-template-columns: repeat(2, 1fr); }
+      .chart-section { flex-direction: column; }
+      .finance-stat-row { flex-direction: column; gap: 10px; }
       .patients-grid { grid-template-columns: 1fr; }
     }
 
@@ -1348,14 +1808,26 @@
       <div class="modal-header">
         <h2 id="modalTitle">Patient Profile</h2>
         <div class="modal-header-actions">
-          <a id="modalClinicaLink" href="#" target="_blank">Open in Clinicea</a>
+          <a id="modalClinicaLink" href="#" target="_blank">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Open in Clinicea
+          </a>
           <button class="modal-close" onclick="closeProfile()">&times;</button>
         </div>
       </div>
       <div class="modal-tabs" id="modalTabs">
-        <div class="modal-tab active" onclick="switchTab('overview')">Overview</div>
-        <div class="modal-tab" onclick="switchTab('appointments')">Appointments</div>
-        <div class="modal-tab" onclick="switchTab('bills')">Bills</div>
+        <div class="modal-tab active" onclick="switchTab('overview')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Overview
+        </div>
+        <div class="modal-tab" onclick="switchTab('appointments')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Appointments <span class="tab-count" id="tabCountApt">0</span>
+        </div>
+        <div class="modal-tab" onclick="switchTab('bills')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          Bills <span class="tab-count" id="tabCountBills">0</span>
+        </div>
       </div>
       <div class="modal-body" id="modalBody">
         <div class="modal-loading" id="modalLoading">
@@ -1726,6 +2198,7 @@
           if (data.patientID) {
             modalClinicaLink.href = modalClinicaLink.href || '#';
           }
+          updateTabCounts();
           renderOverview();
         })
         .catch(err => {
@@ -1749,6 +2222,7 @@
           }
           profileData = data;
           modalTitle.textContent = data.patientName || patientName || 'Patient Profile';
+          updateTabCounts();
           renderOverview();
         })
         .catch(err => {
@@ -1775,7 +2249,7 @@
 
     function getInitials(name) {
       if (!name) return '?';
-      return name.split(' ').map(w => w[0]).join('').toUpperCase().substring(0, 2);
+      return name.split(' ').filter(w => w.length > 0).map(w => w[0]).join('').toUpperCase().substring(0, 2);
     }
 
     function formatDate(dateStr) {
@@ -1800,9 +2274,59 @@
       return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
 
+    function formatCurrency(amount) {
+      const num = parseFloat(amount) || 0;
+      return 'PKR ' + num.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+
     function infoRow(label, value) {
       if (!value && value !== 0) return '';
       return '<div class="info-row"><span class="info-label">' + escapeHtml(label) + '</span><span class="info-value">' + escapeHtml(String(value)) + '</span></div>';
+    }
+
+    function updateTabCounts() {
+      if (!profileData) return;
+      const aptCount = document.getElementById('tabCountApt');
+      const billCount = document.getElementById('tabCountBills');
+      if (aptCount) aptCount.textContent = profileData.appointments ? profileData.appointments.length : 0;
+      if (billCount) billCount.textContent = profileData.bills ? profileData.bills.length : 0;
+    }
+
+    function getAptStatusClass(status) {
+      const sl = (status || '').toLowerCase();
+      if (sl.includes('complet') || sl.includes('checked') || sl.includes('arrived')) return 'completed';
+      if (sl.includes('cancel')) return 'cancelled';
+      if (sl.includes('no show') || sl.includes('noshow')) return 'noshow';
+      return 'upcoming';
+    }
+
+    function buildDonutChart(data, total) {
+      // data = [{label, value, color}]
+      const size = 130, cx = 65, cy = 65, r = 50, strokeW = 14;
+      const circumference = 2 * Math.PI * r;
+      let offset = 0;
+      let paths = '';
+      data.forEach(d => {
+        const pct = total > 0 ? d.value / total : 0;
+        const dashLen = pct * circumference;
+        paths += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + d.color + '" stroke-width="' + strokeW + '" stroke-dasharray="' + dashLen + ' ' + (circumference - dashLen) + '" stroke-dashoffset="' + (-offset) + '" stroke-linecap="round" style="transition:stroke-dasharray 0.6s ease"/>';
+        offset += dashLen;
+      });
+      if (total === 0) {
+        paths = '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="#e9ecef" stroke-width="' + strokeW + '"/>';
+      }
+      let svg = '<svg class="donut-svg" viewBox="0 0 ' + size + ' ' + size + '">';
+      svg += '<g transform="rotate(-90 ' + cx + ' ' + cy + ')">' + paths + '</g>';
+      svg += '<text x="' + cx + '" y="' + (cy - 4) + '" text-anchor="middle" class="donut-center-text">' + total + '</text>';
+      svg += '<text x="' + cx + '" y="' + (cy + 12) + '" text-anchor="middle" class="donut-center-label">Total</text>';
+      svg += '</svg>';
+      // Legend
+      svg += '<div class="donut-legend">';
+      data.forEach(d => {
+        svg += '<div class="donut-legend-item"><span class="donut-legend-dot" style="background:' + d.color + '"></span>' + d.label + ' (' + d.value + ')</div>';
+      });
+      svg += '</div>';
+      return svg;
     }
 
     function renderOverview() {
@@ -1812,48 +2336,121 @@
       const name = pat.Name || pat.PatientName || profileData.patientName ||
                    [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || 'Unknown';
       const initials = getInitials(name);
-
-      let tags = '';
-      if (pat.Gender) tags += '<span class="patient-tag gender">' + escapeHtml(pat.Gender) + '</span>';
-      if (pat.FileNo) tags += '<span class="patient-tag file">File #' + escapeHtml(pat.FileNo) + '</span>';
-      if (pat.BillDueAmount && parseFloat(pat.BillDueAmount) > 0) {
-        tags += '<span class="patient-tag due">Due: ' + escapeHtml(String(pat.BillDueAmount)) + '</span>';
-      } else {
-        tags += '<span class="patient-tag paid">No Dues</span>';
-      }
+      const mobile = pat.Mobile || pat.MobilePhone || pat.PatientMobile || '';
+      const email = pat.Email || pat.EmailAddress || '';
 
       let dob = pat.DOB || pat.DateOfBirth || '';
       let age = '';
       if (dob) {
         const bd = new Date(dob);
         if (!isNaN(bd)) {
-          age = String(Math.floor((Date.now() - bd.getTime()) / (365.25 * 24 * 60 * 60 * 1000))) + ' years';
+          age = String(Math.floor((Date.now() - bd.getTime()) / (365.25 * 24 * 60 * 60 * 1000)));
         }
       }
 
-      let html = '<div class="patient-header-card">';
-      html += '<div class="patient-avatar">' + escapeHtml(initials) + '</div>';
-      html += '<div class="patient-header-info">';
-      html += '<h3>' + escapeHtml(name) + '</h3>';
-      html += '<p>' + escapeHtml([pat.Mobile || pat.MobilePhone || '', pat.Email || ''].filter(Boolean).join(' | ') || 'No contact info') + '</p>';
-      html += '<div class="patient-tags">' + tags + '</div>';
-      html += '</div></div>';
+      const dueAmount = parseFloat(pat.BillDueAmount) || 0;
+      const totalApts = profileData.appointments ? profileData.appointments.length : 0;
+      const totalBills = profileData.bills ? profileData.bills.length : 0;
+      const sinceDate = pat.CreatedDatetime || pat.CreatedDate || pat.RegistrationDate || '';
 
+      // Count appointment statuses
+      let completedApts = 0, upcomingApts = 0, cancelledApts = 0, noshowApts = 0;
+      (profileData.appointments || []).forEach(a => {
+        const sc = getAptStatusClass(a.AppointmentStatus || a.Status);
+        if (sc === 'completed') completedApts++;
+        else if (sc === 'cancelled') cancelledApts++;
+        else if (sc === 'noshow') noshowApts++;
+        else upcomingApts++;
+      });
+
+      // Calculate bill totals
+      let totalBilled = 0, totalDue = 0;
+      (profileData.bills || []).forEach(b => {
+        totalBilled += parseFloat(b.TotalAmount || b.GrossAmount || b.Amount || 0);
+        totalDue += parseFloat(b.DueAmount || b.BalanceDue || 0);
+      });
+      const totalPaid = totalBilled - totalDue;
+
+      // --- Build HTML ---
+      // Hero card
+      let tags = '';
+      if (pat.Gender) tags += '<span class="patient-tag gender"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + escapeHtml(pat.Gender) + '</span>';
+      if (pat.FileNo) tags += '<span class="patient-tag file"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> #' + escapeHtml(pat.FileNo) + '</span>';
+      if (age) tags += '<span class="patient-tag age-tag">' + escapeHtml(age) + ' yrs</span>';
+      if (pat.BloodGroup) tags += '<span class="patient-tag blood"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg> ' + escapeHtml(pat.BloodGroup) + '</span>';
+      if (dueAmount > 0) {
+        tags += '<span class="patient-tag due">Due: ' + escapeHtml(formatCurrency(dueAmount)) + '</span>';
+      } else {
+        tags += '<span class="patient-tag paid">No Dues</span>';
+      }
+      if (sinceDate) tags += '<span class="patient-tag since">Since ' + escapeHtml(formatDate(sinceDate)) + '</span>';
+
+      let html = '<div class="patient-hero">';
+      html += '<div class="patient-avatar">' + escapeHtml(initials) + '</div>';
+      html += '<div class="patient-hero-info">';
+      html += '<h3>' + escapeHtml(name) + '</h3>';
+      html += '<div class="hero-subtitle">';
+      if (mobile) html += '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg> ' + escapeHtml(mobile) + '</span>';
+      if (mobile && email) html += '<span class="hero-divider">|</span>';
+      if (email) html += '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg> ' + escapeHtml(email) + '</span>';
+      if (!mobile && !email) html += '<span>No contact info</span>';
+      html += '</div>';
+      html += '<div class="patient-tags">' + tags + '</div>';
+      html += '</div>';
+      html += '<div class="patient-hero-stats">';
+      html += '<div class="hero-stat"><div class="hero-stat-value">' + totalApts + '</div><div class="hero-stat-label">Visits</div></div>';
+      html += '<div class="hero-stat"><div class="hero-stat-value">' + totalBills + '</div><div class="hero-stat-label">Bills</div></div>';
+      html += '</div>';
+      html += '</div>';
+
+      // Quick stat cards
+      html += '<div class="quick-stats">';
+      html += '<div class="quick-stat-card"><div class="quick-stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div class="quick-stat-text"><div class="quick-stat-value">' + completedApts + '</div><div class="quick-stat-label">Completed</div></div></div>';
+      html += '<div class="quick-stat-card"><div class="quick-stat-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="quick-stat-text"><div class="quick-stat-value">' + upcomingApts + '</div><div class="quick-stat-label">Upcoming</div></div></div>';
+      html += '<div class="quick-stat-card"><div class="quick-stat-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="quick-stat-text"><div class="quick-stat-value">' + escapeHtml(formatCurrency(totalBilled)) + '</div><div class="quick-stat-label">Total Billed</div></div></div>';
+      html += '<div class="quick-stat-card"><div class="quick-stat-icon ' + (totalDue > 0 ? 'red' : 'green') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div><div class="quick-stat-text"><div class="quick-stat-value">' + escapeHtml(formatCurrency(totalDue)) + '</div><div class="quick-stat-label">Outstanding</div></div></div>';
+      html += '</div>';
+
+      // Chart + finance section
+      html += '<div class="chart-section">';
+      // Donut chart
+      const donutData = [];
+      if (completedApts > 0) donutData.push({ label: 'Completed', value: completedApts, color: '#2e7d32' });
+      if (upcomingApts > 0) donutData.push({ label: 'Upcoming', value: upcomingApts, color: '#1565c0' });
+      if (cancelledApts > 0) donutData.push({ label: 'Cancelled', value: cancelledApts, color: '#bdbdbd' });
+      if (noshowApts > 0) donutData.push({ label: 'No-show', value: noshowApts, color: '#e65100' });
+      html += '<div class="donut-chart-card"><h4>Appointment Breakdown</h4>' + buildDonutChart(donutData, totalApts) + '</div>';
+
+      // Finance overview
+      const paidPct = totalBilled > 0 ? Math.round((totalPaid / totalBilled) * 100) : 100;
+      html += '<div class="finance-overview">';
+      html += '<h4>Financial Summary</h4>';
+      html += '<div class="finance-stat-row">';
+      html += '<div class="finance-stat billed"><div class="finance-stat-value">' + escapeHtml(formatCurrency(totalBilled)) + '</div><div class="finance-stat-label">Total Billed</div></div>';
+      html += '<div class="finance-stat paid"><div class="finance-stat-value">' + escapeHtml(formatCurrency(totalPaid)) + '</div><div class="finance-stat-label">Paid</div></div>';
+      html += '<div class="finance-stat due"><div class="finance-stat-value">' + escapeHtml(formatCurrency(totalDue)) + '</div><div class="finance-stat-label">Outstanding</div></div>';
+      html += '</div>';
+      html += '<div class="progress-bar-container"><div class="progress-bar-fill" style="width:' + paidPct + '%"></div></div>';
+      html += '<div class="progress-bar-label">' + paidPct + '% paid</div>';
+      html += '</div>';
+      html += '</div>';
+
+      // Info cards grid
       html += '<div class="info-grid">';
 
-      html += '<div class="info-card"><h4>Personal Information</h4>';
+      html += '<div class="info-card"><div class="info-card-header"><div class="info-card-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><h4>Personal Information</h4></div>';
       html += infoRow('Full Name', name);
       html += infoRow('Date of Birth', formatDate(dob));
-      html += infoRow('Age', age);
+      html += infoRow('Age', age ? age + ' years' : '');
       html += infoRow('Gender', pat.Gender);
       html += infoRow('Marital Status', pat.MaritalStatus);
       html += infoRow('Nationality', pat.Nationality);
       html += infoRow('File No', pat.FileNo);
       html += '</div>';
 
-      html += '<div class="info-card"><h4>Contact Information</h4>';
-      html += infoRow('Mobile', pat.Mobile || pat.MobilePhone || pat.PatientMobile);
-      html += infoRow('Email', pat.Email || pat.EmailAddress);
+      html += '<div class="info-card"><div class="info-card-header"><div class="info-card-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg></div><h4>Contact Information</h4></div>';
+      html += infoRow('Mobile', mobile);
+      html += infoRow('Email', email);
       html += infoRow('Phone', pat.Phone || pat.HomePhone);
       html += infoRow('Address', [pat.Address1, pat.Address2].filter(Boolean).join(', '));
       html += infoRow('City', pat.City);
@@ -1862,7 +2459,7 @@
       html += infoRow('Postal Code', pat.PostalCode || pat.ZipCode);
       html += '</div>';
 
-      html += '<div class="info-card"><h4>Medical Information</h4>';
+      html += '<div class="info-card"><div class="info-card-header"><div class="info-card-icon red"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></div><h4>Medical Information</h4></div>';
       html += infoRow('Blood Group', pat.BloodGroup);
       html += infoRow('Allergies', pat.Allergies);
       html += infoRow('Medical History', pat.MedicalHistory);
@@ -1871,11 +2468,11 @@
       html += infoRow('Primary Doctor', pat.PrimaryDoctor || pat.DoctorName);
       html += '</div>';
 
-      html += '<div class="info-card"><h4>Account Summary</h4>';
-      html += infoRow('Total Due', pat.BillDueAmount ? 'PKR ' + pat.BillDueAmount : 'None');
-      html += infoRow('Total Appointments', String(profileData.appointments.length));
-      html += infoRow('Total Bills', String(profileData.bills.length));
-      html += infoRow('Patient Since', formatDate(pat.CreatedDatetime || pat.CreatedDate || pat.RegistrationDate));
+      html += '<div class="info-card"><div class="info-card-header"><div class="info-card-icon teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div><h4>Account Details</h4></div>';
+      html += infoRow('Total Due', dueAmount > 0 ? formatCurrency(dueAmount) : 'None');
+      html += infoRow('Total Appointments', String(totalApts));
+      html += infoRow('Total Bills', String(totalBills));
+      html += infoRow('Patient Since', formatDate(sinceDate));
       html += infoRow('Patient ID', profileData.patientID);
       html += '</div>';
 
@@ -1886,33 +2483,49 @@
     function renderAppointments() {
       const apts = profileData.appointments;
       if (!apts || apts.length === 0) {
-        modalBody.innerHTML = '<div class="empty-tab">No appointments found</div>';
+        modalBody.innerHTML = '<div class="empty-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><p>No appointments found</p></div>';
         return;
       }
 
+      // Count statuses
+      let completed = 0, upcoming = 0, cancelled = 0, noshow = 0;
+      apts.forEach(a => {
+        const sc = getAptStatusClass(a.AppointmentStatus || a.Status);
+        if (sc === 'completed') completed++;
+        else if (sc === 'cancelled') cancelled++;
+        else if (sc === 'noshow') noshow++;
+        else upcoming++;
+      });
+
+      let html = '';
+      // Summary cards
+      html += '<div class="apt-summary">';
+      html += '<div class="apt-summary-card total"><div class="apt-summary-value">' + apts.length + '</div><div class="apt-summary-label">Total</div></div>';
+      html += '<div class="apt-summary-card done"><div class="apt-summary-value">' + completed + '</div><div class="apt-summary-label">Completed</div></div>';
+      html += '<div class="apt-summary-card upcoming-s"><div class="apt-summary-value">' + upcoming + '</div><div class="apt-summary-label">Upcoming</div></div>';
+      html += '<div class="apt-summary-card missed"><div class="apt-summary-value">' + (noshow + cancelled) + '</div><div class="apt-summary-label">Missed/Cancelled</div></div>';
+      html += '</div>';
+
       const sorted = [...apts].sort((a, b) => new Date(b.StartDateTime || b.AppointmentDateTime || 0) - new Date(a.StartDateTime || a.AppointmentDateTime || 0));
 
-      let html = '<div class="apt-list">';
+      html += '<div class="apt-list">';
       sorted.forEach(apt => {
         const dateStr = apt.StartDateTime || apt.AppointmentDateTime || '';
         const status = apt.AppointmentStatus || apt.Status || 'Unknown';
         const service = apt.ServiceName || apt.Service || '';
         const doctor = apt.DoctorName || apt.Doctor || '';
         const duration = apt.Duration ? apt.Duration + ' min' : '';
+        const statusClass = getAptStatusClass(status);
 
-        let statusClass = 'upcoming';
-        const sl = status.toLowerCase();
-        if (sl.includes('complet') || sl.includes('checked') || sl.includes('arrived')) statusClass = 'completed';
-        else if (sl.includes('cancel')) statusClass = 'cancelled';
-        else if (sl.includes('no show') || sl.includes('noshow')) statusClass = 'noshow';
-
-        html += '<div class="apt-item">';
+        html += '<div class="apt-item ' + statusClass + '">';
         html += '<div class="apt-item-left">';
-        html += '<h4>' + escapeHtml(service || 'Appointment') + '</h4>';
-        html += '<p>' + escapeHtml(formatDateTime(dateStr));
-        if (doctor) html += ' &middot; ' + escapeHtml(doctor);
-        if (duration) html += ' &middot; ' + escapeHtml(duration);
-        html += '</p></div>';
+        html += '<h4><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> ' + escapeHtml(service || 'Appointment') + '</h4>';
+        html += '<p>' + escapeHtml(formatDateTime(dateStr)) + '</p>';
+        html += '<div class="apt-meta">';
+        if (doctor) html += '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + escapeHtml(doctor) + '</span>';
+        if (duration) html += '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ' + escapeHtml(duration) + '</span>';
+        html += '</div>';
+        html += '</div>';
         html += '<span class="apt-status ' + statusClass + '">' + escapeHtml(status) + '</span>';
         html += '</div>';
       });
@@ -1923,33 +2536,56 @@
     function renderBills() {
       const bills = profileData.bills;
       if (!bills || bills.length === 0) {
-        modalBody.innerHTML = '<div class="empty-tab">No bills found</div>';
+        modalBody.innerHTML = '<div class="empty-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg><p>No bills found</p></div>';
         return;
       }
 
+      // Calculate totals
+      let totalBilled = 0, totalDue = 0;
+      bills.forEach(b => {
+        totalBilled += parseFloat(b.TotalAmount || b.GrossAmount || b.Amount || 0);
+        totalDue += parseFloat(b.DueAmount || b.BalanceDue || 0);
+      });
+      const totalPaid = totalBilled - totalDue;
+      const paidPct = totalBilled > 0 ? Math.round((totalPaid / totalBilled) * 100) : 100;
+
+      let html = '';
+      // Finance summary at top
+      html += '<div class="finance-stat-row" style="margin-bottom:20px">';
+      html += '<div class="finance-stat billed" style="border-radius:12px;padding:16px"><div class="finance-stat-value">' + escapeHtml(formatCurrency(totalBilled)) + '</div><div class="finance-stat-label">Total Billed</div></div>';
+      html += '<div class="finance-stat paid" style="border-radius:12px;padding:16px"><div class="finance-stat-value">' + escapeHtml(formatCurrency(totalPaid)) + '</div><div class="finance-stat-label">Paid</div></div>';
+      html += '<div class="finance-stat due" style="border-radius:12px;padding:16px"><div class="finance-stat-value">' + escapeHtml(formatCurrency(totalDue)) + '</div><div class="finance-stat-label">Outstanding</div></div>';
+      html += '</div>';
+      html += '<div style="margin-bottom:20px"><div class="progress-bar-container"><div class="progress-bar-fill" style="width:' + paidPct + '%"></div></div><div class="progress-bar-label">' + paidPct + '% collected</div></div>';
+
       const sorted = [...bills].sort((a, b) => new Date(b.BillDate || b.CreatedDate || 0) - new Date(a.BillDate || a.CreatedDate || 0));
 
-      let html = '<div class="apt-list">';
+      html += '<div class="apt-list">';
       sorted.forEach(bill => {
         const dateStr = bill.BillDate || bill.CreatedDate || '';
         const billNo = bill.BillNo || bill.BillNumber || bill.InvoiceNo || '';
-        const total = bill.TotalAmount || bill.GrossAmount || bill.Amount || 0;
-        const due = bill.DueAmount || bill.BalanceDue || 0;
+        const total = parseFloat(bill.TotalAmount || bill.GrossAmount || bill.Amount || 0);
+        const due = parseFloat(bill.DueAmount || bill.BalanceDue || 0);
+        const paid = total - due;
         const status = bill.BillStatus || bill.Status || '';
         const items = bill.ServiceName || bill.Description || bill.Items || '';
+        const billPaidPct = total > 0 ? Math.round((paid / total) * 100) : 100;
 
-        html += '<div class="apt-item">';
-        html += '<div class="apt-item-left">';
+        html += '<div class="bill-card">';
+        html += '<div class="bill-left">';
         html += '<h4>' + escapeHtml(items || ('Bill #' + (billNo || '\u2014'))) + '</h4>';
         html += '<p>' + escapeHtml(formatDate(dateStr));
         if (billNo) html += ' &middot; #' + escapeHtml(billNo);
         if (status) html += ' &middot; ' + escapeHtml(status);
         html += '</p></div>';
-        html += '<div style="text-align:right">';
-        html += '<div class="bill-amount">PKR ' + escapeHtml(String(total)) + '</div>';
-        if (parseFloat(due) > 0) {
-          html += '<div class="bill-due" style="font-size:12px;">Due: PKR ' + escapeHtml(String(due)) + '</div>';
+        html += '<div class="bill-right">';
+        html += '<div class="bill-amount">' + escapeHtml(formatCurrency(total)) + '</div>';
+        if (due > 0) {
+          html += '<div class="bill-due-badge">Due: ' + escapeHtml(formatCurrency(due)) + '</div>';
+        } else {
+          html += '<div class="bill-paid-badge">Paid</div>';
         }
+        html += '<div class="bill-progress"><div class="bill-progress-fill" style="width:' + billPaidPct + '%"></div></div>';
         html += '</div>';
         html += '</div>';
       });
