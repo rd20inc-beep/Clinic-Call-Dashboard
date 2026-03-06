@@ -467,6 +467,62 @@ function generateInstallerBat(baseUrl, secret) {
   return bat;
 }
 
+// --- Public WhatsApp API Routes (no auth — called by Chrome Extension) ---
+// These MUST be before the static middleware which requires auth
+
+// Incoming message from WhatsApp (via extension)
+app.post('/api/whatsapp/incoming', async (req, res) => {
+  const { messageId, text, phone, chatName, timestamp } = req.body;
+
+  if (!text || (!phone && !chatName)) {
+    return res.json({ reply: null });
+  }
+
+  const contactId = phone || chatName || 'unknown';
+  logEvent('info', `WA message from ${chatName || phone}: ${text.substring(0, 50)}`);
+
+  // Store incoming message
+  insertWaMessage.run(contactId, chatName || null, 'in', text, 'chat', 'sent');
+
+  // Get GPT reply
+  const reply = await getGPTReply(contactId, text, chatName);
+
+  // Store outgoing reply
+  insertWaMessage.run(contactId, chatName || null, 'out', reply, 'chat', 'sent');
+
+  logEvent('info', `WA reply to ${chatName || phone}: ${reply.substring(0, 50)}`);
+  io.emit('wa_message', { phone: contactId, chatName, direction: 'in', text, reply, timestamp: new Date().toISOString() });
+
+  return res.json({ reply });
+});
+
+// Poll for pending outgoing messages (confirmations, reminders)
+app.get('/api/whatsapp/outgoing', (req, res) => {
+  const pending = getPendingOutgoing.all();
+  const messages = pending.map(m => ({
+    id: m.id,
+    phone: m.phone,
+    text: m.message,
+    type: m.message_type
+  }));
+  return res.json({ messages });
+});
+
+// Confirm a message was sent by the extension
+app.post('/api/whatsapp/sent', (req, res) => {
+  const { id, phone, success } = req.body;
+  if (id) {
+    if (success) {
+      markMessageSent.run(id);
+      logEvent('info', `WA scheduled message delivered to ${phone}`);
+    } else {
+      markMessageFailed.run(id);
+      logEvent('warn', `WA scheduled message failed for ${phone}`);
+    }
+  }
+  return res.json({ ok: true });
+});
+
 // Protected dashboard - serve static files behind auth
 app.get('/', requireAuth, (req, res, next) => next());
 app.use(requireAuth, express.static(path.join(__dirname, 'public')));
@@ -1039,60 +1095,7 @@ async function getGPTReply(phone, incomingText, chatName) {
   }
 }
 
-// --- WhatsApp API Routes (used by Chrome Extension) ---
-
-// Incoming message from WhatsApp (via extension)
-app.post('/api/whatsapp/incoming', async (req, res) => {
-  const { messageId, text, phone, chatName, timestamp } = req.body;
-
-  if (!text || (!phone && !chatName)) {
-    return res.json({ reply: null });
-  }
-
-  const contactId = phone || chatName || 'unknown';
-  logEvent('info', `WA message from ${chatName || phone}: ${text.substring(0, 50)}`);
-
-  // Store incoming message
-  insertWaMessage.run(contactId, chatName || null, 'in', text, 'chat', 'sent');
-
-  // Get GPT reply
-  const reply = await getGPTReply(contactId, text, chatName);
-
-  // Store outgoing reply
-  insertWaMessage.run(contactId, chatName || null, 'out', reply, 'chat', 'sent');
-
-  logEvent('info', `WA reply to ${chatName || phone}: ${reply.substring(0, 50)}`);
-  io.emit('wa_message', { phone: contactId, chatName, direction: 'in', text, reply, timestamp: new Date().toISOString() });
-
-  return res.json({ reply });
-});
-
-// Poll for pending outgoing messages (confirmations, reminders)
-app.get('/api/whatsapp/outgoing', (req, res) => {
-  const pending = getPendingOutgoing.all();
-  const messages = pending.map(m => ({
-    id: m.id,
-    phone: m.phone,
-    text: m.message,
-    type: m.message_type
-  }));
-  return res.json({ messages });
-});
-
-// Confirm a message was sent by the extension
-app.post('/api/whatsapp/sent', (req, res) => {
-  const { id, phone, success } = req.body;
-  if (id) {
-    if (success) {
-      markMessageSent.run(id);
-      logEvent('info', `WA scheduled message delivered to ${phone}`);
-    } else {
-      markMessageFailed.run(id);
-      logEvent('warn', `WA scheduled message failed for ${phone}`);
-    }
-  }
-  return res.json({ ok: true });
-});
+// --- WhatsApp API Routes (auth-protected, for dashboard) ---
 
 // Queue a manual message from the dashboard
 app.post('/api/whatsapp/send', requireAuth, (req, res) => {
