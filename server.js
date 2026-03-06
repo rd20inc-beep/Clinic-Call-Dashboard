@@ -682,23 +682,21 @@ async function searchPatientByMobile(phone, variants) {
   if (clean.startsWith('92')) localNum = clean.substring(2);
   else if (clean.startsWith('0')) localNum = clean.substring(1);
 
-  // Method 1: /api/v2/patients/getPatient?searchBy=2 (search by mobile)
-  const searchTexts = ['+92' + localNum, '92' + localNum, '0' + localNum, localNum];
-  for (const num of searchTexts) {
-    try {
-      const data = await cliniceaFetch(`/api/v2/patients/getPatient?searchBy=2&searchText=${encodeURIComponent(num)}`);
-      console.log(`[SEARCH] v2/getPatient(${num}) =>`, JSON.stringify(data).substring(0, 300));
-      const result = extractPatientFromSearch(data);
-      if (result) return result;
-    } catch (e) {
-      console.log(`[SEARCH] v2/getPatient(${num}) error:`, e.message);
-    }
+  // Method 1: /api/v2/patients/getPatient?searchBy=2 with searchOption (country code)
+  // searchOption is mandatory for mobile search — Clinicea stores country code separately
+  try {
+    const data = await cliniceaFetch(`/api/v2/patients/getPatient?searchBy=2&searchText=${encodeURIComponent(localNum)}&searchOption=%2B92`);
+    console.log(`[SEARCH] v2/getPatient(${localNum}, searchOption=+92) =>`, JSON.stringify(data).substring(0, 300));
+    const result = extractPatientFromSearch(data);
+    if (result) return result;
+  } catch (e) {
+    console.log(`[SEARCH] v2/getPatient error:`, e.message);
   }
 
-  // Method 2: /api/v1/patients/searchByMobileNumber with countryCode
+  // Method 2: /api/v1/patients/searchByMobileNumber with countryCode (+92)
   try {
-    const data = await cliniceaFetch(`/api/v1/patients/searchByMobileNumber?patMobile=${encodeURIComponent(localNum)}&countryCode=92`);
-    console.log(`[SEARCH] v1/searchByMobileNumber(${localNum}, cc=92) =>`, JSON.stringify(data).substring(0, 300));
+    const data = await cliniceaFetch(`/api/v1/patients/searchByMobileNumber?patMobile=${encodeURIComponent(localNum)}&countryCode=%2B92`);
+    console.log(`[SEARCH] v1/searchByMobileNumber(${localNum}, cc=+92) =>`, JSON.stringify(data).substring(0, 300));
     const result = extractPatientFromSearch(data);
     if (result) return result;
   } catch (e) {
