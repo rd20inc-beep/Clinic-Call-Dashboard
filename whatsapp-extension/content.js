@@ -254,8 +254,24 @@
     const header = document.querySelector('#main header');
     if (!header) return { name: null, phone: null };
 
-    const nameEl = header.querySelector('span[title]') || header.querySelector('span[data-testid="conversation-info-header-chat-title"]');
-    const name = nameEl ? (nameEl.getAttribute('title') || nameEl.textContent.trim()) : null;
+    // Get all span[title] in header and pick the right one (skip "click here..." etc)
+    const spans = header.querySelectorAll('span[title]');
+    let name = null;
+    for (const span of spans) {
+      const t = span.getAttribute('title') || '';
+      // Skip helper text
+      if (t.toLowerCase().includes('click here') || t.toLowerCase().includes('contact info') || t.toLowerCase().includes('search')) continue;
+      if (t.length > 0) {
+        name = t;
+        break;
+      }
+    }
+
+    // Fallback
+    if (!name) {
+      const nameEl = header.querySelector('span[data-testid="conversation-info-header-chat-title"]');
+      name = nameEl ? nameEl.textContent.trim() : null;
+    }
 
     // Check if name looks like a phone number
     let phone = null;
@@ -324,6 +340,7 @@
   // Send message to server and get GPT reply
   function getReply(text, phone, chatName) {
     return new Promise((resolve) => {
+      console.log('[WA Bot] Sending to server:', { text: text.substring(0, 50), phone, chatName });
       chrome.runtime.sendMessage({
         type: 'INCOMING_MESSAGE',
         data: {
@@ -335,10 +352,11 @@
         }
       }, (response) => {
         if (chrome.runtime.lastError) {
-          console.error('[WA Bot] Server error:', chrome.runtime.lastError.message);
+          console.error('[WA Bot] Chrome runtime error:', chrome.runtime.lastError.message);
           resolve(null);
           return;
         }
+        console.log('[WA Bot] Server response:', JSON.stringify(response).substring(0, 200));
         resolve(response);
       });
     });
@@ -393,24 +411,27 @@
         console.log('[WA Bot] Last message from', chat.name, ':', lastMsg.text);
         processedCount++;
 
-        // Get GPT reply from server
-        const response = await getReply(lastMsg.text, chatInfo.phone, chatInfo.name || chat.name);
+        // Get GPT reply from server — use sidebar chat name as fallback
+        const contactName = chatInfo.name || chat.name;
+        const contactPhone = chatInfo.phone || null;
+        const response = await getReply(lastMsg.text, contactPhone, contactName);
 
         if (response && response.reply && response.reply.trim()) {
-          console.log('[WA Bot] GPT reply:', response.reply);
+          console.log('[WA Bot] GPT reply for', chat.name, ':', response.reply.substring(0, 80));
 
           // Type and send
-          await sleep(1000 + Math.random() * 2000); // random delay for natural feel
+          await sleep(1000 + Math.random() * 1000);
           const sent = await typeAndSend(response.reply);
 
           if (sent) {
-            console.log('[WA Bot] Reply sent to', chat.name);
-            // Mark this chat as processed for 2 minutes
+            console.log('[WA Bot] Reply SENT to', chat.name);
             processedChats.add(chatKey);
             setTimeout(() => processedChats.delete(chatKey), 2 * 60 * 1000);
+          } else {
+            console.error('[WA Bot] Failed to type/send reply to', chat.name);
           }
         } else {
-          console.log('[WA Bot] No reply from server for', chat.name);
+          console.error('[WA Bot] No reply from server for', chat.name, '| response:', JSON.stringify(response));
         }
 
         await sleep(1500); // pause between chats
