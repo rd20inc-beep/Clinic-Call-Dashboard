@@ -676,39 +676,33 @@ async function findPatientByPhone(phone) {
 
 // Fallback: search patient directly by mobile number in Clinicea
 async function searchPatientByMobile(phone, variants) {
-  // Build all possible search formats: +923216315551, 923216315551, 03216315551, 3216315551
-  const searchFormats = new Set();
-  for (const v of variants) {
-    searchFormats.add(v);
-    searchFormats.add(v.replace('+', ''));
-  }
-  // Also add the local part without country code (3216315551)
   const clean = phone.replace(/[\s\-\(\)\+]/g, '');
-  if (clean.startsWith('92')) searchFormats.add(clean.substring(2));
-  if (clean.startsWith('0')) searchFormats.add(clean.substring(1));
+  // Extract local number (without country code) for API calls
+  let localNum = clean;
+  if (clean.startsWith('92')) localNum = clean.substring(2);
+  else if (clean.startsWith('0')) localNum = clean.substring(1);
 
-  // Try searchByMobileNumber with each format
-  for (const num of searchFormats) {
+  // Method 1: /api/v2/patients/getPatient?searchBy=2 (search by mobile)
+  const searchTexts = ['+92' + localNum, '92' + localNum, '0' + localNum, localNum];
+  for (const num of searchTexts) {
     try {
-      const data = await cliniceaFetch(`/api/v1/patients/searchByMobileNumber?patMobile=${encodeURIComponent(num)}`);
-      console.log(`[SEARCH] searchByMobileNumber(${num}) =>`, JSON.stringify(data).substring(0, 300));
+      const data = await cliniceaFetch(`/api/v2/patients/getPatient?searchBy=2&searchText=${encodeURIComponent(num)}`);
+      console.log(`[SEARCH] v2/getPatient(${num}) =>`, JSON.stringify(data).substring(0, 300));
       const result = extractPatientFromSearch(data);
       if (result) return result;
     } catch (e) {
-      console.log(`[SEARCH] searchByMobileNumber(${num}) error:`, e.message);
+      console.log(`[SEARCH] v2/getPatient(${num}) error:`, e.message);
     }
   }
 
-  // Fallback: try getPatientsBySearch
-  for (const num of searchFormats) {
-    try {
-      const data = await cliniceaFetch(`/api/v2/patients/getPatientsBySearch?searchString=${encodeURIComponent(num)}&pageNo=1&pageSize=5`);
-      console.log(`[SEARCH] getPatientsBySearch(${num}) =>`, JSON.stringify(data).substring(0, 300));
-      const result = extractPatientFromSearch(data);
-      if (result) return result;
-    } catch (e) {
-      console.log(`[SEARCH] getPatientsBySearch(${num}) error:`, e.message);
-    }
+  // Method 2: /api/v1/patients/searchByMobileNumber with countryCode
+  try {
+    const data = await cliniceaFetch(`/api/v1/patients/searchByMobileNumber?patMobile=${encodeURIComponent(localNum)}&countryCode=92`);
+    console.log(`[SEARCH] v1/searchByMobileNumber(${localNum}, cc=92) =>`, JSON.stringify(data).substring(0, 300));
+    const result = extractPatientFromSearch(data);
+    if (result) return result;
+  } catch (e) {
+    console.log(`[SEARCH] v1/searchByMobileNumber error:`, e.message);
   }
 
   logEvent('warn', 'No patient found via mobile search either', phone);
