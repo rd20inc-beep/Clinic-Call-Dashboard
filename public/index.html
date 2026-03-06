@@ -333,83 +333,61 @@
     .empty-state p { font-size: 16px; }
 
     /* Event log */
-    .log-panel {
-      margin-top: 24px;
-      background: white;
+    /* Error toast */
+    .error-toast-container {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 420px;
+    }
+
+    .error-toast {
+      background: #f8d7da;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+      padding: 14px 40px 14px 16px;
       border-radius: 10px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      overflow: hidden;
+      font-size: 14px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      animation: toastIn 0.3s ease-out;
+      position: relative;
+      word-break: break-word;
     }
 
-    .log-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 16px;
-      background: #f8f9fa;
-      border-bottom: 1px solid #e9ecef;
+    .error-toast.warn {
+      background: #fff3cd;
+      border-color: #ffc107;
+      color: #856404;
+    }
+
+    .error-toast-close {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      background: none;
+      border: none;
+      font-size: 18px;
       cursor: pointer;
-      user-select: none;
+      color: inherit;
+      opacity: 0.6;
+      line-height: 1;
     }
 
-    .log-header h3 { font-size: 14px; font-weight: 600; color: #6c757d; text-transform: uppercase; letter-spacing: 0.5px; }
-    .log-header .toggle { font-size: 12px; color: #6c757d; }
+    .error-toast-close:hover { opacity: 1; }
 
-    .log-body {
-      max-height: 300px;
-      overflow-y: auto;
-      font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
-      font-size: 12px;
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(40px); }
+      to { opacity: 1; transform: translateX(0); }
     }
 
-    .log-body.collapsed { display: none; }
-
-    .log-entry {
-      padding: 6px 16px;
-      border-bottom: 1px solid #f5f5f5;
-      display: flex;
-      gap: 10px;
-      align-items: flex-start;
+    @keyframes toastOut {
+      from { opacity: 1; transform: translateX(0); }
+      to { opacity: 0; transform: translateX(40px); }
     }
-
-    .log-entry:last-child { border-bottom: none; }
-    .log-time { color: #999; white-space: nowrap; min-width: 70px; }
-
-    .log-badge {
-      display: inline-block;
-      padding: 1px 6px;
-      border-radius: 3px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      min-width: 42px;
-      text-align: center;
-    }
-
-    .log-badge.info { background: #d1ecf1; color: #0c5460; }
-    .log-badge.warn { background: #fff3cd; color: #856404; }
-    .log-badge.error { background: #f8d7da; color: #721c24; }
-
-    .log-msg { color: #333; word-break: break-word; }
-    .log-details { color: #888; font-style: italic; }
-    .log-empty { padding: 20px 16px; color: #999; text-align: center; }
-
-    .error-count {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: #e74c3c;
-      color: white;
-      font-size: 11px;
-      font-weight: 700;
-      min-width: 18px;
-      height: 18px;
-      border-radius: 9px;
-      padding: 0 5px;
-      margin-left: 8px;
-    }
-
-    .error-count.hidden { display: none; }
 
     /* Profile / Clinicea buttons */
     .btn-profile {
@@ -1048,15 +1026,7 @@
           </div>
         </div>
 
-        <div class="log-panel">
-          <div class="log-header" onclick="toggleLog()">
-            <h3>Event Log <span class="error-count hidden" id="errorCount">0</span></h3>
-            <span class="toggle" id="logToggle">Show</span>
-          </div>
-          <div class="log-body collapsed" id="logBody">
-            <div class="log-empty" id="logEmpty">No events yet</div>
-          </div>
-        </div>
+        <!-- Error toasts appear as fixed popups at top-right -->
       </div>
 
       <!-- ===== CALENDAR PAGE ===== -->
@@ -1093,6 +1063,9 @@
 
     </main>
   </div>
+
+  <!-- Error toast container -->
+  <div class="error-toast-container" id="errorToastContainer"></div>
 
   <!-- Patient Profile Modal -->
   <div class="modal-overlay" id="profileModal" onclick="if(event.target===this)closeProfile()">
@@ -1409,49 +1382,28 @@
       } catch (e) {}
     }
 
-    // ===== EVENT LOG =====
-    const logBody = document.getElementById('logBody');
-    const logEmpty = document.getElementById('logEmpty');
-    const logToggle = document.getElementById('logToggle');
-    const errorCountEl = document.getElementById('errorCount');
-    let logOpen = false;
-    let errorCount = 0;
+    // ===== ERROR TOASTS =====
+    const toastContainer = document.getElementById('errorToastContainer');
 
-    function toggleLog() {
-      logOpen = !logOpen;
-      logBody.classList.toggle('collapsed', !logOpen);
-      logToggle.textContent = logOpen ? 'Hide' : 'Show';
-      if (logOpen) {
-        errorCount = 0;
-        errorCountEl.classList.add('hidden');
-        logBody.scrollTop = logBody.scrollHeight;
-      }
+    function showErrorToast(message, type) {
+      const toast = document.createElement('div');
+      toast.className = 'error-toast' + (type === 'warn' ? ' warn' : '');
+      toast.innerHTML = escapeHtml(message) + '<button class="error-toast-close" onclick="dismissToast(this)">&times;</button>';
+      toastContainer.appendChild(toast);
+
+      // Auto-dismiss after 6 seconds
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.style.animation = 'toastOut 0.3s ease-in forwards';
+          setTimeout(() => toast.remove(), 300);
+        }
+      }, 6000);
     }
 
-    function addLogEntry(entry) {
-      logEmpty.style.display = 'none';
-      const div = document.createElement('div');
-      div.className = 'log-entry';
-      const time = new Date(entry.time).toLocaleTimeString();
-      let html = '<span class="log-time">' + time + '</span>';
-      html += '<span class="log-badge ' + entry.type + '">' + entry.type + '</span>';
-      html += '<span class="log-msg">' + escapeHtml(entry.message);
-      if (entry.details) html += ' <span class="log-details">(' + escapeHtml(entry.details) + ')</span>';
-      html += '</span>';
-      div.innerHTML = html;
-      logBody.appendChild(div);
-
-      while (logBody.children.length > 51) {
-        logBody.removeChild(logBody.children[1]);
-      }
-
-      if (logOpen) logBody.scrollTop = logBody.scrollHeight;
-
-      if (!logOpen && (entry.type === 'error' || entry.type === 'warn')) {
-        errorCount++;
-        errorCountEl.textContent = errorCount;
-        errorCountEl.classList.remove('hidden');
-      }
+    function dismissToast(btn) {
+      const toast = btn.parentNode;
+      toast.style.animation = 'toastOut 0.3s ease-in forwards';
+      setTimeout(() => toast.remove(), 300);
     }
 
     function escapeHtml(str) {
@@ -1460,16 +1412,13 @@
       return d.innerHTML;
     }
 
-    socket.on('server_log', (entry) => addLogEntry(entry));
-
-    async function loadLogs() {
-      try {
-        const res = await fetch('/api/logs');
-        const data = await res.json();
-        data.logs.forEach(entry => addLogEntry(entry));
-      } catch (e) {}
-    }
-    loadLogs();
+    // Only show errors/warnings as toasts, ignore info logs
+    socket.on('server_log', (entry) => {
+      if (entry.type === 'error' || entry.type === 'warn') {
+        const msg = entry.message + (entry.details ? ' (' + entry.details + ')' : '');
+        showErrorToast(msg, entry.type);
+      }
+    });
 
     // ===== PATIENT PROFILE MODAL =====
     const profileModal = document.getElementById('profileModal');
