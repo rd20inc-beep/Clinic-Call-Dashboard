@@ -716,31 +716,67 @@ app.get('/api/patient-profile/:phone', requireAuth, async (req, res) => {
   }
 });
 
-// API - list all patients (paginated, with optional client-side search)
+// --- Patient list cache (avoids re-fetching from Clinicea on every search) ---
+let patientCache = { patients: [], expiry: 0, loading: false, pages: 0 };
+const PATIENT_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+function mapPatientFields(p) {
+  return {
+    patientID: extractPatientId(p),
+    name: p.Name || p.PatientName || p.FullName || [p.FirstName, p.LastName].filter(Boolean).join(' ') || 'Unknown',
+    phone: p.Mobile || p.MobilePhone || p.PatientMobile || p.Phone || '',
+    email: p.Email || p.EmailAddress || '',
+    fileNo: p.FileNo || '',
+    gender: p.Gender || '',
+    createdDate: p.CreatedDatetime || p.CreatedDate || ''
+  };
+}
+
+async function loadAllPatients() {
+  if (patientCache.loading) return;
+  patientCache.loading = true;
+  const allPatients = [];
+  let pageNo = 1;
+  try {
+    while (true) {
+      const data = await cliniceaFetch(`/api/v1/patients?lastSyncDate=2000-01-01T00:00:00&intPageNo=${pageNo}`);
+      const batch = Array.isArray(data) ? data : [];
+      allPatients.push(...batch.map(mapPatientFields));
+      if (batch.length < 100) break; // last page
+      pageNo++;
+      if (pageNo > 50) break; // safety limit (5000 patients max)
+    }
+    patientCache = { patients: allPatients, expiry: Date.now() + PATIENT_CACHE_TTL, loading: false, pages: pageNo };
+    logEvent('info', `Patient cache loaded: ${allPatients.length} patients (${pageNo} pages)`);
+  } catch (err) {
+    patientCache.loading = false;
+    logEvent('error', 'Patient cache load failed', err.message);
+    throw err;
+  }
+}
+
+// API - list all patients (cached, with search)
 app.get('/api/patients', requireAuth, async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page) || 1);
   const search = (req.query.search || '').trim().toLowerCase();
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const pageSize = 50;
 
   if (!isClinicaConfigured()) {
     return res.json({ error: 'Clinicea API not configured', patients: [], total: 0 });
   }
 
   try {
-    const data = await cliniceaFetch(`/api/v1/patients?lastSyncDate=2000-01-01T00:00:00&intPageNo=${page}`);
-    let patients = Array.isArray(data) ? data : [];
+    // Load/refresh cache if stale
+    if (Date.now() > patientCache.expiry && !patientCache.loading) {
+      await loadAllPatients();
+    } else if (patientCache.loading) {
+      // Still loading from another request — return what we have or wait briefly
+      return res.json({ patients: [], page: 1, hasMore: false, loading: true });
+    }
 
-    // Map to consistent fields
-    patients = patients.map(p => ({
-      patientID: extractPatientId(p),
-      name: p.Name || p.PatientName || p.FullName || [p.FirstName, p.LastName].filter(Boolean).join(' ') || 'Unknown',
-      phone: p.Mobile || p.MobilePhone || p.PatientMobile || p.Phone || '',
-      email: p.Email || p.EmailAddress || '',
-      fileNo: p.FileNo || '',
-      gender: p.Gender || '',
-      createdDate: p.CreatedDatetime || p.CreatedDate || ''
-    }));
+    let patients = patientCache.patients;
 
-    // Client-side search filter
+    // Filter by search
     if (search) {
       patients = patients.filter(p =>
         p.name.toLowerCase().includes(search) ||
@@ -750,7 +786,12 @@ app.get('/api/patients', requireAuth, async (req, res) => {
       );
     }
 
-    return res.json({ patients, page, hasMore: patients.length === 100 });
+    // Paginate
+    const total = patients.length;
+    const start = (page - 1) * pageSize;
+    const sliced = patients.slice(start, start + pageSize);
+
+    return res.json({ patients: sliced, page, hasMore: start + pageSize < total, total });
   } catch (err) {
     logEvent('error', 'Patients list fetch failed', err.message);
     return res.json({ error: err.message, patients: [], total: 0 });
