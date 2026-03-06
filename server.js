@@ -616,17 +616,39 @@ async function searchPatientByMobile(phone, variants) {
   return null;
 }
 
+function extractPatientId(obj) {
+  // Clinicea uses different field names across API versions
+  return obj.PatientID || obj.patientID || obj.PatientId || obj.EntityID || obj.entityID ||
+         obj.Id || obj.id || obj.UniqueID || obj.uniqueID || obj.PatientGUID || null;
+}
+
 function extractPatientFromSearch(data) {
-  if (data && !Array.isArray(data) && (data.PatientID || data.patientID)) {
-    const name = data.Name || data.PatientName || [data.FirstName, data.LastName].filter(Boolean).join(' ') || null;
-    logEvent('info', 'Patient found via search: ' + (name || 'Unknown'), 'ID: ' + (data.PatientID || data.patientID));
-    return { patientID: data.PatientID || data.patientID, patientName: name };
+  // Log raw response keys for debugging
+  if (data && !Array.isArray(data) && typeof data === 'object') {
+    console.log('[SEARCH] Response keys:', Object.keys(data).join(', '));
+    console.log('[SEARCH] Response sample:', JSON.stringify(data).substring(0, 500));
+  }
+  if (Array.isArray(data) && data.length > 0) {
+    console.log('[SEARCH] Array[0] keys:', Object.keys(data[0]).join(', '));
+    console.log('[SEARCH] Array[0] sample:', JSON.stringify(data[0]).substring(0, 500));
+  }
+
+  if (data && !Array.isArray(data) && typeof data === 'object') {
+    const pid = extractPatientId(data);
+    if (pid) {
+      const name = data.Name || data.PatientName || [data.FirstName, data.LastName].filter(Boolean).join(' ') || null;
+      logEvent('info', 'Patient found via search: ' + (name || 'Unknown'), 'ID: ' + pid);
+      return { patientID: pid, patientName: name };
+    }
   }
   if (Array.isArray(data) && data.length > 0) {
     const pat = data[0];
-    const name = pat.Name || pat.PatientName || [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || null;
-    logEvent('info', 'Patient found via search: ' + (name || 'Unknown'), 'ID: ' + (pat.PatientID || pat.patientID));
-    return { patientID: pat.PatientID || pat.patientID, patientName: name };
+    const pid = extractPatientId(pat);
+    if (pid) {
+      const name = pat.Name || pat.PatientName || [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || null;
+      logEvent('info', 'Patient found via search: ' + (name || 'Unknown'), 'ID: ' + pid);
+      return { patientID: pid, patientName: name };
+    }
   }
   return null;
 }
