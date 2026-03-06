@@ -522,104 +522,82 @@ async function cliniceaFetch(endpoint) {
   }
 }
 
-// Find PatientID and name by phone number using appointment changes
+// Find patient by phone — tries v2/getPatient direct search first, then appointment matching
 async function findPatientByPhone(phone) {
-  const today = new Date();
-  const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-  // Use simple date format without encoding - Clinicea rejects encoded colons
-  const syncDate = thirtyDaysAgo.toISOString().split('.')[0];
-  const data = await cliniceaFetch(`/api/v2/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=1&pageSize=100`);
-  if (!Array.isArray(data)) return null;
-  // Normalize phone: strip spaces/dashes, build all possible variants
   const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
-  // Generate all variants: +923001234567, 923001234567, 03001234567, 3001234567
-  const variants = new Set();
-  variants.add(cleanPhone);
-  variants.add(cleanPhone.replace('+', ''));
-  // If starts with 0 (local PK format like 03216315551), add 92 version
-  if (cleanPhone.startsWith('0')) {
-    variants.add('92' + cleanPhone.substring(1));       // 923216315551
-    variants.add('+92' + cleanPhone.substring(1));      // +923216315551
-  }
-  // If starts with +92, add local format
-  if (cleanPhone.startsWith('+92')) {
-    variants.add('0' + cleanPhone.substring(3));        // 03216315551
-    variants.add(cleanPhone.substring(1));              // 923216315551
-  }
-  // If starts with 92 (no +), add local and + format
-  if (cleanPhone.startsWith('92') && !cleanPhone.startsWith('+')) {
-    variants.add('+' + cleanPhone);                     // +923216315551
-    variants.add('0' + cleanPhone.substring(2));        // 03216315551
-  }
+  // Extract local number (without country code) for Clinicea search
+  let localNum = cleanPhone.replace('+', '');
+  if (localNum.startsWith('92')) localNum = localNum.substring(2);
+  else if (localNum.startsWith('0')) localNum = localNum.substring(1);
 
-  logEvent('info', 'Looking up phone: ' + cleanPhone, 'Variants: ' + [...variants].join(', '));
+  logEvent('info', 'Looking up phone: ' + cleanPhone, 'Local: ' + localNum);
 
-  const match = data.find(a => {
-    const apiPhone1 = (a.AppointmentWithPhone || '').replace(/[\s\-\(\)]/g, '');
-    const apiPhone2 = (a.PatientMobile || '').replace(/[\s\-\(\)]/g, '');
-    return variants.has(apiPhone1) || variants.has(apiPhone2);
-  });
-
-  if (!match) {
-    // Fallback: search Clinicea directly by mobile number
-    logEvent('info', 'No match in appointments, trying direct patient search for ' + cleanPhone);
-    return await searchPatientByMobile(cleanPhone, variants);
-  }
-
-  // Log all name-related fields for debugging
-  const nameFields = {};
-  for (const key of Object.keys(match)) {
-    if (/name|first|last|patient/i.test(key)) nameFields[key] = match[key];
-  }
-  logEvent('info', 'Patient match fields', JSON.stringify(nameFields));
-
-  // Build full name from available fields
-  let patientName = match.AppointmentWithName || match.PatientName || null;
-  if (!patientName) {
-    const first = match.PatientFirstName || match.FirstName || '';
-    const last = match.PatientLastName || match.LastName || '';
-    patientName = [first, last].filter(Boolean).join(' ') || null;
-  }
-  return { patientID: match.PatientID, patientName };
-}
-
-// Fallback: search patient directly by mobile number in Clinicea
-async function searchPatientByMobile(phone, variants) {
-  const clean = phone.replace(/[\s\-\(\)\+]/g, '');
-  // Extract local number (without country code) for API calls
-  let localNum = clean;
-  if (clean.startsWith('92')) localNum = clean.substring(2);
-  else if (clean.startsWith('0')) localNum = clean.substring(1);
-
-  // Method 1: /api/v2/patients/getPatient?searchBy=2 with searchOption (country code)
-  // searchOption is mandatory for mobile search — Clinicea stores country code separately
+  // Method 1 (most reliable): v2/getPatient — searches by mobile with country code
   try {
     const data = await cliniceaFetch(`/api/v2/patients/getPatient?searchBy=2&searchText=${encodeURIComponent(localNum)}&searchOption=%2B92`);
-    console.log(`[SEARCH] v2/getPatient(${localNum}, searchOption=+92) =>`, JSON.stringify(data).substring(0, 300));
+    console.log(`[SEARCH] v2/getPatient(${localNum}) =>`, JSON.stringify(data).substring(0, 400));
     const result = extractPatientFromSearch(data);
-    if (result) return result;
+    if (result) {
+      logEvent('info', 'Patient found via v2/getPatient: ' + result.patientName, 'ID: ' + result.patientID);
+      return result;
+    }
   } catch (e) {
     console.log(`[SEARCH] v2/getPatient error:`, e.message);
   }
 
-  // Method 2: /api/v1/patients/searchByMobileNumber with countryCode (+92)
+  // Method 2: appointment-based matching (works when phone format matches exactly)
   try {
-    const data = await cliniceaFetch(`/api/v1/patients/searchByMobileNumber?patMobile=${encodeURIComponent(localNum)}&countryCode=%2B92`);
-    console.log(`[SEARCH] v1/searchByMobileNumber(${localNum}, cc=+92) =>`, JSON.stringify(data).substring(0, 300));
-    const result = extractPatientFromSearch(data);
-    if (result) return result;
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const syncDate = thirtyDaysAgo.toISOString().split('.')[0];
+    const data = await cliniceaFetch(`/api/v2/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=1&pageSize=100`);
+    if (Array.isArray(data)) {
+      const variants = new Set();
+      variants.add(cleanPhone);
+      variants.add(cleanPhone.replace('+', ''));
+      if (cleanPhone.startsWith('0')) {
+        variants.add('92' + cleanPhone.substring(1));
+        variants.add('+92' + cleanPhone.substring(1));
+      }
+      if (cleanPhone.startsWith('+92')) {
+        variants.add('0' + cleanPhone.substring(3));
+        variants.add(cleanPhone.substring(1));
+      }
+      if (cleanPhone.startsWith('92') && !cleanPhone.startsWith('+')) {
+        variants.add('+' + cleanPhone);
+        variants.add('0' + cleanPhone.substring(2));
+      }
+
+      const match = data.find(a => {
+        const p1 = (a.AppointmentWithPhone || '').replace(/[\s\-\(\)]/g, '');
+        const p2 = (a.PatientMobile || '').replace(/[\s\-\(\)]/g, '');
+        return variants.has(p1) || variants.has(p2);
+      });
+
+      if (match) {
+        let patientName = match.AppointmentWithName || match.PatientName || null;
+        if (!patientName) {
+          const first = match.PatientFirstName || match.FirstName || '';
+          const last = match.PatientLastName || match.LastName || '';
+          patientName = [first, last].filter(Boolean).join(' ') || null;
+        }
+        logEvent('info', 'Patient found via appointments: ' + patientName, 'ID: ' + match.PatientID);
+        return { patientID: match.PatientID, patientName };
+      }
+    }
   } catch (e) {
-    console.log(`[SEARCH] v1/searchByMobileNumber error:`, e.message);
+    console.log(`[SEARCH] getChanges error:`, e.message);
   }
 
-  logEvent('warn', 'No patient found via mobile search either', phone);
+  logEvent('warn', 'No patient found for ' + cleanPhone);
   return null;
 }
 
 function extractPatientId(obj) {
   // Clinicea uses different field names across API versions
-  return obj.PatientID || obj.patientID || obj.PatientId || obj.EntityID || obj.entityID ||
-         obj.Id || obj.id || obj.UniqueID || obj.uniqueID || obj.PatientGUID || null;
+  // v2/getPatient uses "ID", appointments use "PatientID"
+  return obj.PatientID || obj.patientID || obj.PatientId || obj.ID || obj.QDID ||
+         obj.EntityID || obj.entityID || obj.Id || obj.id || obj.UniqueID || obj.PatientGUID || null;
 }
 
 function extractPatientFromSearch(data) {
@@ -636,7 +614,7 @@ function extractPatientFromSearch(data) {
   if (data && !Array.isArray(data) && typeof data === 'object') {
     const pid = extractPatientId(data);
     if (pid) {
-      const name = data.Name || data.PatientName || [data.FirstName, data.LastName].filter(Boolean).join(' ') || null;
+      const name = data.FullName || data.Name || data.PatientName || [data.FirstName, data.LastName].filter(Boolean).join(' ') || null;
       logEvent('info', 'Patient found via search: ' + (name || 'Unknown'), 'ID: ' + pid);
       return { patientID: pid, patientName: name };
     }
@@ -645,7 +623,7 @@ function extractPatientFromSearch(data) {
     const pat = data[0];
     const pid = extractPatientId(pat);
     if (pid) {
-      const name = pat.Name || pat.PatientName || [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || null;
+      const name = pat.FullName || pat.Name || pat.PatientName || [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || null;
       logEvent('info', 'Patient found via search: ' + (name || 'Unknown'), 'ID: ' + pid);
       return { patientID: pid, patientName: name };
     }
