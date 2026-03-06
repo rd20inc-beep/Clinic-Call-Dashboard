@@ -464,10 +464,12 @@ app.get('/api/calls', requireAuth, (req, res) => {
   res.json({ calls, total, page, totalPages: Math.ceil(total / limit) });
 });
 
-// --- Clinicea API Integration (Next Meeting) ---
+// --- Clinicea API Integration ---
 let cliniceaToken = null;
 let tokenExpiry = 0;
 const meetingCache = new Map(); // phone -> { data, expiry }
+const appointmentDateCache = new Map(); // date -> { data, expiry }
+const profileCache = new Map(); // patientID -> { data, expiry }
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function isClinicaConfigured() {
@@ -676,7 +678,34 @@ app.get('/api/next-meeting/:phone', requireAuth, async (req, res) => {
   }
 });
 
-// API - full patient profile from Clinicea
+// Shared profile fetcher with cache (used by both phone and ID endpoints)
+async function fetchProfileByPatientId(patientId) {
+  const cached = profileCache.get(patientId);
+  if (cached && Date.now() < cached.expiry) return cached.data;
+
+  const [details, appointments, bills] = await Promise.all([
+    cliniceaFetch(`/api/v3/patients/getPatientByID?patientID=${patientId}`),
+    cliniceaFetch(`/api/v2/appointments/getAppointmentsByPatient?patientID=${patientId}&appointmentType=2&pageNo=1&pageSize=50`),
+    cliniceaFetch(`/api/v2/bills/getBillsByPatient?patientID=${patientId}&billStatus=0&pageNo=1&pageSize=50`)
+  ]);
+
+  const pat = Array.isArray(details) ? (details[0] || {}) : (details || {});
+  const patientName = pat.Name || pat.PatientName || pat.FullName ||
+                      [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || 'Unknown';
+
+  const result = {
+    patient: details,
+    appointments: Array.isArray(appointments) ? appointments : [],
+    bills: Array.isArray(bills) ? bills : [],
+    patientName,
+    patientID: patientId
+  };
+
+  profileCache.set(patientId, { data: result, expiry: Date.now() + CACHE_TTL });
+  return result;
+}
+
+// API - full patient profile from Clinicea (by phone)
 app.get('/api/patient-profile/:phone', requireAuth, async (req, res) => {
   const phone = decodeURIComponent(req.params.phone);
 
@@ -690,26 +719,8 @@ app.get('/api/patient-profile/:phone', requireAuth, async (req, res) => {
       return res.json({ error: 'Patient not found in Clinicea' });
     }
 
-    // Fetch all patient data in parallel
-    const [details, appointments, bills] = await Promise.all([
-      cliniceaFetch(`/api/v3/patients/getPatientByID?patientID=${patient.patientID}`),
-      cliniceaFetch(`/api/v2/appointments/getAppointmentsByPatient?patientID=${patient.patientID}&appointmentType=2&pageNo=1&pageSize=50`),
-      cliniceaFetch(`/api/v2/bills/getBillsByPatient?patientID=${patient.patientID}&billStatus=0&pageNo=1&pageSize=50`)
-    ]);
-
-    console.log(`\n=== PATIENT PROFILE: ${phone} ===`);
-    console.log('Patient Details:', JSON.stringify(details, null, 2));
-    console.log('Appointments (' + (Array.isArray(appointments) ? appointments.length : 0) + '):', JSON.stringify(appointments, null, 2));
-    console.log('Bills (' + (Array.isArray(bills) ? bills.length : 0) + '):', JSON.stringify(bills, null, 2));
-    console.log('=== END PROFILE ===\n');
-
-    return res.json({
-      patient: details,
-      appointments: Array.isArray(appointments) ? appointments : [],
-      bills: Array.isArray(bills) ? bills : [],
-      patientName: patient.patientName,
-      patientID: patient.patientID
-    });
+    const result = await fetchProfileByPatientId(patient.patientID);
+    return res.json(result);
   } catch (err) {
     logEvent('error', 'Patient profile fetch failed', err.message);
     return res.json({ error: err.message });
@@ -798,7 +809,23 @@ app.get('/api/patients', requireAuth, async (req, res) => {
   }
 });
 
-// API - appointments by date
+// API - appointments by date (cached)
+function mapAppointmentFields(a) {
+  return {
+    appointmentID: a.AppointmentID || a.ID || a.Id,
+    patientID: a.PatientID || a.patientID,
+    patientName: a.AppointmentWithName || a.PatientName || [a.PatientFirstName || a.FirstName, a.PatientLastName || a.LastName].filter(Boolean).join(' ') || 'Unknown',
+    startTime: a.StartDateTime || a.AppointmentDateTime || a.StartTime || '',
+    endTime: a.EndDateTime || a.EndTime || '',
+    duration: a.Duration || null,
+    status: a.AppointmentStatus || a.Status || 'Unknown',
+    service: a.ServiceName || a.Service || '',
+    doctor: a.DoctorName || a.Doctor || '',
+    phone: a.AppointmentWithPhone || a.PatientMobile || a.Mobile || '',
+    notes: a.Notes || a.AppointmentNotes || ''
+  };
+}
+
 app.get('/api/appointments-by-date', requireAuth, async (req, res) => {
   const date = req.query.date;
   if (!date) {
@@ -809,25 +836,17 @@ app.get('/api/appointments-by-date', requireAuth, async (req, res) => {
     return res.json({ error: 'Clinicea API not configured', appointments: [] });
   }
 
+  // Check cache
+  const cached = appointmentDateCache.get(date);
+  if (cached && Date.now() < cached.expiry) {
+    return res.json({ appointments: cached.data, date });
+  }
+
   try {
     const data = await cliniceaFetch(`/api/v3/appointments/getAppointmentsByDate?appointmentDate=${encodeURIComponent(date)}&pageNo=1&pageSize=100`);
-    let appointments = Array.isArray(data) ? data : [];
+    const appointments = (Array.isArray(data) ? data : []).map(mapAppointmentFields);
 
-    // Map to consistent fields
-    appointments = appointments.map(a => ({
-      appointmentID: a.AppointmentID || a.ID || a.Id,
-      patientID: a.PatientID || a.patientID,
-      patientName: a.AppointmentWithName || a.PatientName || [a.PatientFirstName || a.FirstName, a.PatientLastName || a.LastName].filter(Boolean).join(' ') || 'Unknown',
-      startTime: a.StartDateTime || a.AppointmentDateTime || a.StartTime || '',
-      endTime: a.EndDateTime || a.EndTime || '',
-      duration: a.Duration || null,
-      status: a.AppointmentStatus || a.Status || 'Unknown',
-      service: a.ServiceName || a.Service || '',
-      doctor: a.DoctorName || a.Doctor || '',
-      phone: a.AppointmentWithPhone || a.PatientMobile || a.Mobile || '',
-      notes: a.Notes || a.AppointmentNotes || ''
-    }));
-
+    appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + CACHE_TTL });
     return res.json({ appointments, date });
   } catch (err) {
     logEvent('error', 'Appointments by date fetch failed', err.message);
@@ -844,23 +863,8 @@ app.get('/api/patient-profile-by-id/:patientId', requireAuth, async (req, res) =
   }
 
   try {
-    const [details, appointments, bills] = await Promise.all([
-      cliniceaFetch(`/api/v3/patients/getPatientByID?patientID=${patientId}`),
-      cliniceaFetch(`/api/v2/appointments/getAppointmentsByPatient?patientID=${patientId}&appointmentType=2&pageNo=1&pageSize=50`),
-      cliniceaFetch(`/api/v2/bills/getBillsByPatient?patientID=${patientId}&billStatus=0&pageNo=1&pageSize=50`)
-    ]);
-
-    const pat = Array.isArray(details) ? (details[0] || {}) : (details || {});
-    const patientName = pat.Name || pat.PatientName || pat.FullName ||
-                        [pat.FirstName, pat.LastName].filter(Boolean).join(' ') || 'Unknown';
-
-    return res.json({
-      patient: details,
-      appointments: Array.isArray(appointments) ? appointments : [],
-      bills: Array.isArray(bills) ? bills : [],
-      patientName,
-      patientID: patientId
-    });
+    const result = await fetchProfileByPatientId(patientId);
+    return res.json(result);
   } catch (err) {
     logEvent('error', 'Patient profile by ID fetch failed', err.message);
     return res.json({ error: err.message });
@@ -884,4 +888,20 @@ io.on('connection', (socket) => {
 server.listen(PORT, () => {
   logEvent('info', 'Server started on port ' + PORT);
   logEvent('info', 'Clinicea API: ' + (isClinicaConfigured() ? 'Configured' : 'Not configured'));
+
+  // Preload caches on startup so first page visits are fast
+  if (isClinicaConfigured()) {
+    // Preload today's appointments
+    const today = new Date().toISOString().split('T')[0];
+    cliniceaFetch(`/api/v3/appointments/getAppointmentsByDate?appointmentDate=${today}&pageNo=1&pageSize=100`)
+      .then(data => {
+        const appointments = (Array.isArray(data) ? data : []).map(mapAppointmentFields);
+        appointmentDateCache.set(today, { data: appointments, expiry: Date.now() + CACHE_TTL });
+        logEvent('info', `Preloaded ${appointments.length} appointments for today`);
+      })
+      .catch(() => {});
+
+    // Preload patient list
+    loadAllPatients().catch(() => {});
+  }
 });
