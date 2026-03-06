@@ -338,6 +338,7 @@
   <div class="container">
     <div class="notification" id="notification">
       <h3>Incoming Call</h3>
+      <p id="patientNameBanner" style="font-size:20px;font-weight:700;color:#1a1a2e;margin-bottom:4px;display:none;"></p>
       <div class="caller-number" id="callerNumber">
         <span id="callerNumberText"></span>
         <a id="callerWhatsapp" class="whatsapp-link" href="#" target="_blank" title="Message on WhatsApp">
@@ -434,9 +435,28 @@
     checkMonitorStatus();
     setInterval(checkMonitorStatus, 30000);
 
+    // Patient info updates (arrives after call, once API responds)
+    const patientNameBanner = document.getElementById('patientNameBanner');
+
+    socket.on('patient_info', (data) => {
+      // Update notification banner if still visible
+      if (data.patientName) {
+        patientNameBanner.textContent = data.patientName;
+        patientNameBanner.style.display = 'block';
+      }
+      // Update call history table if the row exists
+      const nameEl = document.getElementById('name-' + data.callId);
+      if (nameEl) {
+        nameEl.textContent = data.patientName;
+        nameEl.className = 'meeting-badge upcoming';
+      }
+    });
+
     // Incoming call handler
     socket.on('incoming_call', (data) => {
       // Show notification banner
+      patientNameBanner.textContent = '';
+      patientNameBanner.style.display = 'none';
       callerNumberText.textContent = data.caller;
       callerWhatsapp.href = getWhatsappUrl(data.caller);
       callTime.textContent = 'Received at ' + new Date(data.timestamp).toLocaleTimeString();
@@ -483,16 +503,20 @@
           <thead>
             <tr>
               <th>#</th>
-              <th>Caller Number</th>
+              <th>Caller</th>
+              <th>Patient</th>
               <th>Time</th>
               <th>Next Meeting</th>
-              <th>Patient Profile</th>
+              <th>Profile</th>
             </tr>
           </thead><tbody>`;
 
         calls.forEach((call, i) => {
           const time = new Date(call.timestamp + 'Z').toLocaleString();
           const waUrl = getWhatsappUrl(call.caller_number);
+          const nameDisplay = call.patient_name
+            ? `<span class="meeting-badge upcoming" id="name-${call.id}">${call.patient_name}</span>`
+            : `<span class="meeting-badge loading" id="name-${call.id}">--</span>`;
           html += `<tr>
             <td>${call.id}</td>
             <td>
@@ -501,6 +525,7 @@
                 <a href="${waUrl}" target="_blank" class="whatsapp-link" title="Message on WhatsApp">${whatsappSvg}</a>
               </span>
             </td>
+            <td>${nameDisplay}</td>
             <td>${time}</td>
             <td><span class="meeting-badge loading" id="meeting-${call.id}">Loading...</span></td>
             <td><a href="${call.clinicea_url}" target="_blank">Open in Clinicea</a></td>
@@ -545,6 +570,17 @@
         const res = await fetch(`/api/next-meeting/${encodeURIComponent(phone)}`);
         const data = await res.json();
         const els = callIds.map(id => document.getElementById(`meeting-${id}`)).filter(Boolean);
+
+        // Update patient name cells if API returned a name
+        if (data.patientName) {
+          callIds.forEach(id => {
+            const nameEl = document.getElementById('name-' + id);
+            if (nameEl && nameEl.textContent === '--') {
+              nameEl.textContent = data.patientName;
+              nameEl.className = 'meeting-badge upcoming';
+            }
+          });
+        }
 
         if (data.error === 'Clinicea API not configured') {
           els.forEach(el => {

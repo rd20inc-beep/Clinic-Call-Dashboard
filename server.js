@@ -43,12 +43,19 @@ db.exec(`
     caller_number TEXT NOT NULL,
     call_sid TEXT,
     clinicea_url TEXT,
+    patient_name TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
+// Add patient_name column if missing (existing DBs)
+try { db.exec('ALTER TABLE calls ADD COLUMN patient_name TEXT'); } catch (e) { /* already exists */ }
+
 const insertCall = db.prepare(
   'INSERT INTO calls (caller_number, call_sid, clinicea_url) VALUES (?, ?, ?)'
+);
+const updateCallPatientName = db.prepare(
+  'UPDATE calls SET patient_name = ? WHERE id = ?'
 );
 const PAGE_SIZE = 10;
 const countCalls = db.prepare('SELECT COUNT(*) as total FROM calls');
@@ -155,7 +162,8 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
   const cliniceaUrl = `${CLINICEA_BASE_URL}?tp=pat&m=${encodeURIComponent(caller)}`;
 
   // Log to database
-  insertCall.run(caller, callSid, cliniceaUrl);
+  const result = insertCall.run(caller, callSid, cliniceaUrl);
+  const callId = result.lastInsertRowid;
 
   logEvent('info', 'Incoming call: ' + caller, 'SID: ' + callSid);
 
@@ -164,8 +172,20 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
     caller,
     callSid,
     cliniceaUrl,
+    callId,
     timestamp: new Date().toISOString()
   });
+
+  // Async: look up patient name and push update to dashboard
+  if (isClinicaConfigured()) {
+    findPatientByPhone(caller).then(patient => {
+      if (patient && patient.patientName) {
+        updateCallPatientName.run(patient.patientName, callId);
+        io.emit('patient_info', { caller, callId, patientName: patient.patientName });
+        logEvent('info', 'Patient identified: ' + patient.patientName, caller);
+      }
+    }).catch(() => {});
+  }
 
   // Respond with OK
   res.json({ status: 'ok', caller, cliniceaUrl });
@@ -552,7 +572,7 @@ async function cliniceaFetch(endpoint) {
   }
 }
 
-// Find PatientID by phone number using appointment changes
+// Find PatientID and name by phone number using appointment changes
 async function findPatientByPhone(phone) {
   const today = new Date();
   const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -568,7 +588,9 @@ async function findPatientByPhone(phone) {
     a.AppointmentWithPhone === cleanPhone.replace('+', '') ||
     a.PatientMobile === cleanPhone.replace('+', '')
   );
-  return match ? match.PatientID : null;
+  if (!match) return null;
+  const patientName = match.AppointmentWithName || match.PatientName || match.PatientFirstName || null;
+  return { patientID: match.PatientID, patientName };
 }
 
 async function getNextAppointmentForPatient(patientID) {
@@ -598,21 +620,21 @@ app.get('/api/next-meeting/:phone', requireAuth, async (req, res) => {
   }
 
   try {
-    const patientID = await findPatientByPhone(phone);
+    const patient = await findPatientByPhone(phone);
 
-    if (!patientID) {
-      const result = { nextMeeting: null };
+    if (!patient) {
+      const result = { nextMeeting: null, patientName: null };
       meetingCache.set(phone, { data: result, expiry: Date.now() + CACHE_TTL });
       return res.json(result);
     }
 
-    const appointment = await getNextAppointmentForPatient(patientID);
-    const result = { nextMeeting: appointment };
+    const appointment = await getNextAppointmentForPatient(patient.patientID);
+    const result = { nextMeeting: appointment, patientName: patient.patientName };
     meetingCache.set(phone, { data: result, expiry: Date.now() + CACHE_TTL });
     return res.json(result);
   } catch (err) {
     logEvent('error', 'Clinicea API error', err.message);
-    return res.json({ nextMeeting: null, error: err.message });
+    return res.json({ nextMeeting: null, patientName: null, error: err.message });
   }
 });
 
