@@ -5,7 +5,8 @@
   'use strict';
 
   const SCAN_INTERVAL = 5000; // scan for unread chats every 5s
-  const processedChats = new Set(); // track chats we've already replied to (by name/phone)
+  const processedMessages = new Set(); // track message IDs we've already replied to
+  const pausedChats = new Set(); // chats where bot is paused (user is manually chatting)
   let enabled = true;
   let busy = false; // prevent overlapping operations
   let processedCount = 0;
@@ -32,46 +33,31 @@
   function findUnreadChats() {
     const unread = [];
     const pane = document.querySelector('#pane-side');
-    if (!pane) {
-      console.log('[WA Bot] #pane-side not found');
-      return unread;
-    }
+    if (!pane) return unread;
 
-    // Strategy: find ALL small spans inside the chat list that contain just a number
-    // These are the unread count badges (green circles with numbers like "1", "5", "47")
     const allSpans = pane.querySelectorAll('span');
     const badgeSpans = [];
 
     allSpans.forEach(span => {
       const text = span.textContent.trim();
-      // Must be a pure number, 1-4 digits
       if (!/^\d{1,4}$/.test(text)) return;
-      // Must be small (badge-sized) — check computed style
       const rect = span.getBoundingClientRect();
-      if (rect.width > 50 || rect.height > 30) return;
-      if (rect.width < 5) return; // hidden
-      // Check it has a background (badges are styled circles)
+      if (rect.width > 50 || rect.height > 30 || rect.width < 5) return;
       const style = window.getComputedStyle(span);
       const bg = style.backgroundColor;
-      // Green-ish background or any non-transparent background indicates a badge
       if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
         badgeSpans.push(span);
       }
     });
 
-    console.log('[WA Bot] Found', badgeSpans.length, 'potential unread badges');
-
     badgeSpans.forEach(badge => {
-      // Walk up the DOM to find the chat row container
       let row = badge.closest('[role="listitem"]') ||
                 badge.closest('[data-testid="cell-frame-container"]')?.parentElement ||
                 badge.closest('[tabindex="-1"]');
 
-      // If no standard container found, walk up manually to find a reasonably-sized container
       if (!row) {
         let el = badge.parentElement;
         for (let i = 0; i < 15 && el && el !== pane; i++) {
-          // A chat row is typically ~60-90px tall and full width
           const rect = el.getBoundingClientRect();
           if (rect.height > 50 && rect.height < 120 && rect.width > 200) {
             row = el;
@@ -83,101 +69,63 @@
 
       if (!row) return;
 
-      // Get chat name from the row
       const nameEl = row.querySelector('span[title]');
       const name = nameEl ? (nameEl.getAttribute('title') || nameEl.textContent.trim()) : null;
       if (!name) return;
 
       const count = parseInt(badge.textContent.trim()) || 1;
 
-      // Skip groups - groups typically have high unread counts or group-like names
-      // Check for group indicators: multiple participants icon, or broadcast icon
+      // Skip groups
       const isGroup = row.querySelector('[data-testid="default-group"]') ||
                       row.querySelector('[data-testid="group"]') ||
                       row.querySelector('[data-icon="default-group"]') ||
                       row.querySelector('[data-icon="group"]') ||
-                      row.querySelector('span[data-testid="last-msg-status"]')?.textContent?.includes(':') ||
                       false;
 
-      // Also skip if name looks like a typical group (contains common group patterns)
       const groupPatterns = /community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat/i;
-      if (isGroup || groupPatterns.test(name)) {
-        return; // skip groups
-      }
+      if (isGroup || groupPatterns.test(name)) return;
 
-      // Avoid duplicates
       if (unread.some(u => u.name === name)) return;
 
       unread.push({ name, element: row, unreadCount: count });
     });
-
-    if (unread.length > 0) {
-      console.log('[WA Bot] Unread chats:', unread.map(c => c.name + ' (' + c.unreadCount + ')'));
-    }
 
     return unread;
   }
 
   // Helper: clear the search box completely
   async function clearSearch() {
-    // Try clicking the X/back button to exit search
     const clearBtn = document.querySelector('[data-testid="x-alt"]') ||
                      document.querySelector('[data-testid="back-btn"]') ||
-                     document.querySelector('#side [data-testid="search-clear-btn"]') ||
                      document.querySelector('#side [data-icon="x-alt"]')?.closest('button') ||
-                     document.querySelector('#side [data-icon="back"]')?.closest('button') ||
-                     document.querySelector('#side span[data-icon="x-alt"]')?.parentElement ||
-                     document.querySelector('#side span[data-icon="back"]')?.parentElement;
+                     document.querySelector('#side [data-icon="back"]')?.closest('button');
     if (clearBtn) {
       clearBtn.click();
       await sleep(500);
     }
-    // Also press Escape as backup
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
-    await sleep(300);
-    // Clear the search input text directly
-    const searchInputs = document.querySelectorAll('#side div[contenteditable="true"], #side [data-tab="3"]');
-    searchInputs.forEach(el => {
-      el.textContent = '';
-      el.innerHTML = '';
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    });
     await sleep(300);
   }
 
-  // Open a chat — we already have the sidebar row element, just need to click it right
+  // Open a chat by clicking its sidebar row
   async function openChatByElement(element, chatName) {
-    // Remember what was open before
     const prevInfo = getCurrentChatInfo();
     const prevName = prevInfo.name;
 
-    // Collect every clickable thing inside the row
     const candidates = [];
-
-    // The row itself
+    const nameSpan = element.querySelector('span[title]');
+    if (nameSpan) candidates.push(nameSpan);
     candidates.push(element);
-
-    // All children with any interactive attributes
-    element.querySelectorAll('div, span, a').forEach(el => {
+    element.querySelectorAll('div, span').forEach(el => {
       const rect = el.getBoundingClientRect();
       if (rect.width > 50 && rect.height > 20 && rect.height < 120) {
         candidates.push(el);
       }
     });
 
-    // Also add the name span specifically
-    const nameSpan = element.querySelector('span[title]');
-    if (nameSpan) candidates.unshift(nameSpan);
-
-    console.log('[WA Bot] Trying', candidates.length, 'click targets for:', chatName);
-
-    // Try each candidate with full event simulation
     for (let i = 0; i < Math.min(candidates.length, 8); i++) {
       const target = candidates[i];
-
-      // React/WhatsApp needs the full pointer event sequence
       const eventOpts = { bubbles: true, cancelable: true, view: window };
-
       target.dispatchEvent(new PointerEvent('pointerdown', eventOpts));
       target.dispatchEvent(new MouseEvent('mousedown', eventOpts));
       await sleep(80);
@@ -185,59 +133,42 @@
       target.dispatchEvent(new MouseEvent('mouseup', eventOpts));
       target.dispatchEvent(new MouseEvent('click', eventOpts));
       target.click();
-
       await sleep(1500);
 
-      // Check if a different chat opened
       const nowInfo = getCurrentChatInfo();
-      const composeBox = document.querySelector('#main footer [contenteditable="true"]') ||
-                         document.querySelector('[data-tab="10"]');
-      // Success if: name changed, or compose box appeared, or any header exists when none did before
+      const composeBox = document.querySelector('#main footer [contenteditable="true"]');
       if ((nowInfo.name && nowInfo.name !== prevName) || (composeBox && !prevName)) {
-        console.log('[WA Bot] Opened chat:', nowInfo.name || chatName, '(click target #' + i + ')');
         return true;
       }
     }
 
-    // Fallback for phone numbers: use WhatsApp URL scheme
+    // Fallback for phone numbers
     if (chatName.match(/^\+?\d[\d\s]{7,}/)) {
       const cleanPhone = chatName.replace(/[\s\-\+]/g, '');
-      console.log('[WA Bot] Trying URL for phone:', cleanPhone);
       window.location.href = 'https://web.whatsapp.com/send?phone=' + cleanPhone;
       await sleep(4000);
-      const header = document.querySelector('#main header span[title]');
-      if (header) {
-        console.log('[WA Bot] Opened via URL:', header.getAttribute('title'));
-        return true;
-      }
+      if (document.querySelector('#main header span[title]')) return true;
     }
 
-    console.log('[WA Bot] Failed to open:', chatName);
     return false;
   }
 
   // Get the last few incoming messages from the currently open chat
   function getLastIncomingMessages() {
     const messages = [];
-    // WhatsApp message containers
     const msgContainer = document.querySelector('#main [role="application"]') ||
                          document.querySelector('#main .copyable-area');
     if (!msgContainer) return messages;
 
-    // Get all message rows - try multiple selectors
     const rows = msgContainer.querySelectorAll('[data-id], .message-in, [class*="message-in"]');
 
     rows.forEach(row => {
       const dataId = row.getAttribute('data-id') || '';
-
-      // Check if it's an incoming message
-      // Incoming: data-id starts with "false_" OR has class message-in
       const isIncoming = dataId.startsWith('false_') ||
                          row.classList.contains('message-in') ||
                          row.querySelector('.message-in');
       if (!isIncoming) return;
 
-      // Get text content - try multiple selectors
       const textEl = row.querySelector('.selectable-text span') ||
                      row.querySelector('[data-testid="msg-container"] span.selectable-text') ||
                      row.querySelector('.copyable-text span');
@@ -246,21 +177,18 @@
       const text = textEl.textContent.trim();
       if (!text) return;
 
-      messages.push({ text, id: dataId });
+      messages.push({ text, id: dataId || ('text_' + text.substring(0, 30) + '_' + messages.length) });
     });
 
     return messages;
   }
 
-  // Get chat name and phone from the header of currently open chat
+  // Get chat name and phone from the header
   function getCurrentChatInfo() {
     const header = document.querySelector('#main header');
     if (!header) return { name: null, phone: null };
 
-    // Skip text that is clearly not a contact name
     const skipPatterns = /click here|contact info|group info|search|last seen|online|typing|tap here/i;
-
-    // Get all span[title] in header and pick the right one
     const spans = header.querySelectorAll('span[title]');
     let name = null;
     for (const span of spans) {
@@ -270,13 +198,11 @@
       break;
     }
 
-    // Fallback: try any non-trivial text in header that isn't a subtitle
     if (!name) {
       const allSpans = header.querySelectorAll('span');
       for (const span of allSpans) {
         const t = span.textContent.trim();
         if (!t || t.length < 2 || skipPatterns.test(t)) continue;
-        // Skip tiny UI elements
         const rect = span.getBoundingClientRect();
         if (rect.height < 10) continue;
         name = t;
@@ -294,52 +220,37 @@
 
   // Type into the message input and send
   async function typeAndSend(text) {
-    // Find the compose box - try multiple selectors
     const inputBox = document.querySelector('#main footer [contenteditable="true"]') ||
                      document.querySelector('#main [data-testid="conversation-compose-box-input"]') ||
-                     document.querySelector('[data-tab="10"]') ||
-                     document.querySelector('#main footer div[contenteditable]');
+                     document.querySelector('[data-tab="10"]');
 
     if (!inputBox) {
       console.error('[WA Bot] Cannot find message input box');
       return false;
     }
 
-    // Focus
     inputBox.focus();
     inputBox.click();
     await sleep(300);
-
-    // Clear existing text
     inputBox.textContent = '';
     inputBox.innerHTML = '';
     await sleep(100);
-
-    // Use execCommand to simulate real typing
     document.execCommand('insertText', false, text);
     await sleep(300);
-
-    // Dispatch events to trigger WhatsApp's handlers
     inputBox.dispatchEvent(new Event('input', { bubbles: true }));
-    inputBox.dispatchEvent(new Event('change', { bubbles: true }));
     await sleep(500);
 
-    // Find send button
     const sendBtn = document.querySelector('#main footer [data-testid="send"]') ||
                     document.querySelector('#main footer span[data-icon="send"]') ||
                     document.querySelector('#main footer button[aria-label="Send"]');
 
     if (sendBtn) {
-      // Click the send button or its parent
       const clickable = sendBtn.closest('button') || sendBtn.closest('[role="button"]') || sendBtn;
       clickable.click();
-      console.log('[WA Bot] Clicked send button');
       await sleep(500);
       return true;
     }
 
-    // Fallback: press Enter
-    console.log('[WA Bot] No send button found, trying Enter key');
     inputBox.dispatchEvent(new KeyboardEvent('keydown', {
       key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
     }));
@@ -350,7 +261,6 @@
   // Send message to server and get GPT reply
   function getReply(text, phone, chatName) {
     return new Promise((resolve) => {
-      console.log('[WA Bot] Sending to server:', { text: text.substring(0, 50), phone, chatName });
       chrome.runtime.sendMessage({
         type: 'INCOMING_MESSAGE',
         data: {
@@ -366,7 +276,6 @@
           resolve(null);
           return;
         }
-        console.log('[WA Bot] Server response:', JSON.stringify(response).substring(0, 200));
         resolve(response);
       });
     });
@@ -380,71 +289,58 @@
     try {
       const unreadChats = findUnreadChats();
 
-      if (unreadChats.length === 0) {
-        console.log('[WA Bot] No unread chats found this scan');
-      } else {
-        console.log('[WA Bot] Found', unreadChats.length, 'unread chats:', unreadChats.map(c => c.name));
-      }
-
       for (const chat of unreadChats) {
         if (!enabled) break;
 
-        // Skip if we recently replied to this chat (within last 2 minutes)
-        const chatKey = chat.name;
-        if (processedChats.has(chatKey)) continue;
+        // Skip paused chats
+        if (pausedChats.has(chat.name)) {
+          console.log('[WA Bot] Skipping paused chat:', chat.name);
+          continue;
+        }
 
         console.log('[WA Bot] Opening chat:', chat.name);
-
-        // Click to open the chat
         const opened = await openChatByElement(chat.element, chat.name);
         if (!opened) {
-          console.log('[WA Bot] Failed to open chat:', chat.name, '- stopping this scan cycle');
+          console.log('[WA Bot] Failed to open:', chat.name);
           await clearSearch();
-          break; // stop this cycle, retry next scan
+          break;
         }
 
         await sleep(1000);
 
-        // Get chat info
         const chatInfo = getCurrentChatInfo();
-        console.log('[WA Bot] Chat info:', chatInfo);
-
-        // Get last incoming messages
         const messages = getLastIncomingMessages();
-        if (messages.length === 0) {
-          console.log('[WA Bot] No readable messages in:', chat.name);
-          continue;
-        }
+        if (messages.length === 0) continue;
 
-        // Take the last incoming message
-        const lastMsg = messages[messages.length - 1];
-        console.log('[WA Bot] Last message from', chat.name, ':', lastMsg.text);
+        // Reply to ALL unread incoming messages we haven't processed yet
+        // (get the last few and check which ones are new)
+        const newMessages = messages.filter(m => !processedMessages.has(m.id));
+        if (newMessages.length === 0) continue;
+
+        // Take the latest unprocessed message to reply to
+        const lastMsg = newMessages[newMessages.length - 1];
+        console.log('[WA Bot] New message from', chat.name, ':', lastMsg.text.substring(0, 80));
+
+        // Mark ALL new messages as processed so we don't re-reply
+        newMessages.forEach(m => processedMessages.add(m.id));
         processedCount++;
 
-        // Get GPT reply from server — use sidebar chat name as fallback
         const contactName = chatInfo.name || chat.name;
         const contactPhone = chatInfo.phone || null;
         const response = await getReply(lastMsg.text, contactPhone, contactName);
 
         if (response && response.reply && response.reply.trim()) {
-          console.log('[WA Bot] GPT reply for', chat.name, ':', response.reply.substring(0, 80));
-
-          // Type and send
+          console.log('[WA Bot] GPT reply:', response.reply.substring(0, 80));
           await sleep(1000 + Math.random() * 1000);
           const sent = await typeAndSend(response.reply);
-
           if (sent) {
             console.log('[WA Bot] Reply SENT to', chat.name);
-            processedChats.add(chatKey);
-            setTimeout(() => processedChats.delete(chatKey), 2 * 60 * 1000);
-          } else {
-            console.error('[WA Bot] Failed to type/send reply to', chat.name);
           }
         } else {
-          console.error('[WA Bot] No reply from server for', chat.name, '| response:', JSON.stringify(response));
+          console.error('[WA Bot] No reply from server for', chat.name);
         }
 
-        await sleep(1500); // pause between chats
+        await sleep(1500);
       }
     } catch (err) {
       console.error('[WA Bot] Scan error:', err);
@@ -453,7 +349,7 @@
     busy = false;
   }
 
-  // Also handle messages in the currently open chat (real-time)
+  // Also handle new messages in the currently open chat (real-time)
   let lastSeenMsgId = null;
 
   function checkCurrentChat() {
@@ -462,27 +358,26 @@
     const chatInfo = getCurrentChatInfo();
     if (!chatInfo.name) return;
 
+    // Skip if chat is paused
+    if (pausedChats.has(chatInfo.name)) return;
+
     const messages = getLastIncomingMessages();
     if (messages.length === 0) return;
 
     const lastMsg = messages[messages.length - 1];
     if (!lastMsg.id || lastMsg.id === lastSeenMsgId) return;
+    if (processedMessages.has(lastMsg.id)) {
+      lastSeenMsgId = lastMsg.id;
+      return;
+    }
 
-    // This is a new message in the current chat
+    // This is a genuinely new message
     lastSeenMsgId = lastMsg.id;
+    processedMessages.add(lastMsg.id);
     processedCount++;
 
-    // Don't auto-reply if we're already in a processed chat
-    const chatKey = chatInfo.name;
-    if (processedChats.has(chatKey)) return;
+    console.log('[WA Bot] New message in current chat from', chatInfo.name, ':', lastMsg.text.substring(0, 80));
 
-    console.log('[WA Bot] New message in current chat from', chatInfo.name, ':', lastMsg.text);
-
-    // Mark as processing
-    processedChats.add(chatKey);
-    setTimeout(() => processedChats.delete(chatKey), 2 * 60 * 1000);
-
-    // Get reply async
     busy = true;
     getReply(lastMsg.text, chatInfo.phone, chatInfo.name).then(async (response) => {
       if (response && response.reply && response.reply.trim()) {
@@ -494,7 +389,7 @@
     }).catch(() => { busy = false; });
   }
 
-  // Listen for commands from popup
+  // Listen for commands from popup / dashboard
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'SET_ENABLED') {
       enabled = msg.enabled;
@@ -502,10 +397,25 @@
       sendResponse({ ok: true });
     }
     if (msg.type === 'GET_STATUS') {
-      sendResponse({ enabled, processedCount });
+      const chatInfo = getCurrentChatInfo();
+      sendResponse({
+        enabled,
+        processedCount,
+        pausedChats: Array.from(pausedChats),
+        currentChat: chatInfo.name
+      });
+    }
+    if (msg.type === 'PAUSE_CHAT') {
+      pausedChats.add(msg.chatName);
+      console.log('[WA Bot] Paused bot for:', msg.chatName);
+      sendResponse({ ok: true, pausedChats: Array.from(pausedChats) });
+    }
+    if (msg.type === 'RESUME_CHAT') {
+      pausedChats.delete(msg.chatName);
+      console.log('[WA Bot] Resumed bot for:', msg.chatName);
+      sendResponse({ ok: true, pausedChats: Array.from(pausedChats) });
     }
     if (msg.type === 'SEND_MESSAGE') {
-      // Manual send from dashboard - search and open chat
       (async () => {
         const searchBox = document.querySelector('#side [data-testid="chat-list-search"]') ||
                           document.querySelector('#side div[contenteditable="true"]');
@@ -534,24 +444,30 @@
     }
   });
 
+  // Clean up old processed message IDs periodically (keep memory low)
+  setInterval(() => {
+    if (processedMessages.size > 500) {
+      const arr = Array.from(processedMessages);
+      arr.splice(0, arr.length - 200).forEach(id => processedMessages.delete(id));
+    }
+  }, 60000);
+
   // Boot
   waitForLoad(() => {
-    // Mark initial state
+    // Mark all current messages as already seen so we don't reply to old ones
     const initMsgs = getLastIncomingMessages();
+    initMsgs.forEach(m => processedMessages.add(m.id));
     if (initMsgs.length > 0) {
       lastSeenMsgId = initMsgs[initMsgs.length - 1].id;
     }
     processedCount = 0;
 
-    console.log('[WA Bot] Starting scanners');
+    console.log('[WA Bot] Starting scanners, marked', initMsgs.length, 'existing messages as seen');
 
-    // Scan unread chats every 5 seconds
     setInterval(scanAndReply, SCAN_INTERVAL);
-
-    // Check current chat for new messages every 3 seconds
     setInterval(checkCurrentChat, 3000);
 
-    // Also poll for server-queued outgoing messages
+    // Poll for server-queued outgoing messages
     setInterval(() => {
       if (!enabled || busy) return;
       chrome.runtime.sendMessage({ type: 'CHECK_OUTGOING' }, async (response) => {
@@ -560,7 +476,6 @@
           busy = true;
           for (const msg of response.messages) {
             console.log('[WA Bot] Sending queued message to', msg.phone);
-            // Search for the contact
             const searchBox = document.querySelector('#side [data-testid="chat-list-search"]') ||
                               document.querySelector('#side div[contenteditable="true"]');
             if (!searchBox) break;
@@ -590,7 +505,6 @@
             }
             await sleep(2000);
           }
-          // Clear search
           const clearBtn = document.querySelector('[data-testid="x-alt"]');
           if (clearBtn) clearBtn.click();
           busy = false;
@@ -598,7 +512,7 @@
       });
     }, 5000);
 
-    console.log('[WA Bot] All systems running - scanning unread chats');
+    console.log('[WA Bot] All systems running');
   });
 
 })();

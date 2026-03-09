@@ -1783,7 +1783,8 @@
         <div id="waChatView" class="wa-chat-view" style="display:none;">
           <div class="wa-chat-header">
             <button onclick="waCloseChat()">&larr; Back</button>
-            <span id="waChatName">Chat</span>
+            <span id="waChatName" style="flex:1">Chat</span>
+            <button id="waPauseBtn" onclick="waTogglePause()" style="background:rgba(255,255,255,0.2);border:none;color:white;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Pause Bot</button>
           </div>
           <div id="waChatMessages" class="wa-chat-messages"></div>
         </div>
@@ -2821,40 +2822,55 @@
         .catch(() => {});
     }
 
+    let waPausedChats = new Set();
+    let waCurrentChatPhone = null;
+
+    function loadWaPausedChats() {
+      return fetch('/api/whatsapp/paused').then(r => r.json()).then(data => {
+        waPausedChats = new Set(data.pausedChats || []);
+      }).catch(() => {});
+    }
+
     function loadWaConversations() {
-      fetch('/api/whatsapp/conversations')
-        .then(r => r.json())
-        .then(data => {
-          const container = document.getElementById('waConversations');
-          if (!data.conversations || data.conversations.length === 0) {
-            container.innerHTML = '<div class="empty-state"><p>No WhatsApp conversations yet. Install the Chrome extension and open WhatsApp Web to get started.</p></div>';
-            return;
-          }
-          container.innerHTML = data.conversations.map(c => {
-            const initials = (c.chat_name || c.phone || '?').substring(0, 2).toUpperCase();
-            const name = c.chat_name || c.phone;
-            const time = new Date(c.last_message_at).toLocaleString();
-            const lastMsg = (c.last_message || '').substring(0, 60);
-            return `<div class="wa-convo-item" onclick="waOpenChat('${c.phone.replace(/'/g, "\\'")}', '${(c.chat_name || c.phone).replace(/'/g, "\\'")}')">
-              <div class="wa-convo-avatar">${initials}</div>
-              <div class="wa-convo-info">
-                <div class="wa-convo-name">${name}</div>
-                <div class="wa-convo-last">${lastMsg}</div>
-              </div>
-              <div style="text-align:right;">
-                <div class="wa-convo-time">${time}</div>
-                <div class="wa-convo-count">${c.message_count}</div>
-              </div>
-            </div>`;
-          }).join('');
-        })
-        .catch(() => {});
+      loadWaPausedChats().then(() => {
+        fetch('/api/whatsapp/conversations')
+          .then(r => r.json())
+          .then(data => {
+            const container = document.getElementById('waConversations');
+            if (!data.conversations || data.conversations.length === 0) {
+              container.innerHTML = '<div class="empty-state"><p>No WhatsApp conversations yet. Install the Chrome extension and open WhatsApp Web to get started.</p></div>';
+              return;
+            }
+            container.innerHTML = data.conversations.map(c => {
+              const initials = (c.chat_name || c.phone || '?').substring(0, 2).toUpperCase();
+              const name = c.chat_name || c.phone;
+              const time = new Date(c.last_message_at).toLocaleString();
+              const lastMsg = (c.last_message || '').substring(0, 60);
+              const isPaused = waPausedChats.has(c.phone) || waPausedChats.has(c.chat_name);
+              const pausedBadge = isPaused ? '<span style="background:#e74c3c;color:white;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;">BOT OFF</span>' : '';
+              return `<div class="wa-convo-item" onclick="waOpenChat('${c.phone.replace(/'/g, "\\'")}', '${(c.chat_name || c.phone).replace(/'/g, "\\'")}')">
+                <div class="wa-convo-avatar">${initials}</div>
+                <div class="wa-convo-info">
+                  <div class="wa-convo-name">${escapeHtml(name)}${pausedBadge}</div>
+                  <div class="wa-convo-last">${escapeHtml(lastMsg)}</div>
+                </div>
+                <div style="text-align:right;">
+                  <div class="wa-convo-time">${time}</div>
+                  <div class="wa-convo-count">${c.message_count}</div>
+                </div>
+              </div>`;
+            }).join('');
+          })
+          .catch(() => {});
+      });
     }
 
     function waOpenChat(phone, name) {
+      waCurrentChatPhone = phone;
       document.getElementById('waConversations').style.display = 'none';
       document.getElementById('waChatView').style.display = 'block';
       document.getElementById('waChatName').textContent = name;
+      waUpdatePauseBtn();
 
       fetch('/api/whatsapp/history/' + encodeURIComponent(phone))
         .then(r => r.json())
@@ -2868,7 +2884,7 @@
             const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const typeLabel = m.message_type !== 'chat' ? ` [${m.message_type}]` : '';
             return `<div class="wa-msg ${m.direction}">
-              <div>${m.message}${typeLabel}</div>
+              <div>${escapeHtml(m.message)}${typeLabel}</div>
               <div class="wa-msg-time">${time}</div>
             </div>`;
           }).join('');
@@ -2877,9 +2893,42 @@
         .catch(() => {});
     }
 
+    function waUpdatePauseBtn() {
+      const btn = document.getElementById('waPauseBtn');
+      const isPaused = waPausedChats.has(waCurrentChatPhone);
+      btn.textContent = isPaused ? 'Resume Bot' : 'Pause Bot';
+      btn.style.background = isPaused ? '#2ecc71' : 'rgba(255,255,255,0.2)';
+    }
+
+    function waTogglePause() {
+      if (!waCurrentChatPhone) return;
+      const isPaused = waPausedChats.has(waCurrentChatPhone);
+      const endpoint = isPaused ? '/api/whatsapp/resume' : '/api/whatsapp/pause';
+
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chatId: waCurrentChatPhone })
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.ok) {
+            if (data.paused) {
+              waPausedChats.add(waCurrentChatPhone);
+            } else {
+              waPausedChats.delete(waCurrentChatPhone);
+            }
+            waUpdatePauseBtn();
+          }
+        })
+        .catch(() => {});
+    }
+
     function waCloseChat() {
+      waCurrentChatPhone = null;
       document.getElementById('waChatView').style.display = 'none';
       document.getElementById('waConversations').style.display = 'flex';
+      loadWaConversations(); // refresh to show updated pause status
     }
 
     function waSendManual() {

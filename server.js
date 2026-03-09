@@ -570,6 +570,9 @@ function generateInstallerBat(baseUrl, secret, agent) {
 // --- Public WhatsApp API Routes (no auth — called by Chrome Extension) ---
 // These MUST be before the static middleware which requires auth
 
+// Paused chats — bot won't reply to these
+const pausedChats = new Set();
+
 // Incoming message from WhatsApp (via extension)
 app.post('/api/whatsapp/incoming', async (req, res) => {
   const { messageId, text, phone, chatName, timestamp } = req.body;
@@ -583,6 +586,13 @@ app.post('/api/whatsapp/incoming', async (req, res) => {
 
   // Store incoming message
   insertWaMessage.run(contactId, chatName || null, 'in', text, 'chat', 'sent', null);
+
+  // Check if bot is paused for this chat
+  if (pausedChats.has(contactId) || pausedChats.has(chatName)) {
+    logEvent('info', `WA bot paused for ${chatName || phone}, skipping reply`);
+    io.emit('wa_message', { phone: contactId, chatName, direction: 'in', text, reply: null, timestamp: new Date().toISOString() });
+    return res.json({ reply: null });
+  }
 
   // Get GPT reply
   const reply = await getGPTReply(contactId, text, chatName);
@@ -1195,15 +1205,18 @@ async function getGPTReply(phone, incomingText, chatName) {
   messages.push({ role: 'user', content: incomingText });
 
   try {
+    logEvent('info', `GPT request for ${phone}`, `${messages.length} messages, last: "${incomingText.substring(0, 50)}"`);
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: messages,
       max_tokens: 200,
       temperature: 0.7
     });
-    return completion.choices[0].message.content.trim();
+    const reply = completion.choices[0].message.content.trim();
+    logEvent('info', `GPT reply for ${phone}`, reply.substring(0, 80));
+    return reply;
   } catch (err) {
-    logEvent('error', 'GPT API error', err.message);
+    logEvent('error', 'GPT API error', `${err.message} | status: ${err.status || 'N/A'} | code: ${err.code || 'N/A'}`);
     return "Thank you for reaching out! Our team will respond shortly. For urgent matters, please call +92-300-2105374.";
   }
 }
@@ -1218,6 +1231,27 @@ app.post('/api/whatsapp/send', requireAuth, (req, res) => {
   insertWaMessage.run(phone, null, 'out', message, 'chat', 'pending', req.session.username || null);
   logEvent('info', `WA manual message queued for ${phone} by ${req.session.username}`);
   return res.json({ ok: true });
+});
+
+// Pause/resume bot for a specific chat
+app.post('/api/whatsapp/pause', requireAuth, (req, res) => {
+  const { chatId } = req.body;
+  if (!chatId) return res.json({ error: 'chatId required' });
+  pausedChats.add(chatId);
+  logEvent('info', `WA bot paused for "${chatId}" by ${req.session.username}`);
+  return res.json({ ok: true, paused: true });
+});
+
+app.post('/api/whatsapp/resume', requireAuth, (req, res) => {
+  const { chatId } = req.body;
+  if (!chatId) return res.json({ error: 'chatId required' });
+  pausedChats.delete(chatId);
+  logEvent('info', `WA bot resumed for "${chatId}" by ${req.session.username}`);
+  return res.json({ ok: true, paused: false });
+});
+
+app.get('/api/whatsapp/paused', requireAuth, (req, res) => {
+  return res.json({ pausedChats: Array.from(pausedChats) });
 });
 
 // Get conversation history for a phone
