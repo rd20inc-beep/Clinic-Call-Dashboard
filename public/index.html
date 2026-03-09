@@ -2646,7 +2646,7 @@
       countEl.textContent = '';
 
       try {
-        const res = await fetch(`/api/appointments-by-date?date=${encodeURIComponent(date)}`);
+        const res = await fetch(`/api/appointments-by-date?date=${encodeURIComponent(date)}&refresh=1`);
         const data = await res.json();
 
         if (data.error && data.error !== 'Clinicea API not configured') {

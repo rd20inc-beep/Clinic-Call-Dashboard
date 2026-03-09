@@ -1018,14 +1018,16 @@ app.get('/api/appointments-by-date', requireAuth, async (req, res) => {
     return res.json({ error: 'Clinicea API not configured', appointments: [] });
   }
 
-  // Check cache
+  // Check cache (skip if refresh=1)
+  const forceRefresh = req.query.refresh === '1';
   const cached = appointmentDateCache.get(date);
-  if (cached && Date.now() < cached.expiry) {
+  if (cached && Date.now() < cached.expiry && !forceRefresh) {
     return res.json({ appointments: cached.data, date });
   }
 
   try {
     const data = await cliniceaFetch(`/api/v3/appointments/getAppointmentsByDate?appointmentDate=${encodeURIComponent(date)}&pageNo=1&pageSize=100`);
+    logEvent('info', `Clinicea appointments raw response for ${date}`, `type=${typeof data}, isArray=${Array.isArray(data)}, length=${Array.isArray(data) ? data.length : 'N/A'}, preview=${JSON.stringify(data).substring(0, 300)}`);
     const appointments = (Array.isArray(data) ? data : []).map(mapAppointmentFields);
 
     appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + CACHE_TTL });
