@@ -1965,7 +1965,14 @@
       }
     });
 
+    // Deduplicate incoming calls — only open profile once even with multiple tabs
+    let lastHandledCallId = null;
+
     socket.on('incoming_call', (data) => {
+      // Skip if we already handled this exact call
+      if (data.callId && data.callId === lastHandledCallId) return;
+      lastHandledCallId = data.callId;
+
       patientNameBanner.textContent = '';
       patientNameBanner.style.display = 'none';
       callerNumberText.textContent = data.caller;
@@ -1976,14 +1983,14 @@
 
       playBeep();
 
-      const autoLink = document.createElement('a');
-      autoLink.href = data.cliniceaUrl;
-      autoLink.target = 'clinicea_patient';
-      autoLink.rel = 'noopener';
-      autoLink.style.display = 'none';
-      document.body.appendChild(autoLink);
-      autoLink.click();
-      document.body.removeChild(autoLink);
+      // Only auto-open profile tab from one browser tab (use localStorage lock)
+      const lockKey = 'call_opened_' + data.callId;
+      if (!localStorage.getItem(lockKey)) {
+        localStorage.setItem(lockKey, '1');
+        // Clean up old locks after 60s
+        setTimeout(() => localStorage.removeItem(lockKey), 60000);
+        window.open(data.cliniceaUrl, 'clinicea_patient');
+      }
 
       loadCallHistory(1);
 
