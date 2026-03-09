@@ -1216,8 +1216,10 @@ async function getGPTReply(phone, incomingText, chatName) {
     logEvent('info', `GPT reply for ${phone}`, reply.substring(0, 80));
     return reply;
   } catch (err) {
-    logEvent('error', 'GPT API error', `${err.message} | status: ${err.status || 'N/A'} | code: ${err.code || 'N/A'}`);
-    return "Thank you for reaching out! Our team will respond shortly. For urgent matters, please call +92-300-2105374.";
+    const errDetail = `${err.message} | status: ${err.status || 'N/A'} | code: ${err.code || 'N/A'}`;
+    logEvent('error', 'GPT API error', errDetail);
+    // Return error info so it's visible in logs — the extension will still send this as a reply
+    return `Sorry, I'm having trouble responding right now. Please call us directly at +92-300-2105374. [Bot error: ${err.status || err.code || 'unknown'}]`;
   }
 }
 

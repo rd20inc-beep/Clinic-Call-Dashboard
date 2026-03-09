@@ -82,8 +82,8 @@
                       row.querySelector('[data-icon="group"]') ||
                       false;
 
-      const groupPatterns = /community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat/i;
-      if (isGroup || groupPatterns.test(name)) return;
+      const skipPatterns = /community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat|^meta ai$/i;
+      if (isGroup || skipPatterns.test(name)) return;
 
       if (unread.some(u => u.name === name)) return;
 
@@ -292,9 +292,9 @@
       for (const chat of unreadChats) {
         if (!enabled) break;
 
-        // Skip paused chats
-        if (pausedChats.has(chat.name)) {
-          console.log('[WA Bot] Skipping paused chat:', chat.name);
+        // Skip paused/blocked chats
+        if (shouldSkipChat(chat.name)) {
+          console.log('[WA Bot] Skipping chat:', chat.name);
           continue;
         }
 
@@ -352,14 +352,20 @@
   // Also handle new messages in the currently open chat (real-time)
   let lastSeenMsgId = null;
 
+  // Names to never reply to
+  const SKIP_NAMES = /^meta ai$|community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat/i;
+
+  function shouldSkipChat(name) {
+    return !name || SKIP_NAMES.test(name) || pausedChats.has(name);
+  }
+
   function checkCurrentChat() {
     if (!enabled || busy) return;
 
     const chatInfo = getCurrentChatInfo();
     if (!chatInfo.name) return;
 
-    // Skip if chat is paused
-    if (pausedChats.has(chatInfo.name)) return;
+    if (shouldSkipChat(chatInfo.name)) return;
 
     const messages = getLastIncomingMessages();
     if (messages.length === 0) return;
