@@ -388,7 +388,11 @@ $webhookUrl = "${baseUrl}/incoming_call"
 $heartbeatUrl = "${baseUrl}/heartbeat"
 $webhookSecret = "${secret}"
 $agentName = "${agent}"
-$logFile = "$env:APPDATA\\ClinicaCallMonitor\\monitor.log"
+$baseDir = "$env:APPDATA\\ClinicaCallMonitor"
+$logFile = "$baseDir\\monitor.log"
+$crashLog = "$baseDir\\crash.log"
+
+if (-not (Test-Path $baseDir)) { New-Item -ItemType Directory -Path $baseDir -Force | Out-Null }
 
 function Write-Log { param([string]$Msg)
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -402,113 +406,179 @@ if (Test-Path $logFile) {
 
 if (-not $agentName) {
     Write-Log "FATAL: agentName is empty — this monitor was installed without an agent. Re-download from dashboard."
+    Start-Sleep -Seconds 10
     exit 1
 }
 Write-Log "=== Monitor starting === Agent: $agentName"
 
+# Send initial heartbeat immediately (before WinRT setup) so dashboard shows online
 try {
-    [void][Windows.UI.Notifications.Management.UserNotificationListener, Windows.UI.Notifications, ContentType = WindowsRuntime]
-    [void][Windows.UI.Notifications.NotificationKinds, Windows.UI.Notifications, ContentType = WindowsRuntime]
-    [void][Windows.UI.Notifications.KnownNotificationBindings, Windows.UI.Notifications, ContentType = WindowsRuntime]
-    [void][Windows.UI.Notifications.UserNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]
-    Write-Log "WinRT APIs loaded"
-} catch {
-    Write-Log "FATAL: Cannot load WinRT APIs (need Windows 10 1803+): $_"
-    exit 1
-}
+    Invoke-RestMethod -Uri $heartbeatUrl -Method POST -Body "Agent=$([uri]::EscapeDataString($agentName))" -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 5 | Out-Null
+    Write-Log "Initial heartbeat sent"
+} catch { Write-Log "Initial heartbeat failed: $_" }
 
-Add-Type -AssemblyName System.Runtime.WindowsRuntime
-$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
-    $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
-    $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1'
-})[0]
-
-function Await-AsyncOp { param($AsyncOp, [Type]$ResultType)
-    $asTask = $script:asTaskGeneric.MakeGenericMethod($ResultType)
-    $netTask = $asTask.Invoke($null, @($AsyncOp))
-    $netTask.Wait(-1) | Out-Null
-    return $netTask.Result
-}
-
-$listener = [Windows.UI.Notifications.Management.UserNotificationListener]::Current
-
-$accessOk = $false
-for ($i = 1; $i -le 3; $i++) {
+# Wrap all WinRT setup in a function so we can retry on crash
+function Start-Monitor {
     try {
-        $status = Await-AsyncOp ($listener.RequestAccessAsync()) ([Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus])
-        if ($status -eq [Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus]::Allowed) {
-            $accessOk = $true; Write-Log "Notification access granted"; break
-        }
-        Write-Log "Access denied (attempt $i): $status"
-    } catch { Write-Log "Access error (attempt $i): $_" }
-    Start-Sleep -Seconds 5
-}
-if (-not $accessOk) { Write-Log "FATAL: Notification access denied. Enable at Settings > Privacy > Notifications"; exit 1 }
+        [void][Windows.UI.Notifications.Management.UserNotificationListener, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        [void][Windows.UI.Notifications.NotificationKinds, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        [void][Windows.UI.Notifications.KnownNotificationBindings, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        [void][Windows.UI.Notifications.UserNotification, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        Write-Log "WinRT APIs loaded"
+    } catch {
+        Write-Log "ERROR: Cannot load WinRT APIs: $_"
+        Add-Content -Path $crashLog -Value "[$(Get-Date)] WinRT load failed: $_" -ErrorAction SilentlyContinue
+        return $false
+    }
 
-$seenIds = @{}; $recentCalls = @{}
-$lastHeartbeat = [DateTimeOffset]::Now.ToUnixTimeSeconds() - 999
-Write-Log "Monitoring calls (Phone Link + WhatsApp)..."
-
-while ($true) {
     try {
-        $notifications = Await-AsyncOp ($listener.GetNotificationsAsync([Windows.UI.Notifications.NotificationKinds]::Toast)) ([System.Collections.Generic.IReadOnlyList[Windows.UI.Notifications.UserNotification]])
-        foreach ($notif in $notifications) {
-            $nid = $notif.Id
-            if ($seenIds.ContainsKey($nid)) { continue }
-            $seenIds[$nid] = $true
-            try { $appName = $notif.AppInfo.DisplayInfo.DisplayName } catch { continue }
-            if ($appName -notmatch "Phone Link|Your Phone|Phone|WhatsApp") { continue }
-            try {
-                $binding = $notif.Notification.Visual.GetBinding([Windows.UI.Notifications.KnownNotificationBindings]::ToastGeneric)
-                if ($null -eq $binding) { continue }
-                $textElements = $binding.GetTextElements()
-                $allTexts = @(); foreach ($elem in $textElements) { $allTexts += $elem.Text }
-                $fullText = $allTexts -join " "
-                $isCall = $false
-                if ($appName -match "Phone Link|Your Phone|Phone") {
-                    $isCall = $fullText -match "incoming|call|calling|ringing|answer|decline"
-                }
-                if ($appName -match "WhatsApp") {
-                    $isCall = $fullText -match "voice call|video call|incoming|calling|ringing|audio call"
-                }
-                if ($isCall) {
-                    $numberPart = $fullText -replace '(?i)(incoming\\s*(voice\\s*|video\\s*|audio\\s*)?call|calling|ringing|answer|decline|voice\\s*call|video\\s*call|audio\\s*call)', ''
-                    $numberPart = $numberPart.Trim()
-                    $phone = $null
-                    if ($numberPart -match '(\\+?[\\d][\\d\\s\\-\\(\\)]{7,18}[\\d])') {
-                        $phone = $Matches[1] -replace '[\\s\\-\\(\\)]', ''
+        Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    } catch {
+        Write-Log "ERROR: Cannot load System.Runtime.WindowsRuntime: $_"
+        Add-Content -Path $crashLog -Value "[$(Get-Date)] Runtime load failed: $_" -ErrorAction SilentlyContinue
+        return $false
+    }
+
+    $asTaskGeneric = $null
+    try {
+        $asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+            $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+            $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation\`1'
+        })[0]
+        if (-not $asTaskGeneric) { throw "AsTask method not found" }
+    } catch {
+        Write-Log "ERROR: Cannot find AsTask generic method: $_"
+        Add-Content -Path $crashLog -Value "[$(Get-Date)] AsTask reflection failed: $_" -ErrorAction SilentlyContinue
+        return $false
+    }
+
+    function Await-AsyncOp { param($AsyncOp, [Type]$ResultType)
+        $asTask = $asTaskGeneric.MakeGenericMethod($ResultType)
+        $netTask = $asTask.Invoke($null, @($AsyncOp))
+        $netTask.Wait(15000) | Out-Null
+        return $netTask.Result
+    }
+
+    $listener = $null
+    try {
+        $listener = [Windows.UI.Notifications.Management.UserNotificationListener]::Current
+        if (-not $listener) { throw "UserNotificationListener.Current returned null" }
+    } catch {
+        Write-Log "ERROR: Cannot get notification listener: $_"
+        Add-Content -Path $crashLog -Value "[$(Get-Date)] Listener failed: $_" -ErrorAction SilentlyContinue
+        return $false
+    }
+
+    $accessOk = $false
+    for ($i = 1; $i -le 5; $i++) {
+        try {
+            $status = Await-AsyncOp ($listener.RequestAccessAsync()) ([Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus])
+            if ($status -eq [Windows.UI.Notifications.Management.UserNotificationListenerAccessStatus]::Allowed) {
+                $accessOk = $true; Write-Log "Notification access granted"; break
+            }
+            Write-Log "Access attempt $i : $status"
+        } catch { Write-Log "Access error (attempt $i): $_" }
+        Start-Sleep -Seconds 3
+    }
+    if (-not $accessOk) {
+        Write-Log "ERROR: Notification access denied. Enable at Settings > Privacy > Notifications"
+        Add-Content -Path $crashLog -Value "[$(Get-Date)] Notification access denied after 5 attempts" -ErrorAction SilentlyContinue
+        return $false
+    }
+
+    $seenIds = @{}; $recentCalls = @{}
+    $lastHeartbeat = [DateTimeOffset]::Now.ToUnixTimeSeconds() - 999
+    $consecutiveErrors = 0
+    Write-Log "Monitoring calls (Phone Link + WhatsApp)..."
+
+    while ($true) {
+        try {
+            $notifications = Await-AsyncOp ($listener.GetNotificationsAsync([Windows.UI.Notifications.NotificationKinds]::Toast)) ([System.Collections.Generic.IReadOnlyList[Windows.UI.Notifications.UserNotification]])
+            $consecutiveErrors = 0
+            foreach ($notif in $notifications) {
+                $nid = $notif.Id
+                if ($seenIds.ContainsKey($nid)) { continue }
+                $seenIds[$nid] = $true
+                try { $appName = $notif.AppInfo.DisplayInfo.DisplayName } catch { continue }
+                if ($appName -notmatch "Phone Link|Your Phone|Phone|WhatsApp") { continue }
+                try {
+                    $binding = $notif.Notification.Visual.GetBinding([Windows.UI.Notifications.KnownNotificationBindings]::ToastGeneric)
+                    if ($null -eq $binding) { continue }
+                    $textElements = $binding.GetTextElements()
+                    $allTexts = @(); foreach ($elem in $textElements) { $allTexts += $elem.Text }
+                    $fullText = $allTexts -join " "
+                    $isCall = $false
+                    if ($appName -match "Phone Link|Your Phone|Phone") {
+                        $isCall = $fullText -match "incoming|call|calling|ringing|answer|decline"
                     }
-                    if ($phone) {
-                        $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
-                        if ($recentCalls.ContainsKey($phone) -and ($now - $recentCalls[$phone]) -lt 30) { continue }
-                        $recentCalls[$phone] = $now
-                        Write-Log "CALL [$appName]: $phone"
-                        $body = "From=$([uri]::EscapeDataString($phone))&CallSid=local-$now&Agent=$([uri]::EscapeDataString($agentName))"
-                        try {
-                            Invoke-RestMethod -Uri $webhookUrl -Method POST -Body $body -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 5 | Out-Null
-                            Write-Log "Webhook sent OK"
-                        } catch { Write-Log "Webhook error: $_" }
-                    } else {
-                        Write-Log "Call [$appName] no number: $fullText"
+                    if ($appName -match "WhatsApp") {
+                        $isCall = $fullText -match "voice call|video call|incoming|calling|ringing|audio call"
                     }
-                }
-            } catch {}
+                    if ($isCall) {
+                        $numberPart = $fullText -replace '(?i)(incoming\\s*(voice\\s*|video\\s*|audio\\s*)?call|calling|ringing|answer|decline|voice\\s*call|video\\s*call|audio\\s*call)', ''
+                        $numberPart = $numberPart.Trim()
+                        $phone = $null
+                        if ($numberPart -match '(\\+?[\\d][\\d\\s\\-\\(\\)]{7,18}[\\d])') {
+                            $phone = $Matches[1] -replace '[\\s\\-\\(\\)]', ''
+                        }
+                        if ($phone) {
+                            $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
+                            if ($recentCalls.ContainsKey($phone) -and ($now - $recentCalls[$phone]) -lt 30) { continue }
+                            $recentCalls[$phone] = $now
+                            Write-Log "CALL [$appName]: $phone"
+                            $body = "From=$([uri]::EscapeDataString($phone))&CallSid=local-$now&Agent=$([uri]::EscapeDataString($agentName))"
+                            try {
+                                Invoke-RestMethod -Uri $webhookUrl -Method POST -Body $body -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 5 | Out-Null
+                                Write-Log "Webhook sent OK"
+                            } catch { Write-Log "Webhook error: $_" }
+                        } else {
+                            Write-Log "Call [$appName] no number: $fullText"
+                        }
+                    }
+                } catch {}
+            }
+            if ($seenIds.Count -gt 1000) { $seenIds = @{} }
+            $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
+            $expired = @($recentCalls.Keys | Where-Object { ($now - $recentCalls[$_]) -gt 60 })
+            foreach ($k in $expired) { $recentCalls.Remove($k) }
+        } catch {
+            $consecutiveErrors++
+            Write-Log "Loop error ($consecutiveErrors): $_"
+            if ($consecutiveErrors -ge 10) {
+                Write-Log "Too many consecutive errors, restarting monitor..."
+                Add-Content -Path $crashLog -Value "[$(Get-Date)] Restarting after $consecutiveErrors consecutive errors: $_" -ErrorAction SilentlyContinue
+                return $false
+            }
         }
-        if ($seenIds.Count -gt 1000) { $seenIds = @{} }
+
         $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
-        $expired = $recentCalls.Keys | Where-Object { ($now - $recentCalls[$_]) -gt 60 }
-        foreach ($k in $expired) { $recentCalls.Remove($k) }
-    } catch { Write-Log "Error: $_" }
+        if (($now - $lastHeartbeat) -ge 30) {
+            try {
+                Invoke-RestMethod -Uri $heartbeatUrl -Method POST -Body "Agent=$([uri]::EscapeDataString($agentName))" -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 5 | Out-Null
+                $lastHeartbeat = $now
+            } catch { Write-Log "Heartbeat error: $_" }
+        }
+        Start-Sleep -Seconds 1
+    }
+    return $true
+}
 
-    $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
-    if (($now - $lastHeartbeat) -ge 30) {
+# Auto-restart loop — if monitor crashes, wait and retry (up to 20 times)
+$maxRestarts = 20
+for ($restart = 0; $restart -lt $maxRestarts; $restart++) {
+    if ($restart -gt 0) {
+        $waitSec = [Math]::Min(30, 5 * $restart)
+        Write-Log "Restarting monitor in $waitSec seconds (attempt $($restart + 1) / $maxRestarts)..."
+        # Keep sending heartbeats while waiting to restart
         try {
             Invoke-RestMethod -Uri $heartbeatUrl -Method POST -Body "Agent=$([uri]::EscapeDataString($agentName))" -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 5 | Out-Null
-            $lastHeartbeat = $now
         } catch {}
+        Start-Sleep -Seconds $waitSec
     }
-    Start-Sleep -Seconds 1
+    $result = Start-Monitor
+    if ($result -eq $true) { break }
 }
+Write-Log "Monitor exiting after $maxRestarts restart attempts. Please re-install."
 `;
 }
 
@@ -517,8 +587,8 @@ function generateInstallerBat(baseUrl, secret, agent) {
   const monitorB64 = Buffer.from(monitorScript, 'utf8').toString('base64');
   const monitorLines = monitorB64.match(/.{1,76}/g) || [];
 
-  // VBS launcher that finds PS1 via %APPDATA%
-  const vbsScript = 'Set ws = CreateObject("WScript.Shell")\r\ndir = ws.ExpandEnvironmentStrings("%APPDATA%") & "\\ClinicaCallMonitor"\r\nws.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & dir & "\\call_monitor.ps1""", 0, False\r\n';
+  // VBS launcher that finds PS1 via %APPDATA% — redirects stderr to crash.log
+  const vbsScript = 'Set ws = CreateObject("WScript.Shell")\r\ndir = ws.ExpandEnvironmentStrings("%APPDATA%") & "\\ClinicaCallMonitor"\r\nws.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & dir & "\\call_monitor.ps1"" *>> """ & dir & "\\crash.log""", 0, False\r\n';
   const vbsB64 = Buffer.from(vbsScript, 'utf8').toString('base64');
   const vbsLines = vbsB64.match(/.{1,76}/g) || [];
 
@@ -571,20 +641,26 @@ function generateInstallerBat(baseUrl, secret, agent) {
   bat += 'powershell -ExecutionPolicy Bypass -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like \'*call_monitor*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul\r\n';
   bat += 'echo  [4/5] Old monitor processes cleaned up\r\n\r\n';
 
-  // Start now
-  bat += 'start "" wscript.exe "%DIR%\\start_monitor.vbs"\r\n';
-  bat += 'echo  [5/5] Monitor started!\r\n\r\n';
-
+  // Start now — run directly with visible window so user can see errors
+  bat += 'echo  [5/5] Starting monitor (visible window for first run)...\r\n';
   bat += 'echo.\r\n';
+  bat += 'echo  ============================================\r\n';
   bat += 'echo  Installation complete!\r\n';
-  bat += 'echo  The monitor runs silently in the background.\r\n';
-  bat += 'echo  It auto-starts every time you log into Windows.\r\n';
+  bat += 'echo  The monitor will auto-start silently on login.\r\n';
   bat += 'echo  Detects: Phone Link calls + WhatsApp calls\r\n';
   bat += 'echo.\r\n';
   bat += 'echo  Agent:     ' + agent + '\r\n';
   bat += 'echo  Dashboard: ' + baseUrl + '\r\n';
   bat += 'echo  Log file:  %DIR%\\monitor.log\r\n';
+  bat += 'echo  Crash log: %DIR%\\crash.log\r\n';
+  bat += 'echo  ============================================\r\n';
   bat += 'echo.\r\n';
+  bat += 'echo  Starting monitor now... (this window will stay open)\r\n';
+  bat += 'echo  If you see errors below, please screenshot them.\r\n';
+  bat += 'echo.\r\n';
+  bat += 'powershell -ExecutionPolicy Bypass -File "%DIR%\\call_monitor.ps1"\r\n';
+  bat += 'echo.\r\n';
+  bat += 'echo  Monitor exited. Check %DIR%\\crash.log for details.\r\n';
   bat += 'pause\r\n';
 
   return bat;
