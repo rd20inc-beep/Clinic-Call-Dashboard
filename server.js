@@ -534,7 +534,9 @@ function Start-Monitor {
     $seenIds = @{}; $recentCalls = @{}
     $lastHeartbeat = [DateTimeOffset]::Now.ToUnixTimeSeconds() - 999
     $consecutiveErrors = 0
+    $diagLoggedApps = @{}
     Write-Log "Monitoring calls (Phone Link + WhatsApp)..."
+    Write-Log "DIAGNOSTIC MODE: will log ALL new notifications for first 10 minutes"
 
     while ($true) {
         try {
@@ -544,28 +546,70 @@ function Start-Monitor {
                 $nid = $notif.Id
                 if ($seenIds.ContainsKey($nid)) { continue }
                 $seenIds[$nid] = $true
-                try { $appName = $notif.AppInfo.DisplayInfo.DisplayName } catch { continue }
-                if ($appName -notmatch "Phone Link|Your Phone|Phone|WhatsApp") { continue }
+
+                # Get app name
+                $appName = ""
+                try { $appName = $notif.AppInfo.DisplayInfo.DisplayName } catch { $appName = "(unknown)" }
+
+                # Get notification text
+                $fullText = ""
                 try {
                     $binding = $notif.Notification.Visual.GetBinding([Windows.UI.Notifications.KnownNotificationBindings]::ToastGeneric)
-                    if ($null -eq $binding) { continue }
-                    $textElements = $binding.GetTextElements()
-                    $allTexts = @(); foreach ($elem in $textElements) { $allTexts += $elem.Text }
-                    $fullText = $allTexts -join " "
-                    $isCall = $false
-                    if ($appName -match "Phone Link|Your Phone|Phone") {
-                        $isCall = $fullText -match "incoming|call|calling|ringing|answer|decline"
+                    if ($binding) {
+                        $textElements = $binding.GetTextElements()
+                        $allTexts = @(); foreach ($elem in $textElements) { $allTexts += $elem.Text }
+                        $fullText = $allTexts -join " | "
                     }
-                    if ($appName -match "WhatsApp") {
-                        $isCall = $fullText -match "voice call|video call|incoming|calling|ringing|audio call"
+                } catch {}
+
+                # DIAGNOSTIC: Log EVERY notification we see (first 10 min)
+                $uptimeSec = ([DateTimeOffset]::Now.ToUnixTimeSeconds()) - ($lastHeartbeat + 999)
+                if ($uptimeSec -lt 600) {
+                    Write-Log "NOTIF [$appName]: $fullText"
+                } elseif (-not $diagLoggedApps.ContainsKey($appName)) {
+                    # After 10 min, still log first occurrence of each new app
+                    Write-Log "NOTIF (new app) [$appName]: $fullText"
+                    $diagLoggedApps[$appName] = $true
+                }
+
+                # Match phone/call apps — very broad matching
+                $isPhoneApp = $appName -match "Phone|Link|Your Phone|Tel|Call|Dialer|Samsung|Android"
+                $isWhatsApp = $appName -match "WhatsApp"
+                if (-not $isPhoneApp -and -not $isWhatsApp) { continue }
+
+                Write-Log "PHONE APP NOTIF [$appName]: $fullText"
+
+                # Detect if this is a call notification — broad matching
+                $isCall = $false
+                if ($isPhoneApp) {
+                    $isCall = $fullText -match "incoming|call|calling|ringing|answer|decline|dial|ring"
+                }
+                if ($isWhatsApp) {
+                    $isCall = $fullText -match "voice call|video call|incoming|calling|ringing|audio call"
+                }
+
+                # Extract phone number from ANY phone app notification that looks like a call
+                # Also try: if text contains a phone number pattern, treat it as a call even without keywords
+                if (-not $isCall -and $isPhoneApp) {
+                    if ($fullText -match '(\\+?[\\d][\\d\\s\\-\\(\\)]{7,18}[\\d])') {
+                        Write-Log "POSSIBLE CALL (number detected without call keywords) [$appName]: $fullText"
+                        $isCall = $true
                     }
-                    if ($isCall) {
+                }
+
+                if ($isCall) {
+                    try {
                         Write-Log "CALL DETECTED [$appName]: $fullText"
                         $numberPart = $fullText -replace '(?i)(incoming\\s*(voice\\s*|video\\s*|audio\\s*)?call|calling|ringing|answer|decline|voice\\s*call|video\\s*call|audio\\s*call)', ''
-                        $numberPart = $numberPart.Trim()
+                        $numberPart = $numberPart.Trim() -replace '\\|', ' '
                         $phone = $null
                         if ($numberPart -match '(\\+?[\\d][\\d\\s\\-\\(\\)]{7,18}[\\d])') {
                             $phone = $Matches[1] -replace '[\\s\\-\\(\\)]', ''
+                        }
+                        # Fallback: try extracting from original fullText
+                        if (-not $phone -and $fullText -match '(\\+?[\\d][\\d\\s\\-\\(\\)]{7,18}[\\d])') {
+                            $phone = $Matches[1] -replace '[\\s\\-\\(\\)]', ''
+                            Write-Log "Phone extracted from full text fallback: $phone"
                         }
                         if ($phone) {
                             $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
@@ -574,12 +618,12 @@ function Start-Monitor {
                                 continue
                             }
                             $recentCalls[$phone] = $now
-                            Write-Log "CALL [$appName]: $phone — sending to $webhookUrl"
+                            Write-Log "SENDING WEBHOOK: $phone -> $webhookUrl"
                             $body = "From=$([uri]::EscapeDataString($phone))&CallSid=local-$now&Agent=$([uri]::EscapeDataString($agentName))"
                             for ($wRetry = 1; $wRetry -le 3; $wRetry++) {
                                 try {
                                     $resp = Invoke-RestMethod -Uri $webhookUrl -Method POST -Body $body -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 10
-                                    Write-Log "Webhook sent OK (attempt $wRetry) — response: $($resp | ConvertTo-Json -Compress)"
+                                    Write-Log "Webhook sent OK (attempt $wRetry)"
                                     break
                                 } catch {
                                     Write-Log "Webhook error (attempt $wRetry): $_"
@@ -587,10 +631,10 @@ function Start-Monitor {
                                 }
                             }
                         } else {
-                            Write-Log "Call [$appName] no phone number extracted from: $fullText"
+                            Write-Log "CALL but no phone number extracted from: $fullText"
                         }
-                    }
-                } catch { Write-Log "Notification parse error: $_" }
+                    } catch { Write-Log "Call processing error: $_" }
+                }
             }
             if ($seenIds.Count -gt 1000) { $seenIds = @{} }
             $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
