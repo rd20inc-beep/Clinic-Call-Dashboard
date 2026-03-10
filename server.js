@@ -788,64 +788,193 @@ Write-Log "Monitor exiting after $maxRestarts restart attempts. Please re-instal
 }
 
 function generateInstallerBat(baseUrl, secret, agent) {
-  // VBS launcher script (small, safe to inline as base64)
-  const vbsScript = 'Set ws = CreateObject("WScript.Shell")\r\ndir = ws.ExpandEnvironmentStrings("%APPDATA%") & "\\ClinicaCallMonitor"\r\nws.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & dir & "\\call_monitor.ps1""", 0, False\r\n';
-  const vbsB64 = Buffer.from(vbsScript, 'utf8').toString('base64');
-
-  // Download URL for the PS1 script — no base64/echo needed
-  const scriptUrl = `${baseUrl}/api/monitor-script?agent=${encodeURIComponent(agent)}&secret=${encodeURIComponent(secret)}`;
-
   let bat = '@echo off\r\n';
-  bat += 'title Clinicea Call Monitor - Installer (' + agent + ')\r\n';
+  bat += 'setlocal EnableExtensions EnableDelayedExpansion\r\n';
+  bat += 'title Clinicea Call Monitor Installer - ' + agent + '\r\n';
+  bat += '\r\n';
+  bat += 'REM ============================================\r\n';
+  bat += 'REM Clinicea Call Monitor Installer\r\n';
+  bat += 'REM Agent-specific installer for ' + agent + '\r\n';
+  bat += 'REM ============================================\r\n';
+  bat += '\r\n';
+  bat += 'set "AGENT=' + agent + '"\r\n';
+  bat += 'set "SERVER_URL=' + baseUrl + '"\r\n';
+  bat += 'set "WEBHOOK_SECRET=' + secret + '"\r\n';
+  bat += '\r\n';
+  bat += 'set "APP_DIR=%APPDATA%\\ClinicaCallMonitor"\r\n';
+  bat += 'set "PS1_FILE=%APP_DIR%\\call_monitor.ps1"\r\n';
+  bat += 'set "VBS_FILE=%APP_DIR%\\start_monitor.vbs"\r\n';
+  bat += 'set "LOG_FILE=%APP_DIR%\\install_%AGENT%.log"\r\n';
+  bat += 'set "TASK_NAME=Clinicea Call Monitor - %AGENT%"\r\n';
+  bat += '\r\n';
+  bat += 'if not exist "%APP_DIR%" mkdir "%APP_DIR%"\r\n';
+  bat += '\r\n';
+  bat += 'call :log "============================================"\r\n';
+  bat += 'call :log "Starting installer for %AGENT%"\r\n';
+  bat += 'call :log "App dir: %APP_DIR%"\r\n';
+  bat += 'call :log "Server: %SERVER_URL%"\r\n';
+  bat += '\r\n';
   bat += 'echo.\r\n';
-  bat += 'echo  === Clinicea Call Monitor - Installer ===\r\n';
-  bat += 'echo  Agent: ' + agent + '\r\n';
-  bat += 'echo.\r\n\r\n';
+  bat += 'echo === Clinicea Call Monitor Installer ===\r\n';
+  bat += 'echo Agent: %AGENT%\r\n';
+  bat += 'echo.\r\n';
+  bat += '\r\n';
 
-  // Kill ALL old monitor processes
-  bat += 'echo  [1/6] Stopping old monitor processes...\r\n';
-  bat += 'powershell -ExecutionPolicy Bypass -Command "Get-Process | Where-Object { $_.Path -like \'*powershell*\' -and $_.Id -ne $PID } | ForEach-Object { try { $wmi = Get-WmiObject Win32_Process -Filter (\\"ProcessId=\\" + $_.Id); if ($wmi.CommandLine -like \'*call_monitor*\' -or $wmi.CommandLine -like \'*ClinicaCallMonitor*\') { Write-Host \'  Killing PID:\' $_.Id; Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } } catch {} }" 2>nul\r\n';
-  bat += 'timeout /t 2 /nobreak >nul\r\n';
-  bat += 'echo  Done.\r\n\r\n';
-
-  bat += 'set "DIR=%APPDATA%\\ClinicaCallMonitor"\r\n';
-  bat += 'if not exist "%DIR%" mkdir "%DIR%"\r\n';
-  bat += 'echo  [2/6] Install folder: %DIR%\r\n\r\n';
-
-  // Download PS1 directly from server — no base64/echo corruption possible
-  bat += 'echo  [3/6] Downloading monitor script from server...\r\n';
-  bat += 'powershell -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' + scriptUrl + '\' -OutFile (($env:APPDATA) + \'\\ClinicaCallMonitor\\call_monitor.ps1\') -UseBasicParsing; Write-Host \'  Downloaded:\' (Get-Item (($env:APPDATA) + \'\\ClinicaCallMonitor\\call_monitor.ps1\')).Length \'bytes\'"\r\n';
-  bat += 'if not exist "%DIR%\\call_monitor.ps1" (\r\n';
-  bat += 'echo  ERROR: Failed to download call_monitor.ps1\r\n';
-  bat += 'echo  Check your internet connection and try again.\r\n';
-  bat += 'pause\r\n';
-  bat += 'exit /b 1\r\n';
+  // Step 1: Stop old monitor
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'REM 1. Stop old agent-specific task/process\r\n';
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'echo [1/7] Stopping previous monitor instance...\r\n';
+  bat += 'call :log "Stopping old monitor task/process if present"\r\n';
+  bat += '\r\n';
+  bat += 'schtasks /Query /TN "%TASK_NAME%" >nul 2>&1\r\n';
+  bat += 'if %errorlevel%==0 (\r\n';
+  bat += '    schtasks /End /TN "%TASK_NAME%" >nul 2>&1\r\n';
+  bat += '    call :log "Stopped scheduled task: %TASK_NAME%"\r\n';
   bat += ')\r\n';
-  bat += 'for %%A in ("%DIR%\\call_monitor.ps1") do echo  Script size: %%~zA bytes\r\n\r\n';
+  bat += '\r\n';
+  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command ^\r\n';
+  bat += '"$task=\'%TASK_NAME%\';" ^\r\n';
+  bat += '"Get-CimInstance Win32_Process | Where-Object { $_.Name -eq \'powershell.exe\' -and $_.CommandLine -like \'*call_monitor.ps1*\' -and $_.CommandLine -like \'*%AGENT%*\' } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop; Write-Output (\'Stopped PID \' + $_.ProcessId) } catch { Write-Output (\'Failed PID \' + $_.ProcessId + \': \' + $_.Exception.Message) } }" >> "%LOG_FILE%" 2>&1\r\n';
+  bat += '\r\n';
+  bat += 'echo Done.\r\n';
+  bat += '\r\n';
 
-  // Write VBS launcher — small enough for inline base64
-  bat += 'echo  [4/6] Writing startup launcher...\r\n';
-  bat += 'powershell -ExecutionPolicy Bypass -Command "$bytes = [System.Convert]::FromBase64String(\'' + vbsB64 + '\'); [System.IO.File]::WriteAllBytes(($env:APPDATA + \'\\ClinicaCallMonitor\\start_monitor.vbs\'), $bytes)"\r\n';
-  bat += 'copy /Y "%DIR%\\start_monitor.vbs" "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ClinicaCallMonitor.vbs" >nul\r\n';
-  bat += 'echo  Added to Windows startup\r\n\r\n';
+  // Step 2: Download PS1
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'REM 2. Download fresh monitor script\r\n';
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'echo [2/7] Downloading monitor script...\r\n';
+  bat += 'call :log "Downloading call_monitor.ps1"\r\n';
+  bat += '\r\n';
+  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command ^\r\n';
+  bat += '"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;" ^\r\n';
+  bat += '"$url=\'%SERVER_URL%/api/monitor-script?agent=%AGENT%&secret=%WEBHOOK_SECRET%\';" ^\r\n';
+  bat += '"Invoke-WebRequest -Uri $url -OutFile \'%PS1_FILE%\' -UseBasicParsing;" ^\r\n';
+  bat += '"if (!(Test-Path \'%PS1_FILE%\')) { exit 11 }" ^\r\n';
+  bat += '"$len=(Get-Item \'%PS1_FILE%\').Length;" ^\r\n';
+  bat += '"if ($len -lt 100) { exit 12 }" ^\r\n';
+  bat += '"Write-Output (\'Downloaded bytes=\' + $len)" >> "%LOG_FILE%" 2>&1\r\n';
+  bat += '\r\n';
+  bat += 'if not exist "%PS1_FILE%" (\r\n';
+  bat += '    echo ERROR: Failed to download monitor script.\r\n';
+  bat += '    call :log "ERROR: Monitor script missing after download"\r\n';
+  bat += '    pause\r\n';
+  bat += '    exit /b 1\r\n';
+  bat += ')\r\n';
+  bat += '\r\n';
+  bat += 'for %%A in ("%PS1_FILE%") do set "PS1_SIZE=%%~zA"\r\n';
+  bat += 'if "%PS1_SIZE%"=="0" (\r\n';
+  bat += '    echo ERROR: Downloaded script is empty.\r\n';
+  bat += '    call :log "ERROR: Downloaded script is empty"\r\n';
+  bat += '    pause\r\n';
+  bat += '    exit /b 1\r\n';
+  bat += ')\r\n';
+  bat += '\r\n';
+  bat += 'echo Downloaded script size: %PS1_SIZE% bytes\r\n';
+  bat += 'call :log "Downloaded script size: %PS1_SIZE% bytes"\r\n';
+  bat += '\r\n';
 
-  // Kill any leftover old monitor
-  bat += 'echo  [5/6] Final cleanup...\r\n';
-  bat += 'powershell -ExecutionPolicy Bypass -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like \'*call_monitor*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul\r\n';
-  bat += 'echo  Done.\r\n\r\n';
+  // Step 3: Write VBS launcher
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'REM 3. Write silent launcher VBS\r\n';
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'echo [3/7] Writing silent launcher...\r\n';
+  bat += 'call :log "Writing VBS launcher"\r\n';
+  bat += '\r\n';
+  bat += '> "%VBS_FILE%" echo Set ws = CreateObject("WScript.Shell")\r\n';
+  bat += '>> "%VBS_FILE%" echo appDir = ws.ExpandEnvironmentStrings("%%APPDATA%%") ^& "\\ClinicaCallMonitor"\r\n';
+  bat += '>> "%VBS_FILE%" echo ws.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ ^& appDir ^& "\\call_monitor.ps1""", 0, False\r\n';
+  bat += '\r\n';
+  bat += 'if not exist "%VBS_FILE%" (\r\n';
+  bat += '    echo ERROR: Failed to create VBS launcher.\r\n';
+  bat += '    call :log "ERROR: Failed to create VBS launcher"\r\n';
+  bat += '    pause\r\n';
+  bat += '    exit /b 1\r\n';
+  bat += ')\r\n';
+  bat += '\r\n';
+  bat += 'echo Done.\r\n';
+  bat += '\r\n';
 
-  // Start monitor with visible window — -NoExit keeps window open on errors
-  bat += 'echo  [6/6] Starting monitor...\r\n';
+  // Step 4: Scheduled task
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'REM 4. Recreate startup scheduled task\r\n';
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'echo [4/7] Creating scheduled task...\r\n';
+  bat += 'call :log "Creating scheduled task: %TASK_NAME%"\r\n';
+  bat += '\r\n';
+  bat += 'schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1\r\n';
+  bat += '\r\n';
+  bat += 'schtasks /Create ^\r\n';
+  bat += ' /TN "%TASK_NAME%" ^\r\n';
+  bat += ' /SC ONLOGON ^\r\n';
+  bat += ' /RL HIGHEST ^\r\n';
+  bat += ' /TR "wscript.exe \\"%VBS_FILE%\\"" ^\r\n';
+  bat += ' /F >> "%LOG_FILE%" 2>&1\r\n';
+  bat += '\r\n';
+  bat += 'if errorlevel 1 (\r\n';
+  bat += '    echo ERROR: Failed to create scheduled task.\r\n';
+  bat += '    call :log "ERROR: Scheduled task creation failed"\r\n';
+  bat += '    pause\r\n';
+  bat += '    exit /b 1\r\n';
+  bat += ')\r\n';
+  bat += '\r\n';
+  bat += 'echo Done.\r\n';
+  bat += '\r\n';
+
+  // Step 5: Startup folder fallback
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'REM 5. Optional startup folder fallback\r\n';
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'echo [5/7] Adding startup-folder fallback...\r\n';
+  bat += 'call :log "Adding startup folder fallback"\r\n';
+  bat += '\r\n';
+  bat += 'copy /Y "%VBS_FILE%" "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CliniceaCallMonitor_%AGENT%.vbs" >nul\r\n';
+  bat += 'if exist "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CliniceaCallMonitor_%AGENT%.vbs" (\r\n';
+  bat += '    call :log "Startup fallback copied successfully"\r\n';
+  bat += ') else (\r\n';
+  bat += '    call :log "WARNING: Startup fallback copy failed"\r\n';
+  bat += ')\r\n';
+  bat += '\r\n';
+  bat += 'echo Done.\r\n';
+  bat += '\r\n';
+
+  // Step 6: Start monitor
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'REM 6. Start monitor now\r\n';
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'echo [6/7] Starting monitor...\r\n';
+  bat += 'call :log "Starting monitor immediately"\r\n';
+  bat += '\r\n';
+  bat += 'start "" wscript.exe "%VBS_FILE%"\r\n';
+  bat += 'timeout /t 2 /nobreak >nul\r\n';
+  bat += '\r\n';
+  bat += 'echo Done.\r\n';
+  bat += '\r\n';
+
+  // Step 7: Final status
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'REM 7. Final status\r\n';
+  bat += 'REM --------------------------------------------\r\n';
+  bat += 'echo [7/7] Installation complete.\r\n';
+  bat += 'call :log "Installation complete"\r\n';
+  bat += '\r\n';
   bat += 'echo.\r\n';
-  bat += 'echo  ============================================\r\n';
-  bat += 'echo  Installation complete!\r\n';
-  bat += 'echo  Agent:     ' + agent + '\r\n';
-  bat += 'echo  Dashboard: ' + baseUrl + '\r\n';
-  bat += 'echo  ============================================\r\n';
+  bat += 'echo ============================================\r\n';
+  bat += 'echo Installation complete\r\n';
+  bat += 'echo Agent:      %AGENT%\r\n';
+  bat += 'echo Dashboard:  %SERVER_URL%\r\n';
+  bat += 'echo Install dir:%APP_DIR%\r\n';
+  bat += 'echo Log file:   %LOG_FILE%\r\n';
+  bat += 'echo ============================================\r\n';
   bat += 'echo.\r\n';
-  bat += 'echo  Monitor window will open. DO NOT close it.\r\n';
-  bat += 'echo.\r\n';
-  bat += 'powershell -ExecutionPolicy Bypass -NoExit -File "%DIR%\\call_monitor.ps1"\r\n';
+  bat += '\r\n';
+  bat += 'pause\r\n';
+  bat += 'exit /b 0\r\n';
+  bat += '\r\n';
+  bat += ':log\r\n';
+  bat += 'echo [%date% %time%] %~1>> "%LOG_FILE%"\r\n';
+  bat += 'goto :eof\r\n';
 
   return bat;
 }
