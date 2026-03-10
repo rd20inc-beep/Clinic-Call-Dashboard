@@ -349,50 +349,11 @@
     busy = false;
   }
 
-  // Also handle new messages in the currently open chat (real-time)
-  let lastSeenMsgId = null;
-
   // Names to never reply to
   const SKIP_NAMES = /^meta ai$|community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat/i;
 
   function shouldSkipChat(name) {
     return !name || SKIP_NAMES.test(name) || pausedChats.has(name);
-  }
-
-  function checkCurrentChat() {
-    if (!enabled || busy) return;
-
-    const chatInfo = getCurrentChatInfo();
-    if (!chatInfo.name) return;
-
-    if (shouldSkipChat(chatInfo.name)) return;
-
-    const messages = getLastIncomingMessages();
-    if (messages.length === 0) return;
-
-    const lastMsg = messages[messages.length - 1];
-    if (!lastMsg.id || lastMsg.id === lastSeenMsgId) return;
-    if (processedMessages.has(lastMsg.id)) {
-      lastSeenMsgId = lastMsg.id;
-      return;
-    }
-
-    // This is a genuinely new message
-    lastSeenMsgId = lastMsg.id;
-    processedMessages.add(lastMsg.id);
-    processedCount++;
-
-    console.log('[WA Bot] New message in current chat from', chatInfo.name, ':', lastMsg.text.substring(0, 80));
-
-    busy = true;
-    getReply(lastMsg.text, chatInfo.phone, chatInfo.name).then(async (response) => {
-      if (response && response.reply && response.reply.trim()) {
-        await sleep(1000 + Math.random() * 2000);
-        await typeAndSend(response.reply);
-        console.log('[WA Bot] Replied in current chat to', chatInfo.name);
-      }
-      busy = false;
-    }).catch(() => { busy = false; });
   }
 
   // Listen for commands from popup / dashboard
@@ -463,15 +424,11 @@
     // Mark all current messages as already seen so we don't reply to old ones
     const initMsgs = getLastIncomingMessages();
     initMsgs.forEach(m => processedMessages.add(m.id));
-    if (initMsgs.length > 0) {
-      lastSeenMsgId = initMsgs[initMsgs.length - 1].id;
-    }
     processedCount = 0;
 
-    console.log('[WA Bot] Starting scanners, marked', initMsgs.length, 'existing messages as seen');
+    console.log('[WA Bot] Starting scanner, marked', initMsgs.length, 'existing messages as seen');
 
     setInterval(scanAndReply, SCAN_INTERVAL);
-    setInterval(checkCurrentChat, 3000);
 
     // Poll for server-queued outgoing messages
     setInterval(() => {
