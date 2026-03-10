@@ -1252,7 +1252,7 @@ async function getGPTReply(phone, incomingText, chatName) {
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         messages: messages,
-        max_tokens: 200,
+        max_tokens: 350,
         temperature: 0.7
       })
     });

@@ -83,7 +83,7 @@
                       row.querySelector('[data-icon="group"]') ||
                       false;
 
-      const skipPatterns = /community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat|^meta ai$/i;
+      const skipPatterns = /community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat|meta ai/i;
       if (isGroup || skipPatterns.test(name)) return;
 
       if (unread.some(u => u.name === name)) return;
@@ -361,7 +361,7 @@
   }
 
   // Names to never reply to
-  const SKIP_NAMES = /^meta ai$|community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat/i;
+  const SKIP_NAMES = /meta ai|community|group|boys|girls|fellowship|freelanc|wizards|developers|college|school|class|batch|xi[iv]?-|xii|whatsapp|build|techversity|jazz|clan|baithak|member chat/i;
 
   function shouldSkipChat(name) {
     return !name || SKIP_NAMES.test(name) || pausedChats.has(name);
