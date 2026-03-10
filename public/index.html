@@ -2038,17 +2038,17 @@
       playBeep();
 
       // Auto-open Clinicea profile:
-      // - Agent: only if call belongs to them
       // - Admin: always (admin monitors all calls)
-      const shouldAutoOpen = myRole === 'admin' || data.agent === myUsername;
+      // - Agent: if call is tagged to them, OR if call is untagged (no agent = open for all)
+      const shouldAutoOpen = myRole === 'admin' || data.agent === myUsername || !data.agent;
       const lockKey = 'call_opened_' + data.callId;
       if (shouldAutoOpen && !localStorage.getItem(lockKey)) {
         localStorage.setItem(lockKey, '1');
         setTimeout(() => localStorage.removeItem(lockKey), 60000);
-        console.log('[Dashboard] Auto-opening Clinicea profile for', data.caller, '— agent:', data.agent, 'myRole:', myRole);
+        console.log('[Dashboard] Auto-opening Clinicea profile for', data.caller, '— agent:', data.agent, 'myRole:', myRole, 'url:', data.cliniceaUrl);
         window.open(data.cliniceaUrl, 'clinicea_patient');
       } else {
-        console.log('[Dashboard] NOT auto-opening — role:', myRole, 'agent match:', data.agent === myUsername, 'lock:', !!localStorage.getItem(lockKey));
+        console.log('[Dashboard] NOT auto-opening — role:', myRole, 'event.agent:', data.agent, 'myUsername:', myUsername, 'agentMatch:', data.agent === myUsername, 'untagged:', !data.agent, 'lock:', !!localStorage.getItem(lockKey));
       }
 
       loadCallHistory(1);

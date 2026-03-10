@@ -209,6 +209,8 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
   const callSid = req.body.CallSid || '';
   const rawAgent = (req.body.Agent || '').trim();
 
+  logEvent('info', `POST /incoming_call received`, `From: "${rawCaller}" | Agent: "${rawAgent}" | IP: ${req.ip || req.connection.remoteAddress}`);
+
   // Validate agent — must be a known username, never broadcast blindly
   const agent = (rawAgent && USERS[rawAgent]) ? rawAgent : null;
 
@@ -235,11 +237,11 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
     // Known agent — send to that agent + admin only
     io.to('agent:' + agent).emit('incoming_call', callEvent);
     io.to('role:admin').emit('incoming_call', callEvent);
-    logEvent('info', 'Incoming call: ' + caller, `Agent: ${agent} | SID: ${callSid}`);
+    logEvent('info', 'Incoming call: ' + caller, `Agent: ${agent} | SID: ${callSid} | URL: ${cliniceaUrl} | Rooms: agent:${agent}, role:admin`);
   } else {
     // No agent tag — broadcast to all dashboards so the call isn't missed
     io.emit('incoming_call', callEvent);
-    logEvent('info', 'Incoming call (no agent): ' + caller, `SID: ${callSid} | Broadcast to all`);
+    logEvent('info', 'Incoming call (no agent): ' + caller, `SID: ${callSid} | URL: ${cliniceaUrl} | Broadcast to ALL`);
   }
 
   // Async: look up patient name and push update to dashboard
@@ -536,6 +538,7 @@ function Start-Monitor {
                         $isCall = $fullText -match "voice call|video call|incoming|calling|ringing|audio call"
                     }
                     if ($isCall) {
+                        Write-Log "CALL DETECTED [$appName]: $fullText"
                         $numberPart = $fullText -replace '(?i)(incoming\\s*(voice\\s*|video\\s*|audio\\s*)?call|calling|ringing|answer|decline|voice\\s*call|video\\s*call|audio\\s*call)', ''
                         $numberPart = $numberPart.Trim()
                         $phone = $null
@@ -544,19 +547,28 @@ function Start-Monitor {
                         }
                         if ($phone) {
                             $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
-                            if ($recentCalls.ContainsKey($phone) -and ($now - $recentCalls[$phone]) -lt 30) { continue }
+                            if ($recentCalls.ContainsKey($phone) -and ($now - $recentCalls[$phone]) -lt 30) {
+                                Write-Log "Skipping duplicate call from $phone (within 30s)"
+                                continue
+                            }
                             $recentCalls[$phone] = $now
-                            Write-Log "CALL [$appName]: $phone"
+                            Write-Log "CALL [$appName]: $phone — sending to $webhookUrl"
                             $body = "From=$([uri]::EscapeDataString($phone))&CallSid=local-$now&Agent=$([uri]::EscapeDataString($agentName))"
-                            try {
-                                Invoke-RestMethod -Uri $webhookUrl -Method POST -Body $body -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 5 | Out-Null
-                                Write-Log "Webhook sent OK"
-                            } catch { Write-Log "Webhook error: $_" }
+                            for ($wRetry = 1; $wRetry -le 3; $wRetry++) {
+                                try {
+                                    $resp = Invoke-RestMethod -Uri $webhookUrl -Method POST -Body $body -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 10
+                                    Write-Log "Webhook sent OK (attempt $wRetry) — response: $($resp | ConvertTo-Json -Compress)"
+                                    break
+                                } catch {
+                                    Write-Log "Webhook error (attempt $wRetry): $_"
+                                    if ($wRetry -lt 3) { Start-Sleep -Seconds 2 }
+                                }
+                            }
                         } else {
-                            Write-Log "Call [$appName] no number: $fullText"
+                            Write-Log "Call [$appName] no phone number extracted from: $fullText"
                         }
                     }
-                } catch {}
+                } catch { Write-Log "Notification parse error: $_" }
             }
             if ($seenIds.Count -gt 1000) { $seenIds = @{} }
             $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
