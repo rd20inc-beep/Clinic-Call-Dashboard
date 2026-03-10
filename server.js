@@ -271,6 +271,28 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
   res.json({ status: 'ok', caller, cliniceaUrl });
 });
 
+// --- Test Call (simulate incoming call from dashboard) ---
+app.post('/api/test-call', requireAuth, (req, res) => {
+  const caller = req.body.phone || '+920000000000';
+  const agent = req.session.username;
+  const cliniceaUrl = `${CLINICEA_BASE_URL}?tp=pat&m=${encodeURIComponent(caller)}`;
+  const callSid = 'test-' + Date.now();
+
+  const result = db.prepare(
+    'INSERT INTO calls (caller_number, call_sid, clinicea_url, agent) VALUES (?, ?, ?, ?)'
+  ).run(caller, callSid, cliniceaUrl, agent);
+  const callId = result.lastInsertRowid;
+
+  const callEvent = { caller, callSid, cliniceaUrl, callId, agent, timestamp: new Date().toISOString() };
+
+  io.to('agent:' + agent).emit('incoming_call', callEvent);
+  if (req.session.role === 'admin') {
+    io.to('role:admin').emit('incoming_call', callEvent);
+  }
+  logEvent('info', `TEST CALL triggered by ${agent}: ${caller}`, `URL: ${cliniceaUrl}`);
+  res.json({ status: 'ok', callEvent });
+});
+
 // --- Monitor Heartbeat (per-agent, strict isolation) ---
 const agentHeartbeats = {}; // { agent: { lastHeartbeat, alive } }
 const warnedBadAgents = new Set(); // only warn once per unknown agent value
