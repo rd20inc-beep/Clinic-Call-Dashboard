@@ -276,14 +276,18 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
 
 // --- Monitor Heartbeat (per-agent, strict isolation) ---
 const agentHeartbeats = {}; // { agent: { lastHeartbeat, alive } }
+const warnedBadAgents = new Set(); // only warn once per unknown agent value
 
 app.post('/heartbeat', requireWebhookSecret, (req, res) => {
   const rawAgent = (req.body.Agent || '').trim();
   const agent = (rawAgent && USERS[rawAgent]) ? rawAgent : null;
   if (!agent) {
-    // Reject heartbeats without a valid agent — no silent broadcast
-    logEvent('warn', `Heartbeat rejected: no valid agent (raw: "${rawAgent}")`);
-    return res.json({ status: 'ok', warning: 'no valid agent' });
+    // Log once per unique bad agent value (not every 30s), skip Socket.IO emit
+    if (!warnedBadAgents.has(rawAgent)) {
+      warnedBadAgents.add(rawAgent);
+      logEvent('warn', `Heartbeat rejected: no valid agent (raw: "${rawAgent}"). Re-download the monitor installer from the dashboard.`);
+    }
+    return res.json({ status: 'ok', warning: 'no valid agent — re-download installer from dashboard' });
   }
   const prev = agentHeartbeats[agent] || { lastHeartbeat: 0, alive: false };
   const wasDown = !prev.alive;
