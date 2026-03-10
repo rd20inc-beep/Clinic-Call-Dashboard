@@ -306,11 +306,9 @@ app.get('/api/monitor-status', requireAuth, (req, res) => {
     const anyAlive = Object.values(agentHeartbeats).some(s => s.alive);
     return res.json({ alive: anyAlive, agents: agentHeartbeats });
   }
-  // Agent sees their own monitor OR the default (old untagged monitor)
+  // Agent sees only their own monitor
   const agentState = agentHeartbeats[agent];
-  const defaultState = agentHeartbeats['default'];
-  const alive = (agentState && agentState.alive) || (defaultState && defaultState.alive);
-  res.json({ alive: !!alive });
+  res.json({ alive: !!(agentState && agentState.alive) });
 });
 
 // --- Download call monitor installer (pre-configured .bat, agent-specific) ---
@@ -647,8 +645,8 @@ app.get('/api/calls', requireAuth, (req, res) => {
     total = db.prepare('SELECT COUNT(*) as total FROM calls').get().total;
     calls = db.prepare('SELECT * FROM calls ORDER BY timestamp DESC LIMIT ? OFFSET ?').all(limit, offset);
   } else {
-    total = db.prepare('SELECT COUNT(*) as total FROM calls WHERE agent = ? OR agent IS NULL').get(agent).total;
-    calls = db.prepare('SELECT * FROM calls WHERE agent = ? OR agent IS NULL ORDER BY timestamp DESC LIMIT ? OFFSET ?').all(agent, limit, offset);
+    total = db.prepare('SELECT COUNT(*) as total FROM calls WHERE agent = ?').get(agent).total;
+    calls = db.prepare('SELECT * FROM calls WHERE agent = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?').all(agent, limit, offset);
   }
   res.json({ calls, total, page, totalPages: Math.ceil(total / limit) });
 });
@@ -1440,7 +1438,7 @@ app.get('/api/whatsapp/history/:phone', requireAuth, (req, res) => {
   if (isAdmin) {
     messages = db.prepare("SELECT * FROM wa_messages WHERE phone = ? ORDER BY created_at DESC LIMIT 50").all(phone);
   } else {
-    messages = db.prepare("SELECT * FROM wa_messages WHERE phone = ? AND (agent = ? OR agent IS NULL) ORDER BY created_at DESC LIMIT 50").all(phone, agent);
+    messages = db.prepare("SELECT * FROM wa_messages WHERE phone = ? AND (agent = ?) ORDER BY created_at DESC LIMIT 50").all(phone, agent);
   }
   return res.json({ messages: messages.reverse() });
 });
@@ -1466,9 +1464,9 @@ app.get('/api/whatsapp/conversations', requireAuth, (req, res) => {
       SELECT phone, chat_name,
              MAX(created_at) as last_message_at,
              COUNT(*) as message_count,
-             (SELECT message FROM wa_messages w2 WHERE w2.phone = w1.phone AND (w2.agent = ? OR w2.agent IS NULL) ORDER BY created_at DESC LIMIT 1) as last_message
+             (SELECT message FROM wa_messages w2 WHERE w2.phone = w1.phone AND w2.agent = ? ORDER BY created_at DESC LIMIT 1) as last_message
       FROM wa_messages w1
-      WHERE agent = ? OR agent IS NULL
+      WHERE agent = ?
       GROUP BY phone
       ORDER BY last_message_at DESC
       LIMIT 50
@@ -1487,9 +1485,9 @@ app.get('/api/whatsapp/stats', requireAuth, (req, res) => {
     todayMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE date(created_at) = date('now')").get().count;
     pendingMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE status = 'pending'").get().count;
   } else {
-    totalMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE agent = ? OR agent IS NULL").get(agent).count;
-    todayMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE date(created_at) = date('now') AND (agent = ? OR agent IS NULL)").get(agent).count;
-    pendingMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE status = 'pending' AND (agent = ? OR agent IS NULL)").get(agent).count;
+    totalMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE agent = ?").get(agent).count;
+    todayMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE date(created_at) = date('now') AND (agent = ?)").get(agent).count;
+    pendingMessages = db.prepare("SELECT COUNT(*) as count FROM wa_messages WHERE status = 'pending' AND (agent = ?)").get(agent).count;
   }
   const totalConfirmations = db.prepare("SELECT COUNT(*) as count FROM wa_appointment_tracking WHERE confirmation_sent = 1").get().count;
   const totalReminders = db.prepare("SELECT COUNT(*) as count FROM wa_appointment_tracking WHERE reminder_sent = 1").get().count;
