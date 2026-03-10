@@ -1987,15 +1987,41 @@
     };
 
     // ===== CONNECTION STATUS =====
+    let myRooms = [];
+
     socket.on('connect', () => {
       statusDot.classList.add('connected');
       statusText.textContent = 'Connected';
       console.log('[Dashboard] Socket connected. My identity:', myUsername, myRole);
     });
 
+    // Server confirms which rooms this socket joined
+    socket.on('join_confirm', (data) => {
+      myRooms = data.rooms || [];
+      console.log('[Dashboard] Room confirm — user:', data.username, 'role:', data.role, 'rooms:', myRooms.join(', '), 'socketId:', data.socketId);
+      if (data.error) {
+        console.error('[Dashboard] ROOM JOIN FAILED:', data.error);
+        statusText.textContent = 'No Session';
+        statusDot.classList.remove('connected');
+        // Session is invalid — the socket is connected but receives NO events
+        // Force re-login after a short delay
+        setTimeout(() => {
+          if (confirm('Your session has expired. Click OK to log in again.')) {
+            window.location.href = '/login';
+          }
+        }, 1000);
+      } else if (myRooms.length === 0) {
+        console.warn('[Dashboard] Connected but joined NO rooms — events will not be received');
+        statusText.textContent = 'No Rooms';
+      } else {
+        statusText.textContent = 'Connected (' + myRooms.join(', ') + ')';
+      }
+    });
+
     socket.on('disconnect', () => {
       statusDot.classList.remove('connected');
       statusText.textContent = 'Disconnected';
+      myRooms = [];
     });
 
     function setMonitorStatus(alive) {
@@ -2092,15 +2118,23 @@
       playBeep();
 
       // Auto-open Clinicea profile:
-      // - Admin: always (admin monitors all calls)
-      // - Agent: if call is tagged to them, OR if call is untagged (no agent = open for all)
-      const shouldAutoOpen = myRole === 'admin' || data.agent === myUsername || !data.agent;
+      // - Admin: monitors only — do NOT auto-open (admin sees banner + history)
+      // - Agent: auto-open if call is tagged to them, OR if call is untagged
+      const shouldAutoOpen = myRole !== 'admin' && (data.agent === myUsername || !data.agent);
       const lockKey = 'call_opened_' + data.callId;
       if (shouldAutoOpen && !localStorage.getItem(lockKey)) {
         localStorage.setItem(lockKey, '1');
         setTimeout(() => localStorage.removeItem(lockKey), 60000);
         console.log('[Dashboard] Auto-opening Clinicea profile for', data.caller, '— agent:', data.agent, 'myRole:', myRole, 'url:', data.cliniceaUrl);
-        window.open(data.cliniceaUrl, 'clinicea_patient');
+        const win = window.open(data.cliniceaUrl, 'clinicea_patient');
+        // Detect popup blocker — show fallback link if blocked
+        if (!win || win.closed) {
+          console.warn('[Dashboard] Popup blocked! Showing fallback link.');
+          cliniceaLink.textContent = '⚠ CLICK HERE to open patient profile (popup was blocked)';
+          cliniceaLink.style.color = '#e74c3c';
+          cliniceaLink.style.fontWeight = 'bold';
+          cliniceaLink.style.fontSize = '16px';
+        }
       } else {
         console.log('[Dashboard] NOT auto-opening — role:', myRole, 'event.agent:', data.agent, 'myUsername:', myUsername, 'agentMatch:', data.agent === myUsername, 'untagged:', !data.agent, 'lock:', !!localStorage.getItem(lockKey));
       }

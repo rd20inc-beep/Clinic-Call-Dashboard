@@ -183,6 +183,28 @@ app.get('/api/me', requireAuth, (req, res) => {
   res.json({ username: req.session.username, role: req.session.role });
 });
 
+// Debug endpoint: show connected sockets and their rooms (admin only)
+app.get('/api/socket-debug', requireAuth, (req, res) => {
+  if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  const rooms = {};
+  for (const [roomName, socketIds] of io.sockets.adapter.rooms) {
+    // Skip per-socket rooms (socket IDs match room names)
+    if (io.sockets.sockets.has(roomName)) continue;
+    rooms[roomName] = Array.from(socketIds);
+  }
+  const sockets = [];
+  for (const [id, socket] of io.sockets.sockets) {
+    const sess = socket.request.session;
+    sockets.push({
+      id,
+      username: sess && sess.username || null,
+      role: sess && sess.role || null,
+      rooms: Array.from(socket.rooms).filter(r => r !== id)
+    });
+  }
+  res.json({ totalSockets: io.sockets.sockets.size, rooms, sockets });
+});
+
 // Webhook auth middleware
 function requireWebhookSecret(req, res, next) {
   if (!WEBHOOK_SECRET) return next();
@@ -234,14 +256,19 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
 
   // Route call event to the correct dashboards
   if (agent) {
+    const agentRoom = io.sockets.adapter.rooms.get('agent:' + agent);
+    const adminRoom = io.sockets.adapter.rooms.get('role:admin');
+    const agentCount = agentRoom ? agentRoom.size : 0;
+    const adminCount = adminRoom ? adminRoom.size : 0;
     // Known agent — send to that agent + admin only
     io.to('agent:' + agent).emit('incoming_call', callEvent);
     io.to('role:admin').emit('incoming_call', callEvent);
-    logEvent('info', 'Incoming call: ' + caller, `Agent: ${agent} | SID: ${callSid} | URL: ${cliniceaUrl} | Rooms: agent:${agent}, role:admin`);
+    logEvent('info', 'Incoming call: ' + caller, `Agent: ${agent} | SID: ${callSid} | URL: ${cliniceaUrl} | Sockets: agent:${agent}=${agentCount}, role:admin=${adminCount}`);
   } else {
+    const totalSockets = io.sockets.sockets.size;
     // No agent tag — broadcast to all dashboards so the call isn't missed
     io.emit('incoming_call', callEvent);
-    logEvent('info', 'Incoming call (no agent): ' + caller, `SID: ${callSid} | URL: ${cliniceaUrl} | Broadcast to ALL`);
+    logEvent('info', 'Incoming call (no agent): ' + caller, `SID: ${callSid} | URL: ${cliniceaUrl} | Broadcast to ALL (${totalSockets} sockets)`);
   }
 
   // Async: look up patient name and push update to dashboard
@@ -1960,9 +1987,12 @@ io.on('connection', (socket) => {
       rooms.push('role:admin');
     }
     logEvent('info', `Socket connected: ${username} (${role}) | Rooms: ${rooms.join(', ')} | SID: ${socket.id}`);
+    // Tell the client which rooms it joined — so frontend can verify
+    socket.emit('join_confirm', { username, role, rooms, socketId: socket.id });
   } else {
     // Unauthenticated sockets join NO rooms — they receive nothing
     logEvent('warn', `Socket connected (unauthenticated) — no rooms joined | SID: ${socket.id}`);
+    socket.emit('join_confirm', { username: null, role: null, rooms: [], socketId: socket.id, error: 'Session not found — please log in again' });
   }
 
   socket.on('disconnect', () => {
