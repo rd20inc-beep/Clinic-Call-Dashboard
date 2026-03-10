@@ -1964,8 +1964,10 @@
       }
       // Admin sees everything
       if (myRole === 'admin') return true;
-      // Agent must match exactly — reject if no agent or different agent
-      if (!data.agent || data.agent !== myUsername) return false;
+      // No agent tag (untagged monitor) — allow everyone to see it
+      if (!data.agent) return true;
+      // Agent-tagged event — only the matching agent sees it
+      if (data.agent !== myUsername) return false;
       return true;
     }
 

@@ -230,15 +230,16 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
     timestamp: new Date().toISOString()
   };
 
-  // STRICT ISOLATION: only emit to the specific agent's room + admin. Never broadcast.
+  // Route call event to the correct dashboards
   if (agent) {
+    // Known agent — send to that agent + admin only
     io.to('agent:' + agent).emit('incoming_call', callEvent);
     io.to('role:admin').emit('incoming_call', callEvent);
-    logEvent('info', 'Incoming call: ' + caller, `Agent: ${agent} | SID: ${callSid} | Rooms: agent:${agent}, role:admin`);
+    logEvent('info', 'Incoming call: ' + caller, `Agent: ${agent} | SID: ${callSid}`);
   } else {
-    // No valid agent — only notify admins, log as info (not warn) to avoid toast spam
-    io.to('role:admin').emit('incoming_call', callEvent);
-    logEvent('info', 'Incoming call (no agent): ' + caller, `SID: ${callSid} | Rooms: role:admin only`);
+    // No agent tag — broadcast to all dashboards so the call isn't missed
+    io.emit('incoming_call', callEvent);
+    logEvent('info', 'Incoming call (no agent): ' + caller, `SID: ${callSid} | Broadcast to all`);
   }
 
   // Async: look up patient name and push update to dashboard
@@ -252,12 +253,12 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
           updateCallPatientId.run(patient.patientID, callId);
         }
         const patientEvent = { caller, callId, agent: agent || null, patientName: patient.patientName, patientID: patient.patientID };
-        // STRICT ISOLATION: same routing as incoming_call
+        // Same routing as incoming_call
         if (agent) {
           io.to('agent:' + agent).emit('patient_info', patientEvent);
           io.to('role:admin').emit('patient_info', patientEvent);
         } else {
-          io.to('role:admin').emit('patient_info', patientEvent);
+          io.emit('patient_info', patientEvent);
         }
         logEvent('info', 'Patient identified: ' + (patient.patientName || 'Unknown'), caller);
       }
@@ -285,8 +286,8 @@ app.post('/heartbeat', requireWebhookSecret, (req, res) => {
     io.to('role:admin').emit('monitor_status', { alive: true, agent });
     if (wasDown) logEvent('info', `Call monitor connected: ${agent}`);
   } else {
-    // Unknown/missing agent — still track as alive, notify admin only
-    io.to('role:admin').emit('monitor_status', { alive: true, agent: null });
+    // No agent tag — broadcast to everyone so all dashboards show monitor online
+    io.emit('monitor_status', { alive: true, agent: null });
     if (wasDown) logEvent('info', `Call monitor connected (no agent tag, raw: "${rawAgent}")`);
   }
   res.json({ status: 'ok' });
@@ -302,7 +303,7 @@ setInterval(() => {
         io.to('role:admin').emit('monitor_status', { alive: false, agent: key });
         logEvent('warn', `Call monitor disconnected: ${key}`);
       } else {
-        io.to('role:admin').emit('monitor_status', { alive: false, agent: null });
+        io.emit('monitor_status', { alive: false, agent: null });
         logEvent('warn', 'Call monitor disconnected (untagged)');
       }
     }
