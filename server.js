@@ -660,7 +660,23 @@ function generateInstallerBat(baseUrl, secret, agent) {
   bat += 'echo.\r\n';
   bat += 'powershell -ExecutionPolicy Bypass -File "%DIR%\\call_monitor.ps1"\r\n';
   bat += 'echo.\r\n';
-  bat += 'echo  Monitor exited. Check %DIR%\\crash.log for details.\r\n';
+  bat += 'echo  ============================================\r\n';
+  bat += 'echo  MONITOR CRASHED / EXITED\r\n';
+  bat += 'echo  ============================================\r\n';
+  bat += 'echo.\r\n';
+  bat += 'echo  --- monitor.log (last 30 lines) ---\r\n';
+  bat += 'if exist "%DIR%\\monitor.log" (\r\n';
+  bat += 'powershell -Command "Get-Content \'%APPDATA%\\ClinicaCallMonitor\\monitor.log\' -Tail 30"\r\n';
+  bat += ') else ( echo   No monitor.log found )\r\n';
+  bat += 'echo.\r\n';
+  bat += 'echo  --- crash.log ---\r\n';
+  bat += 'if exist "%DIR%\\crash.log" (\r\n';
+  bat += 'powershell -Command "Get-Content \'%APPDATA%\\ClinicaCallMonitor\\crash.log\' -Tail 30"\r\n';
+  bat += ') else ( echo   No crash.log found )\r\n';
+  bat += 'echo.\r\n';
+  bat += 'echo  Opening log folder...\r\n';
+  bat += 'explorer "%DIR%"\r\n';
+  bat += 'echo.\r\n';
   bat += 'pause\r\n';
 
   return bat;
