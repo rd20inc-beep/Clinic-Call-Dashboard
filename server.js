@@ -216,14 +216,45 @@ app.get('/api/socket-debug', requireAuth, (req, res) => {
   res.json({ totalSockets: io.sockets.sockets.size, rooms, sockets });
 });
 
+// Pre-auth request logger — runs before requireWebhookSecret can reject
+app.use(['/incoming_call', '/heartbeat'], (req, res, next) => {
+  try {
+    console.log('[pre_auth] ROUTE HIT', {
+      time: new Date().toISOString(),
+      method: req.method,
+      path: req.path,
+      body: req.body,
+      headers: {
+        'x-real-ip': req.headers['x-real-ip'],
+        'x-forwarded-for': req.headers['x-forwarded-for'],
+        'x-webhook-secret': req.headers['x-webhook-secret'] ? '***present***' : '***missing***',
+        'content-type': req.headers['content-type'],
+        'user-agent': req.headers['user-agent']
+      },
+      ip: req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress
+    });
+  } catch (e) { /* never crash */ }
+  next();
+});
+
 // Webhook auth middleware
 function requireWebhookSecret(req, res, next) {
-  if (!WEBHOOK_SECRET) return next();
+  if (!WEBHOOK_SECRET) { console.log('[webhook_auth] SKIPPED — no secret configured'); return next(); }
   const provided = req.headers['x-webhook-secret'] || req.body.secret;
+  console.log('[webhook_auth] checking', {
+    hasHeader: !!req.headers['x-webhook-secret'],
+    hasBodySecret: !!req.body.secret,
+    providedLength: provided ? provided.length : 0,
+    expectedLength: WEBHOOK_SECRET.length,
+    match: provided === WEBHOOK_SECRET,
+    ip: req.headers['x-real-ip'] || req.headers['x-forwarded-for'] || req.socket.remoteAddress
+  });
   if (provided !== WEBHOOK_SECRET) {
+    console.log('[webhook_auth] BLOCKED request');
     logEvent('error', 'Webhook auth failed — invalid secret', 'IP: ' + (req.ip || req.connection.remoteAddress));
     return res.status(401).json({ error: 'Invalid webhook secret' });
   }
+  console.log('[webhook_auth] PASSED');
   next();
 }
 
@@ -242,10 +273,25 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
   const callSid = req.body.CallSid || '';
   const rawAgent = (req.body.Agent || '').trim();
 
-  logEvent('info', `POST /incoming_call received`, `From: "${rawCaller}" | Agent: "${rawAgent}" | IP: ${req.ip || req.connection.remoteAddress} | CT: ${req.headers['content-type']} | Raw: "${req.rawBody || ''}" | Body: ${JSON.stringify(req.body).substring(0, 300)}`);
-
   // Validate agent — must be a known username, never broadcast blindly
-  const agent = (rawAgent && USERS[rawAgent]) ? rawAgent : null;
+  let agent = (rawAgent && USERS[rawAgent]) ? rawAgent : null;
+
+  console.log('[incoming_call] resolving agent', { rawAgent, usersMatch: !!USERS[rawAgent], agentFromBody: agent });
+
+  // Fallback: if Agent is missing but we know this IP from a previous tagged heartbeat, use that
+  if (!agent) {
+    const inferred = resolveAgentFromIP(req);
+    if (inferred) {
+      agent = inferred;
+      logEvent('info', `incoming_call: Agent inferred from IP`, `IP: ${req.ip || req.connection.remoteAddress} => ${agent} | From: "${rawCaller}"`);
+    }
+  } else {
+    rememberAgentIP(req, agent);
+  }
+
+  console.log('[incoming_call] resolved agent', { agent, resolutionMethod: rawAgent && USERS[rawAgent] ? 'body' : agent ? 'ip_fallback' : 'none' });
+
+  logEvent('info', `POST /incoming_call received`, `From: "${rawCaller}" | Agent: "${rawAgent}" | Resolved: ${agent || 'null'} | IP: ${req.ip || req.connection.remoteAddress} | CT: ${req.headers['content-type']} | Raw: "${req.rawBody || ''}" | Body: ${JSON.stringify(req.body).substring(0, 300)}`);
 
   // Build Clinicea patient lookup URL
   const cliniceaUrl = `${CLINICEA_BASE_URL}?tp=pat&m=${encodeURIComponent(caller)}`;
@@ -255,6 +301,8 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
     'INSERT INTO calls (caller_number, call_sid, clinicea_url, agent) VALUES (?, ?, ?, ?)'
   ).run(caller, callSid, cliniceaUrl, agent);
   const callId = result.lastInsertRowid;
+
+  console.log('[incoming_call] DB INSERT', { callId, caller, callSid, agent, cliniceaUrl });
 
   const callEvent = {
     caller,
@@ -271,12 +319,18 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
     const adminRoom = io.sockets.adapter.rooms.get('role:admin');
     const agentCount = agentRoom ? agentRoom.size : 0;
     const adminCount = adminRoom ? adminRoom.size : 0;
+    console.log('[incoming_call] emitting event', { targetAgentRoom: 'agent:' + agent, agentSockets: agentCount, adminSockets: adminCount, caller, callSid, callId });
     io.to('agent:' + agent).emit('incoming_call', callEvent);
+    console.log('[incoming_call] emit → agent room:', 'agent:' + agent, '(' + agentCount + ' sockets)');
     io.to('role:admin').emit('incoming_call', callEvent);
+    console.log('[incoming_call] emit → admin room (' + adminCount + ' sockets)');
     logEvent('info', 'Incoming call: ' + caller, `Agent: ${agent} | SID: ${callSid} | URL: ${cliniceaUrl} | Sockets: agent:${agent}=${agentCount}, role:admin=${adminCount}`);
   } else {
-    // No valid agent — emit to admin only, never broadcast to all agents
+    const adminRoom = io.sockets.adapter.rooms.get('role:admin');
+    const adminCount = adminRoom ? adminRoom.size : 0;
+    console.log('[incoming_call] NO agent resolved — emitting to admin only', { adminSockets: adminCount, caller, callSid, callId });
     io.to('role:admin').emit('incoming_call', callEvent);
+    console.log('[incoming_call] emit → admin room only (' + adminCount + ' sockets)');
     logEvent('warn', 'Incoming call (no valid agent): ' + caller, `Raw Agent: "${rawAgent}" | SID: ${callSid} | URL: ${cliniceaUrl} | Emitted to admin only`);
   }
 
@@ -345,6 +399,51 @@ app.get('/api/monitor-log', requireAuth, (req, res) => {
   res.json(Object.keys(monitorLogs).map(k => ({ agent: k, lines: (monitorLogs[k] || '').split('\n').length })));
 });
 
+// --- IP-to-Agent mapping: fallback for old monitors that don't send Agent ---
+// When a heartbeat or incoming_call arrives WITH a valid Agent, remember that IP.
+// When a later request arrives WITHOUT Agent from the same IP, use the remembered agent.
+const ipToAgent = {}; // { ip: { agent, lastSeen } }
+const IP_AGENT_TTL_MS = 300000; // 5 min — if no heartbeat with Agent in 5 min, forget the mapping
+
+function getClientIP(req) {
+  // Normalize: strip ::ffff: prefix and use real IP behind nginx
+  return (req.ip || req.connection.remoteAddress || '').replace(/^::ffff:/, '');
+}
+
+function resolveAgentFromIP(req) {
+  const ip = getClientIP(req);
+  // First check explicit IP-to-agent map
+  const entry = ipToAgent[ip];
+  if (entry && (Date.now() - entry.lastSeen) < IP_AGENT_TTL_MS) {
+    return entry.agent;
+  }
+  // Fallback: find an agent socket connected from the same IP
+  // (the monitor and the dashboard run on the same laptop = same public IP)
+  const normalizedIP = ip.replace(/^::ffff:/, '');
+  const candidates = [];
+  for (const [, socket] of io.sockets.sockets) {
+    if (!socket.agentUsername || socket.agentRole === 'admin') continue;
+    // Get real client IP from socket — check X-Real-IP/X-Forwarded-For headers (behind nginx)
+    const hdrs = socket.handshake.headers || {};
+    const socketIP = (hdrs['x-real-ip'] || hdrs['x-forwarded-for'] || socket.handshake.address || '').split(',')[0].trim().replace(/^::ffff:/, '');
+    if (socketIP === normalizedIP) {
+      candidates.push(socket.agentUsername);
+    }
+  }
+  // Only infer if exactly one non-admin agent is connected from this IP
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+  return null;
+}
+
+function rememberAgentIP(req, agent) {
+  const ip = getClientIP(req);
+  if (ip && agent) {
+    ipToAgent[ip] = { agent, lastSeen: Date.now() };
+  }
+}
+
 // --- Monitor Heartbeat (per-agent, strict isolation) ---
 const agentHeartbeats = {}; // { agent: { lastHeartbeat, alive } }
 const warnedBadAgents = new Set(); // only warn once per unknown agent value
@@ -357,7 +456,17 @@ const STARTUP_GRACE_MS = 120000; // 2 min grace after server restart
 app.post('/heartbeat', requireWebhookSecret, (req, res) => {
   const start = Date.now();
   const rawAgent = (req.body.Agent || '').trim();
-  const agent = (rawAgent && USERS[rawAgent]) ? rawAgent : null;
+  let agent = (rawAgent && USERS[rawAgent]) ? rawAgent : null;
+  // Fallback: if Agent is missing but we know this IP from a previous tagged request, use that
+  if (!agent) {
+    const inferred = resolveAgentFromIP(req);
+    if (inferred) {
+      agent = inferred;
+      logEvent('info', `Heartbeat: Agent inferred from IP`, `IP: ${req.ip || req.connection.remoteAddress} => ${agent}`);
+    }
+  } else {
+    rememberAgentIP(req, agent);
+  }
   logEvent('debug', `Heartbeat received`, `Agent: "${rawAgent}" | Resolved: ${agent || 'null'} | CT: ${req.headers['content-type']} | Raw: "${req.rawBody || ''}" | Body: ${JSON.stringify(req.body).substring(0, 200)}`);
   const key = agent || '_default';
   const prev = agentHeartbeats[key] || { lastHeartbeat: 0, alive: false };
@@ -422,15 +531,21 @@ app.get('/api/monitor-status', requireAuth, (req, res) => {
   res.json({ alive });
 });
 
+// Monitor URL: use MONITOR_URL env var if set, otherwise derive from request
+// This ensures monitors can reach the server even if the domain doesn't resolve from their network
+const MONITOR_URL = process.env.MONITOR_URL || null;
+function getMonitorBaseUrl(req) {
+  if (MONITOR_URL) return MONITOR_URL;
+  return `${req.protocol}://${req.get('host')}`;
+}
+
 // --- Serve raw PS1 monitor script (called by BAT installer) ---
 app.get('/api/monitor-script', (req, res) => {
   const secret = req.query.secret || req.headers['x-webhook-secret'];
   if (secret !== WEBHOOK_SECRET) return res.status(403).send('Forbidden');
   const agent = req.query.agent || '';
   if (!agent || !USERS[agent]) return res.status(400).send('Invalid agent');
-  const host = req.get('host');
-  const protocol = req.protocol;
-  const baseUrl = `${protocol}://${host}`;
+  const baseUrl = getMonitorBaseUrl(req);
   const script = generateMonitorScript(baseUrl, WEBHOOK_SECRET, agent);
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   res.send(script);
@@ -438,9 +553,7 @@ app.get('/api/monitor-script', (req, res) => {
 
 // --- Download call monitor installer (pre-configured .bat, agent-specific) ---
 app.get('/download/call-monitor', requireAuth, (req, res) => {
-  const host = req.get('host');
-  const protocol = req.protocol;
-  const baseUrl = `${protocol}://${host}`;
+  const baseUrl = getMonitorBaseUrl(req);
   const agent = req.session.username;
   const bat = generateInstallerBat(baseUrl, WEBHOOK_SECRET, agent);
   res.setHeader('Content-Type', 'application/octet-stream');
@@ -529,13 +642,38 @@ if (-not $agentName) {
     Start-Sleep -Seconds 10
     exit 1
 }
-Write-Log "=== Monitor starting === Agent: $agentName"
+
+# === STARTUP DIAGNOSTICS ===
+Write-Log "=== Monitor starting ==="
+Write-Log "DIAG: Agent = $agentName"
+Write-Log "DIAG: WebhookUrl = $webhookUrl"
+Write-Log "DIAG: HeartbeatUrl = $heartbeatUrl"
+Write-Log "DIAG: User = $env:USERNAME"
+Write-Log "DIAG: Computer = $env:COMPUTERNAME"
+Write-Log "DIAG: CWD = $(Get-Location)"
+Write-Log "DIAG: Script = $PSCommandPath"
+Write-Log "DIAG: PS Version = $($PSVersionTable.PSVersion)"
+Write-Log "DIAG: OS = $([System.Environment]::OSVersion.VersionString)"
+
+# Check Phone Link availability
+$phoneLinkRunning = $false
+try {
+    $pl = Get-Process -Name "PhoneExperienceHost" -ErrorAction SilentlyContinue
+    if ($pl) { $phoneLinkRunning = $true }
+} catch {}
+Write-Log "DIAG: Phone Link process running = $phoneLinkRunning"
+
+# Write heartbeat file so installer can verify we're alive
+$heartbeatFile = "$baseDir\\heartbeat.txt"
+try { Set-Content -Path $heartbeatFile -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss") -ErrorAction SilentlyContinue } catch {}
 
 # Send initial heartbeat immediately (before WinRT setup) so dashboard shows online
 try {
-    Invoke-RestMethod -Uri $heartbeatUrl -Method POST -Body "Agent=$([uri]::EscapeDataString($agentName))" -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 5 | Out-Null
-    Write-Log "Initial heartbeat sent"
-} catch { Write-Log "Initial heartbeat failed: $_" }
+    $hbBody = "Agent=$([uri]::EscapeDataString($agentName))"
+    Write-Log "DIAG: Sending initial heartbeat — Body: $hbBody"
+    $hbResp = Invoke-RestMethod -Uri $heartbeatUrl -Method POST -Body $hbBody -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 5
+    Write-Log "Initial heartbeat sent OK — Response: $($hbResp | ConvertTo-Json -Compress -ErrorAction SilentlyContinue)"
+} catch { Write-Log "Initial heartbeat FAILED: $_" }
 
 # Wrap all WinRT setup in a function so we can retry on crash
 function Start-Monitor {
@@ -756,15 +894,15 @@ function Start-Monitor {
                             continue
                         }
                         $recentCalls[$phone] = $now
-                        Write-Log "SENDING WEBHOOK: $phone -> $webhookUrl"
                         $body = "From=$([uri]::EscapeDataString($phone))&CallSid=local-$now&Agent=$([uri]::EscapeDataString($agentName))"
+                        Write-Log "SENDING WEBHOOK: $phone -> $webhookUrl | Body: $body"
                         for ($wRetry = 1; $wRetry -le 3; $wRetry++) {
                             try {
                                 $resp = Invoke-RestMethod -Uri $webhookUrl -Method POST -Body $body -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 10
-                                Write-Log "Webhook OK (attempt $wRetry)"
+                                Write-Log "Webhook OK (attempt $wRetry) — Response: $($resp | ConvertTo-Json -Compress -ErrorAction SilentlyContinue)"
                                 break
                             } catch {
-                                Write-Log "Webhook FAIL (attempt $wRetry): $_"
+                                Write-Log "Webhook FAIL (attempt $wRetry): $($_.Exception.Message) | Status: $($_.Exception.Response.StatusCode)"
                                 if ($wRetry -lt 3) { Start-Sleep -Seconds 2 }
                             }
                         }
@@ -833,121 +971,198 @@ Write-Log "Monitor exiting after $maxRestarts restart attempts. Please re-instal
 }
 
 function generateInstallerBat(baseUrl, secret, agent) {
-  let bat = '@echo off\r\n';
-  bat += 'setlocal EnableExtensions EnableDelayedExpansion\r\n';
-  bat += 'title Clinicea Call Monitor Installer - ' + agent + '\r\n';
-  bat += '\r\n';
-  bat += 'set "AGENT=' + agent + '"\r\n';
-  bat += 'set "SERVER_URL=' + baseUrl + '"\r\n';
-  bat += 'set "WEBHOOK_SECRET=' + secret + '"\r\n';
-  bat += '\r\n';
-  bat += 'set "APP_DIR=%APPDATA%\\ClinicaCallMonitor"\r\n';
-  bat += 'set "PS1_FILE=%APP_DIR%\\call_monitor.ps1"\r\n';
-  bat += 'set "VBS_FILE=%APP_DIR%\\start_monitor.vbs"\r\n';
-  bat += 'set "LOG_FILE=%APP_DIR%\\install_%AGENT%.log"\r\n';
-  bat += 'set "TASK_NAME=Clinicea Call Monitor - %AGENT%"\r\n';
-  bat += '\r\n';
-  bat += 'if not exist "%APP_DIR%" mkdir "%APP_DIR%"\r\n';
-  bat += '\r\n';
-  bat += 'call :log "Starting installer for %AGENT%"\r\n';
-  bat += 'echo.\r\n';
-  bat += 'echo === Clinicea Call Monitor Installer ===\r\n';
-  bat += 'echo Agent: %AGENT%\r\n';
-  bat += 'echo.\r\n';
-  bat += '\r\n';
-
-  // Step 1: Stop old monitor — kill ALL Clinicea monitor processes aggressively
-  bat += 'echo [1/7] Stopping ALL previous monitor instances...\r\n';
-  bat += 'call :log "Stopping ALL old monitor tasks/processes"\r\n';
-  bat += 'schtasks /Query /TN "%TASK_NAME%" >nul 2>&1 && schtasks /End /TN "%TASK_NAME%" >nul 2>&1\r\n';
-  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "schtasks /Query /FO CSV 2>$null | ConvertFrom-Csv | Where-Object { $_.TaskName -like \'*Clinicea Call Monitor*\' } | ForEach-Object { schtasks /End /TN $_.TaskName 2>$null }" >> "%LOG_FILE%" 2>&1\r\n';
-  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq \'powershell.exe\' -and $_.CommandLine -like \'*call_monitor*\' } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force; Write-Output (\'Killed PowerShell PID \' + $_.ProcessId) } catch {} }" >> "%LOG_FILE%" 2>&1\r\n';
-  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq \'wscript.exe\' -and $_.CommandLine -like \'*CliniceaCallMonitor*\' } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force; Write-Output (\'Killed WScript PID \' + $_.ProcessId) } catch {} }" >> "%LOG_FILE%" 2>&1\r\n';
-  bat += 'echo Done.\r\n';
-  bat += '\r\n';
-
-  // Step 2: Download PS1 — single-line PowerShell
-  bat += 'echo [2/7] Downloading monitor script...\r\n';
-  bat += 'call :log "Downloading call_monitor.ps1"\r\n';
-  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $url = \'%SERVER_URL%/api/monitor-script?agent=%AGENT%&secret=%WEBHOOK_SECRET%\'; Invoke-WebRequest -Uri $url -OutFile \'%PS1_FILE%\' -UseBasicParsing; if (!(Test-Path \'%PS1_FILE%\')) { exit 11 }; $len = (Get-Item \'%PS1_FILE%\').Length; if ($len -lt 100) { exit 12 }; Write-Output (\'Downloaded bytes=\' + $len)" >> "%LOG_FILE%" 2>&1\r\n';
-  bat += 'if not exist "%PS1_FILE%" (\r\n';
-  bat += '    echo ERROR: Failed to download monitor script.\r\n';
-  bat += '    call :log "ERROR: Monitor script missing after download"\r\n';
-  bat += '    pause\r\n';
-  bat += '    exit /b 1\r\n';
-  bat += ')\r\n';
-  bat += 'for %%A in ("%PS1_FILE%") do set "PS1_SIZE=%%~zA"\r\n';
-  bat += 'if "%PS1_SIZE%"=="0" (\r\n';
-  bat += '    echo ERROR: Downloaded script is empty.\r\n';
-  bat += '    pause\r\n';
-  bat += '    exit /b 1\r\n';
-  bat += ')\r\n';
-  bat += 'echo Downloaded script size: %PS1_SIZE% bytes\r\n';
-  bat += 'call :log "Downloaded script size: %PS1_SIZE% bytes"\r\n';
-  bat += '\r\n';
-
-  // Step 3: Write VBS launcher via batch echo (these lines have no special chars issues)
-  bat += 'echo [3/7] Writing silent launcher...\r\n';
-  bat += 'call :log "Writing VBS launcher"\r\n';
-  bat += '> "%VBS_FILE%" echo Set ws = CreateObject("WScript.Shell")\r\n';
-  bat += '>> "%VBS_FILE%" echo appDir = ws.ExpandEnvironmentStrings("%APPDATA%") ^& "\\ClinicaCallMonitor"\r\n';
-  bat += '>> "%VBS_FILE%" echo ws.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ ^& appDir ^& "\\call_monitor.ps1""", 0, False\r\n';
-  bat += 'if not exist "%VBS_FILE%" (\r\n';
-  bat += '    echo ERROR: Failed to create VBS launcher.\r\n';
-  bat += '    pause\r\n';
-  bat += '    exit /b 1\r\n';
-  bat += ')\r\n';
-  bat += 'echo Done.\r\n';
-  bat += '\r\n';
-
-  // Step 4: Scheduled task — clean up ALL old Clinicea tasks, then create new
-  bat += 'echo [4/7] Creating scheduled task...\r\n';
-  bat += 'call :log "Creating scheduled task: %TASK_NAME%"\r\n';
-  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "schtasks /Query /FO CSV 2>$null | ConvertFrom-Csv | Where-Object { $_.TaskName -like \'*Clinicea Call Monitor*\' } | ForEach-Object { schtasks /Delete /TN $_.TaskName /F 2>$null; Write-Output (\'Deleted old task: \' + $_.TaskName) }" >> "%LOG_FILE%" 2>&1\r\n';
-  bat += 'schtasks /Create /TN "%TASK_NAME%" /SC ONLOGON /RL HIGHEST /TR "wscript.exe \\"%VBS_FILE%\\"" /F >> "%LOG_FILE%" 2>&1\r\n';
-  bat += 'if errorlevel 1 (\r\n';
-  bat += '    echo WARNING: Scheduled task failed - will use startup folder instead.\r\n';
-  bat += '    call :log "WARNING: Scheduled task creation failed"\r\n';
-  bat += ')\r\n';
-  bat += 'echo Done.\r\n';
-  bat += '\r\n';
-
-  // Step 5: Startup folder fallback — clean up old VBS files first
-  bat += 'echo [5/7] Adding startup-folder fallback...\r\n';
-  bat += 'call :log "Adding startup folder fallback"\r\n';
-  bat += 'del /Q "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CliniceaCallMonitor*.vbs" >nul 2>&1\r\n';
-  bat += 'copy /Y "%VBS_FILE%" "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CliniceaCallMonitor_%AGENT%.vbs" >nul 2>&1\r\n';
-  bat += 'echo Done.\r\n';
-  bat += '\r\n';
-
-  // Step 6: Start monitor
-  bat += 'echo [6/7] Starting monitor...\r\n';
-  bat += 'call :log "Starting monitor immediately"\r\n';
-  bat += 'start "" wscript.exe "%VBS_FILE%"\r\n';
-  bat += 'timeout /t 2 /nobreak >nul\r\n';
-  bat += 'echo Done.\r\n';
-  bat += '\r\n';
-
-  // Step 7: Final status
-  bat += 'echo [7/7] Installation complete.\r\n';
-  bat += 'call :log "Installation complete"\r\n';
-  bat += 'echo.\r\n';
-  bat += 'echo ============================================\r\n';
-  bat += 'echo Installation complete\r\n';
-  bat += 'echo Agent:      %AGENT%\r\n';
-  bat += 'echo Dashboard:  %SERVER_URL%\r\n';
-  bat += 'echo Install dir:%APP_DIR%\r\n';
-  bat += 'echo Log file:   %LOG_FILE%\r\n';
-  bat += 'echo ============================================\r\n';
-  bat += 'echo.\r\n';
-  bat += 'pause\r\n';
-  bat += 'exit /b 0\r\n';
-  bat += '\r\n';
-  bat += ':log\r\n';
-  bat += 'echo [%date% %time%] %~1>> "%LOG_FILE%"\r\n';
-  bat += 'goto :eof\r\n';
-
-  return bat;
+  // All PowerShell commands are on SINGLE lines — no ^ continuation (breaks CMD→PS handoff)
+  // Scheduled task uses /RL LIMITED (no admin needed), falls through on failure
+  const lines = [
+    '@echo off',
+    'setlocal EnableExtensions EnableDelayedExpansion',
+    'title Clinicea Call Monitor Installer - ' + agent,
+    '',
+    'set "AGENT=' + agent + '"',
+    'set "SERVER_URL=' + baseUrl + '"',
+    'set "WEBHOOK_SECRET=' + secret + '"',
+    '',
+    'set "APP_DIR=%APPDATA%\\ClinicaCallMonitor"',
+    'set "PS1_FILE=%APP_DIR%\\call_monitor.ps1"',
+    'set "VBS_FILE=%APP_DIR%\\start_monitor.vbs"',
+    'set "LOG_FILE=%APP_DIR%\\install_%AGENT%.log"',
+    'set "TASK_NAME=Clinicea Call Monitor - %AGENT%"',
+    'set "STARTUP_VBS=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CliniceaCallMonitor_%AGENT%.vbs"',
+    'set "TASK_OK=0"',
+    'set "STARTUP_OK=0"',
+    'set "LAUNCH_OK=0"',
+    '',
+    'if not exist "%APP_DIR%" mkdir "%APP_DIR%"',
+    '',
+    'call :log "============================================"',
+    'call :log "Starting installer for %AGENT%"',
+    'call :log "App dir: %APP_DIR%"',
+    'call :log "Server: %SERVER_URL%"',
+    'call :log "User: %USERNAME%"',
+    'echo.',
+    'echo === Clinicea Call Monitor Installer ===',
+    'echo Agent: %AGENT%',
+    'echo.',
+    '',
+    'REM === Step 1: Kill ALL old monitors ===',
+    'echo [1/7] Stopping ALL previous monitor instances...',
+    'call :log "Stopping ALL old monitor tasks/processes"',
+    'schtasks /Query /TN "%TASK_NAME%" >nul 2>&1 && schtasks /End /TN "%TASK_NAME%" >nul 2>&1',
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq \'powershell.exe\' -and $_.CommandLine -like \'*call_monitor*\' } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force; Write-Output (\'Killed PID \' + $_.ProcessId) } catch {} }" >> "%LOG_FILE%" 2>&1',
+    'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq \'wscript.exe\' -and $_.CommandLine -like \'*CliniceaCallMonitor*\' } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force; Write-Output (\'Killed WScript PID \' + $_.ProcessId) } catch {} }" >> "%LOG_FILE%" 2>&1',
+    'echo Done.',
+    '',
+    'REM === Step 2: Download PS1 (via temp script to avoid CMD escaping issues) ===',
+    'echo [2/7] Downloading monitor script...',
+    'call :log "Downloading call_monitor.ps1"',
+    'set "DL_SCRIPT=%APP_DIR%\\dl_temp.ps1"',
+    '> "%DL_SCRIPT%" echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12',
+    '>> "%DL_SCRIPT%" echo $url = "%SERVER_URL%/api/monitor-script?agent=%AGENT%^&secret=%WEBHOOK_SECRET%"',
+    '>> "%DL_SCRIPT%" echo $out = "%PS1_FILE%"',
+    '>> "%DL_SCRIPT%" echo Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing',
+    '>> "%DL_SCRIPT%" echo if (!(Test-Path $out)) { exit 11 }',
+    '>> "%DL_SCRIPT%" echo $len = (Get-Item $out).Length',
+    '>> "%DL_SCRIPT%" echo if ($len -lt 100) { exit 12 }',
+    '>> "%DL_SCRIPT%" echo Write-Output ("Downloaded bytes=" + $len)',
+    'powershell -NoProfile -ExecutionPolicy Bypass -File "%DL_SCRIPT%" >> "%LOG_FILE%" 2>&1',
+    'del /Q "%DL_SCRIPT%" >nul 2>&1',
+    'if not exist "%PS1_FILE%" (',
+    '    echo ERROR: Failed to download monitor script.',
+    '    call :log "ERROR: Monitor script missing after download"',
+    '    pause',
+    '    exit /b 1',
+    ')',
+    'for %%A in ("%PS1_FILE%") do set "PS1_SIZE=%%~zA"',
+    'if "%PS1_SIZE%"=="0" (',
+    '    echo ERROR: Downloaded script is empty.',
+    '    pause',
+    '    exit /b 1',
+    ')',
+    'echo Downloaded: %PS1_SIZE% bytes',
+    'call :log "Downloaded script: %PS1_SIZE% bytes"',
+    'set "CHK_SCRIPT=%APP_DIR%\\chk_temp.ps1"',
+    '> "%CHK_SCRIPT%" echo $content = Get-Content "%PS1_FILE%" -Raw',
+    '>> "%CHK_SCRIPT%" echo if ($content -match "agentName\\s*=\\s*.+") { Write-Output "PS1 agent check: OK" } else { Write-Output "PS1 agent check: MISSING" }',
+    'powershell -NoProfile -ExecutionPolicy Bypass -File "%CHK_SCRIPT%" >> "%LOG_FILE%" 2>&1',
+    'del /Q "%CHK_SCRIPT%" >nul 2>&1',
+    '',
+    'REM === Step 3: Write VBS launcher ===',
+    'echo [3/7] Writing silent launcher...',
+    'call :log "Writing VBS launcher"',
+    '> "%VBS_FILE%" echo Set ws = CreateObject("WScript.Shell")',
+    '>> "%VBS_FILE%" echo appDir = ws.ExpandEnvironmentStrings("%APPDATA%") ^& "\\ClinicaCallMonitor"',
+    '>> "%VBS_FILE%" echo ws.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ ^& appDir ^& "\\call_monitor.ps1""", 0, False',
+    'if not exist "%VBS_FILE%" (',
+    '    echo ERROR: Failed to create VBS launcher.',
+    '    pause',
+    '    exit /b 1',
+    ')',
+    'echo Done.',
+    '',
+    'REM === Step 4: Scheduled task — try LIMITED first (no admin), then HIGHEST ===',
+    'echo [4/7] Creating scheduled task...',
+    'call :log "Creating scheduled task: %TASK_NAME%"',
+    'schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1',
+    'schtasks /Create /TN "%TASK_NAME%" /SC ONLOGON /RL LIMITED /TR "wscript.exe \\"%VBS_FILE%\\"" /F >> "%LOG_FILE%" 2>&1',
+    'if errorlevel 1 (',
+    '    call :log "LIMITED task failed, trying HIGHEST"',
+    '    schtasks /Create /TN "%TASK_NAME%" /SC ONLOGON /RL HIGHEST /TR "wscript.exe \\"%VBS_FILE%\\"" /F >> "%LOG_FILE%" 2>&1',
+    ')',
+    'if errorlevel 1 (',
+    '    echo WARNING: Scheduled task failed — using startup folder only.',
+    '    call :log "WARNING: Scheduled task creation failed — will rely on startup folder"',
+    ') else (',
+    '    set "TASK_OK=1"',
+    '    call :log "Scheduled task created OK"',
+    ')',
+    'echo Done.',
+    '',
+    'REM === Step 5: Startup folder fallback (always install as backup) ===',
+    'echo [5/7] Adding startup-folder fallback...',
+    'call :log "Adding startup folder fallback"',
+    'del /Q "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CliniceaCallMonitor*.vbs" >nul 2>&1',
+    'copy /Y "%VBS_FILE%" "%STARTUP_VBS%" >nul 2>&1',
+    'if exist "%STARTUP_VBS%" (',
+    '    set "STARTUP_OK=1"',
+    '    call :log "Startup folder: OK"',
+    ') else (',
+    '    call :log "WARNING: Startup folder copy failed"',
+    ')',
+    'echo Done.',
+    '',
+    'REM === Step 6: Start monitor + verify ===',
+    'echo [6/7] Starting monitor...',
+    'call :log "Starting monitor immediately"',
+    'start "" wscript.exe "%VBS_FILE%"',
+    'echo Waiting for monitor to start...',
+    'timeout /t 5 /nobreak >nul',
+    'set "VFY_SCRIPT=%APP_DIR%\\vfy_temp.ps1"',
+    '> "%VFY_SCRIPT%" echo $p = Get-CimInstance Win32_Process ^| Where-Object { $_.Name -eq "powershell.exe" -and $_.CommandLine -like "*call_monitor*" }',
+    '>> "%VFY_SCRIPT%" echo if ($p) { Write-Output ("Monitor running: PID " + ($p ^| Select-Object -First 1).ProcessId) } else { Write-Output "WARNING: Monitor process NOT found after launch"; exit 1 }',
+    'powershell -NoProfile -ExecutionPolicy Bypass -File "%VFY_SCRIPT%" >> "%LOG_FILE%" 2>&1',
+    'del /Q "%VFY_SCRIPT%" >nul 2>&1',
+    'if errorlevel 1 (',
+    '    echo WARNING: Monitor may not have started. Check log: %LOG_FILE%',
+    '    call :log "WARNING: Monitor process not detected after launch"',
+    ') else (',
+    '    set "LAUNCH_OK=1"',
+    '    echo Monitor started successfully.',
+    ')',
+    '',
+    'REM === Step 7: Webhook self-test ===',
+    'echo [7/7] Testing webhook connection...',
+    'set "WHK_SCRIPT=%APP_DIR%\\whk_temp.ps1"',
+    '> "%WHK_SCRIPT%" echo [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12',
+    '>> "%WHK_SCRIPT%" echo try {',
+    '>> "%WHK_SCRIPT%" echo   $r = Invoke-RestMethod -Uri "%SERVER_URL%/heartbeat" -Method POST -Body ("Agent=" + [uri]::EscapeDataString("%AGENT%")) -ContentType "application/x-www-form-urlencoded" -Headers @{"X-Webhook-Secret"="%WEBHOOK_SECRET%"} -TimeoutSec 10',
+    '>> "%WHK_SCRIPT%" echo   Write-Output ("Webhook test: OK — " + ($r ^| ConvertTo-Json -Compress))',
+    '>> "%WHK_SCRIPT%" echo } catch {',
+    '>> "%WHK_SCRIPT%" echo   Write-Output ("Webhook test: FAILED — " + $_.Exception.Message)',
+    '>> "%WHK_SCRIPT%" echo   exit 1',
+    '>> "%WHK_SCRIPT%" echo }',
+    'powershell -NoProfile -ExecutionPolicy Bypass -File "%WHK_SCRIPT%" >> "%LOG_FILE%" 2>&1',
+    'del /Q "%WHK_SCRIPT%" >nul 2>&1',
+    'if errorlevel 1 (',
+    '    echo WARNING: Webhook self-test FAILED. Check server connection.',
+    '    call :log "WARNING: Webhook self-test failed"',
+    ') else (',
+    '    echo Webhook test: OK',
+    '    call :log "Webhook self-test passed"',
+    ')',
+    '',
+    'REM === Install summary ===',
+    'echo.',
+    'echo ============================================',
+    'echo   INSTALL SUMMARY',
+    'echo ============================================',
+    'echo   Agent:          %AGENT%',
+    'echo   Dashboard:      %SERVER_URL%',
+    'echo   Install dir:    %APP_DIR%',
+    'echo   Script size:    %PS1_SIZE% bytes',
+    'if "%TASK_OK%"=="1" (echo   Scheduled task:  OK) else (echo   Scheduled task:  FAILED)',
+    'if "%STARTUP_OK%"=="1" (echo   Startup folder:  OK) else (echo   Startup folder:  FAILED)',
+    'if "%LAUNCH_OK%"=="1" (echo   Monitor running: OK) else (echo   Monitor running: FAILED)',
+    'echo   Log file:       %LOG_FILE%',
+    'echo ============================================',
+    '',
+    'call :log "=== SUMMARY: task=%TASK_OK% startup=%STARTUP_OK% launch=%LAUNCH_OK% ==="',
+    '',
+    'if "%TASK_OK%"=="0" if "%STARTUP_OK%"=="0" (',
+    '    echo.',
+    '    echo *** WARNING: No auto-start persistence installed! ***',
+    '    echo *** Monitor will not survive reboot. ***',
+    '    call :log "CRITICAL: No persistence method installed"',
+    ')',
+    '',
+    'echo.',
+    'pause',
+    'exit /b 0',
+    '',
+    ':log',
+    'echo [%date% %time%] %~1>> "%LOG_FILE%"',
+    'goto :eof',
+  ];
+  return lines.join('\r\n') + '\r\n';
 }
 
 // --- WhatsApp Extension Auth ---
@@ -2010,6 +2225,20 @@ io.on('connection', (socket) => {
   const username = session && session.username;
   const role = session && session.role;
 
+  // Store identity on socket for IP-based agent resolution
+  socket.agentUsername = username || null;
+  socket.agentRole = role || null;
+
+  console.log('[socket] connection', {
+    socketId: socket.id,
+    username: username || null,
+    role: role || null,
+    ip: socket.handshake.address,
+    xRealIp: (socket.handshake.headers || {})['x-real-ip'],
+    xForwardedFor: (socket.handshake.headers || {})['x-forwarded-for'],
+    hasSession: !!(session && session.loggedIn)
+  });
+
   if (username) {
     // Each user joins ONLY their own agent room
     socket.join('agent:' + username);
@@ -2018,12 +2247,21 @@ io.on('connection', (socket) => {
       socket.join('role:admin');
       rooms.push('role:admin');
     }
-    logEvent('info', `Socket connected: ${username} (${role}) | Rooms: ${rooms.join(', ')} | SID: ${socket.id}`);
+    const hdrs = socket.handshake.headers || {};
+    const socketIP = (hdrs['x-real-ip'] || hdrs['x-forwarded-for'] || socket.handshake.address || '').split(',')[0].trim().replace(/^::ffff:/, '');
+    logEvent('info', `Socket connected: ${username} (${role}) | Rooms: ${rooms.join(', ')} | IP: ${socketIP} | SID: ${socket.id}`);
+    console.log('[socket] rooms joined', { username, role, rooms: Array.from(socket.rooms), socketIP });
+    // Seed IP-to-agent mapping from socket connections (so monitor from same IP can be resolved)
+    if (role !== 'admin' && socketIP) {
+      ipToAgent[socketIP] = { agent: username, lastSeen: Date.now() };
+      logEvent('info', `IP-to-agent mapped: ${socketIP} => ${username} (from socket)`);
+    }
     // Tell the client which rooms it joined — so frontend can verify
     socket.emit('join_confirm', { username, role, rooms, socketId: socket.id });
   } else {
     // Unauthenticated sockets join NO rooms — they receive nothing
     logEvent('warn', `Socket connected (unauthenticated) — no rooms joined | SID: ${socket.id}`);
+    console.log('[socket] UNAUTHENTICATED — no rooms', { socketId: socket.id });
     socket.emit('join_confirm', { username: null, role: null, rooms: [], socketId: socket.id, error: 'Session not found — please log in again' });
   }
 

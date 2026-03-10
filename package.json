@@ -2,18 +2,21 @@
   "name": "call-forward",
   "version": "1.0.0",
   "description": "Clinic call dashboard with Clinicea patient lookup",
-  "main": "server.js",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "hash-password": "node -e \"const p=process.argv[1];console.log(require('bcryptjs').hashSync(p,10))\" --"
   },
   "dependencies": {
     "archiver": "^7.0.1",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.7.0",
     "better-sqlite3-session-store": "^0.1.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-session": "^1.19.0",
-    "openai": "^6.27.0",
+    "helmet": "^8.1.0",
     "socket.io": "^4.8.1"
   }
 }
