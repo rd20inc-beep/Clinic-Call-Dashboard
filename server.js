@@ -855,11 +855,13 @@ function generateInstallerBat(baseUrl, secret, agent) {
   bat += 'echo.\r\n';
   bat += '\r\n';
 
-  // Step 1: Stop old monitor — all PowerShell on single lines
-  bat += 'echo [1/7] Stopping previous monitor instance...\r\n';
-  bat += 'call :log "Stopping old monitor task/process if present"\r\n';
+  // Step 1: Stop old monitor — kill ALL Clinicea monitor processes aggressively
+  bat += 'echo [1/7] Stopping ALL previous monitor instances...\r\n';
+  bat += 'call :log "Stopping ALL old monitor tasks/processes"\r\n';
   bat += 'schtasks /Query /TN "%TASK_NAME%" >nul 2>&1 && schtasks /End /TN "%TASK_NAME%" >nul 2>&1\r\n';
-  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq \'powershell.exe\' -and $_.CommandLine -like \'*call_monitor.ps1*\' } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force } catch {} }" >> "%LOG_FILE%" 2>&1\r\n';
+  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "schtasks /Query /FO CSV 2>$null | ConvertFrom-Csv | Where-Object { $_.TaskName -like \'*Clinicea Call Monitor*\' } | ForEach-Object { schtasks /End /TN $_.TaskName 2>$null }" >> "%LOG_FILE%" 2>&1\r\n';
+  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq \'powershell.exe\' -and $_.CommandLine -like \'*call_monitor*\' } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force; Write-Output (\'Killed PowerShell PID \' + $_.ProcessId) } catch {} }" >> "%LOG_FILE%" 2>&1\r\n';
+  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq \'wscript.exe\' -and $_.CommandLine -like \'*CliniceaCallMonitor*\' } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force; Write-Output (\'Killed WScript PID \' + $_.ProcessId) } catch {} }" >> "%LOG_FILE%" 2>&1\r\n';
   bat += 'echo Done.\r\n';
   bat += '\r\n';
 
@@ -897,10 +899,10 @@ function generateInstallerBat(baseUrl, secret, agent) {
   bat += 'echo Done.\r\n';
   bat += '\r\n';
 
-  // Step 4: Scheduled task — single line
+  // Step 4: Scheduled task — clean up ALL old Clinicea tasks, then create new
   bat += 'echo [4/7] Creating scheduled task...\r\n';
   bat += 'call :log "Creating scheduled task: %TASK_NAME%"\r\n';
-  bat += 'schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1\r\n';
+  bat += 'powershell -NoProfile -ExecutionPolicy Bypass -Command "schtasks /Query /FO CSV 2>$null | ConvertFrom-Csv | Where-Object { $_.TaskName -like \'*Clinicea Call Monitor*\' } | ForEach-Object { schtasks /Delete /TN $_.TaskName /F 2>$null; Write-Output (\'Deleted old task: \' + $_.TaskName) }" >> "%LOG_FILE%" 2>&1\r\n';
   bat += 'schtasks /Create /TN "%TASK_NAME%" /SC ONLOGON /RL HIGHEST /TR "wscript.exe \\"%VBS_FILE%\\"" /F >> "%LOG_FILE%" 2>&1\r\n';
   bat += 'if errorlevel 1 (\r\n';
   bat += '    echo WARNING: Scheduled task failed - will use startup folder instead.\r\n';
@@ -909,9 +911,10 @@ function generateInstallerBat(baseUrl, secret, agent) {
   bat += 'echo Done.\r\n';
   bat += '\r\n';
 
-  // Step 5: Startup folder fallback
+  // Step 5: Startup folder fallback — clean up old VBS files first
   bat += 'echo [5/7] Adding startup-folder fallback...\r\n';
   bat += 'call :log "Adding startup folder fallback"\r\n';
+  bat += 'del /Q "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CliniceaCallMonitor*.vbs" >nul 2>&1\r\n';
   bat += 'copy /Y "%VBS_FILE%" "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\CliniceaCallMonitor_%AGENT%.vbs" >nul 2>&1\r\n';
   bat += 'echo Done.\r\n';
   bat += '\r\n';
