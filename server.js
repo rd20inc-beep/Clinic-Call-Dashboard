@@ -383,6 +383,20 @@ app.get('/api/monitor-status', requireAuth, (req, res) => {
   res.json({ alive });
 });
 
+// --- Serve raw PS1 monitor script (called by BAT installer) ---
+app.get('/api/monitor-script', (req, res) => {
+  const secret = req.query.secret || req.headers['x-webhook-secret'];
+  if (secret !== WEBHOOK_SECRET) return res.status(403).send('Forbidden');
+  const agent = req.query.agent || '';
+  if (!agent || !USERS[agent]) return res.status(400).send('Invalid agent');
+  const host = req.get('host');
+  const protocol = req.protocol;
+  const baseUrl = `${protocol}://${host}`;
+  const script = generateMonitorScript(baseUrl, WEBHOOK_SECRET, agent);
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.send(script);
+});
+
 // --- Download call monitor installer (pre-configured .bat, agent-specific) ---
 app.get('/download/call-monitor', requireAuth, (req, res) => {
   const host = req.get('host');
@@ -774,14 +788,12 @@ Write-Log "Monitor exiting after $maxRestarts restart attempts. Please re-instal
 }
 
 function generateInstallerBat(baseUrl, secret, agent) {
-  const monitorScript = generateMonitorScript(baseUrl, secret, agent);
-  const monitorB64 = Buffer.from(monitorScript, 'utf8').toString('base64');
-  const monitorLines = monitorB64.match(/.{1,76}/g) || [];
-
-  // VBS launcher that finds PS1 via %APPDATA% — redirects stderr to crash.log
-  const vbsScript = 'Set ws = CreateObject("WScript.Shell")\r\ndir = ws.ExpandEnvironmentStrings("%APPDATA%") & "\\ClinicaCallMonitor"\r\nws.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & dir & "\\call_monitor.ps1"" *>> """ & dir & "\\crash.log""", 0, False\r\n';
+  // VBS launcher script (small, safe to inline as base64)
+  const vbsScript = 'Set ws = CreateObject("WScript.Shell")\r\ndir = ws.ExpandEnvironmentStrings("%APPDATA%") & "\\ClinicaCallMonitor"\r\nws.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & dir & "\\call_monitor.ps1""", 0, False\r\n';
   const vbsB64 = Buffer.from(vbsScript, 'utf8').toString('base64');
-  const vbsLines = vbsB64.match(/.{1,76}/g) || [];
+
+  // Download URL for the PS1 script — no base64/echo needed
+  const scriptUrl = `${baseUrl}/api/monitor-script?agent=${encodeURIComponent(agent)}&secret=${encodeURIComponent(secret)}`;
 
   let bat = '@echo off\r\n';
   bat += 'title Clinicea Call Monitor - Installer (' + agent + ')\r\n';
@@ -790,89 +802,50 @@ function generateInstallerBat(baseUrl, secret, agent) {
   bat += 'echo  Agent: ' + agent + '\r\n';
   bat += 'echo.\r\n\r\n';
 
-  // Kill ALL old monitor processes before installing new one
-  bat += 'echo  [0/5] Stopping old monitor processes...\r\n';
-  bat += 'powershell -ExecutionPolicy Bypass -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like \'*call_monitor*\' } | ForEach-Object { Write-Host \'  Killing PID:\' $_.ProcessId; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul\r\n';
-  bat += 'powershell -ExecutionPolicy Bypass -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like \'*ClinicaCallMonitor*\' } | ForEach-Object { Write-Host \'  Killing PID:\' $_.ProcessId; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul\r\n';
+  // Kill ALL old monitor processes
+  bat += 'echo  [1/6] Stopping old monitor processes...\r\n';
+  bat += 'powershell -ExecutionPolicy Bypass -Command "Get-Process | Where-Object { $_.Path -like \'*powershell*\' -and $_.Id -ne $PID } | ForEach-Object { try { $wmi = Get-WmiObject Win32_Process -Filter (\\"ProcessId=\\" + $_.Id); if ($wmi.CommandLine -like \'*call_monitor*\' -or $wmi.CommandLine -like \'*ClinicaCallMonitor*\') { Write-Host \'  Killing PID:\' $_.Id; Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } } catch {} }" 2>nul\r\n';
   bat += 'timeout /t 2 /nobreak >nul\r\n';
   bat += 'echo  Done.\r\n\r\n';
 
   bat += 'set "DIR=%APPDATA%\\ClinicaCallMonitor"\r\n';
   bat += 'if not exist "%DIR%" mkdir "%DIR%"\r\n';
-  bat += 'echo  [1/5] Install folder: %DIR%\r\n\r\n';
+  bat += 'echo  [2/6] Install folder: %DIR%\r\n\r\n';
 
-  // Write monitor PS1 via certutil base64 decode
-  bat += '> "%TEMP%\\cm_b64.tmp" (\r\n';
-  bat += 'echo -----BEGIN CERTIFICATE-----\r\n';
-  for (const line of monitorLines) {
-    bat += 'echo ' + line + '\r\n';
-  }
-  bat += 'echo -----END CERTIFICATE-----\r\n';
-  bat += ')\r\n';
-  bat += 'certutil -decode "%TEMP%\\cm_b64.tmp" "%DIR%\\call_monitor.ps1" >nul 2>&1\r\n';
-  bat += 'del "%TEMP%\\cm_b64.tmp" 2>nul\r\n';
-  bat += 'echo  [2/5] Monitor script installed (agent: ' + agent + ')\r\n\r\n';
-
-  // Write VBS launcher via certutil
-  bat += '> "%TEMP%\\vbs_b64.tmp" (\r\n';
-  bat += 'echo -----BEGIN CERTIFICATE-----\r\n';
-  for (const line of vbsLines) {
-    bat += 'echo ' + line + '\r\n';
-  }
-  bat += 'echo -----END CERTIFICATE-----\r\n';
-  bat += ')\r\n';
-  bat += 'certutil -decode "%TEMP%\\vbs_b64.tmp" "%DIR%\\start_monitor.vbs" >nul 2>&1\r\n';
-  bat += 'del "%TEMP%\\vbs_b64.tmp" 2>nul\r\n\r\n';
-
-  // Copy VBS to Windows Startup
-  bat += 'copy /Y "%DIR%\\start_monitor.vbs" "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ClinicaCallMonitor.vbs" >nul\r\n';
-  bat += 'echo  [3/5] Added to Windows startup (auto-runs on login)\r\n\r\n';
-
-  // Final check — kill any leftover monitor powershell that survived
-  bat += 'powershell -ExecutionPolicy Bypass -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like \'*call_monitor*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul\r\n';
-  bat += 'echo  [4/5] Old monitor processes cleaned up\r\n\r\n';
-
-  // Verify script was decoded correctly
-  bat += 'echo  [5/6] Verifying script...\r\n';
+  // Download PS1 directly from server — no base64/echo corruption possible
+  bat += 'echo  [3/6] Downloading monitor script from server...\r\n';
+  bat += 'powershell -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri \'' + scriptUrl + '\' -OutFile (($env:APPDATA) + \'\\ClinicaCallMonitor\\call_monitor.ps1\') -UseBasicParsing; Write-Host \'  Downloaded:\' (Get-Item (($env:APPDATA) + \'\\ClinicaCallMonitor\\call_monitor.ps1\')).Length \'bytes\'"\r\n';
   bat += 'if not exist "%DIR%\\call_monitor.ps1" (\r\n';
-  bat += 'echo  ERROR: call_monitor.ps1 was not created! certutil decode failed.\r\n';
+  bat += 'echo  ERROR: Failed to download call_monitor.ps1\r\n';
+  bat += 'echo  Check your internet connection and try again.\r\n';
   bat += 'pause\r\n';
   bat += 'exit /b 1\r\n';
   bat += ')\r\n';
   bat += 'for %%A in ("%DIR%\\call_monitor.ps1") do echo  Script size: %%~zA bytes\r\n\r\n';
 
-  // Start now — run directly with visible window
+  // Write VBS launcher — small enough for inline base64
+  bat += 'echo  [4/6] Writing startup launcher...\r\n';
+  bat += 'powershell -ExecutionPolicy Bypass -Command "$bytes = [System.Convert]::FromBase64String(\'' + vbsB64 + '\'); [System.IO.File]::WriteAllBytes(($env:APPDATA + \'\\ClinicaCallMonitor\\start_monitor.vbs\'), $bytes)"\r\n';
+  bat += 'copy /Y "%DIR%\\start_monitor.vbs" "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\ClinicaCallMonitor.vbs" >nul\r\n';
+  bat += 'echo  Added to Windows startup\r\n\r\n';
+
+  // Kill any leftover old monitor
+  bat += 'echo  [5/6] Final cleanup...\r\n';
+  bat += 'powershell -ExecutionPolicy Bypass -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like \'*call_monitor*\' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" 2>nul\r\n';
+  bat += 'echo  Done.\r\n\r\n';
+
+  // Start monitor with visible window — -NoExit keeps window open on errors
   bat += 'echo  [6/6] Starting monitor...\r\n';
   bat += 'echo.\r\n';
   bat += 'echo  ============================================\r\n';
   bat += 'echo  Installation complete!\r\n';
   bat += 'echo  Agent:     ' + agent + '\r\n';
   bat += 'echo  Dashboard: ' + baseUrl + '\r\n';
-  bat += 'echo  Log file:  %DIR%\\monitor.log\r\n';
   bat += 'echo  ============================================\r\n';
   bat += 'echo.\r\n';
-  bat += 'echo  Monitor running with visible window. DO NOT close this.\r\n';
-  bat += 'echo  Errors will appear below. Screenshot them if it crashes.\r\n';
-  bat += 'echo  ============================================\r\n';
+  bat += 'echo  Monitor window will open. DO NOT close it.\r\n';
   bat += 'echo.\r\n';
   bat += 'powershell -ExecutionPolicy Bypass -NoExit -File "%DIR%\\call_monitor.ps1"\r\n';
-  bat += 'echo.\r\n';
-  bat += 'echo  ============================================\r\n';
-  bat += 'echo  MONITOR EXITED\r\n';
-  bat += 'echo  ============================================\r\n';
-  bat += 'echo.\r\n';
-  bat += 'echo  --- monitor.log (last 30 lines) ---\r\n';
-  bat += 'if exist "%DIR%\\monitor.log" (\r\n';
-  bat += 'powershell -Command "Get-Content \'%APPDATA%\\ClinicaCallMonitor\\monitor.log\' -Tail 30"\r\n';
-  bat += ') else ( echo   No monitor.log found )\r\n';
-  bat += 'echo.\r\n';
-  bat += 'echo  --- crash.log ---\r\n';
-  bat += 'if exist "%DIR%\\crash.log" (\r\n';
-  bat += 'powershell -Command "Get-Content \'%APPDATA%\\ClinicaCallMonitor\\crash.log\' -Tail 30"\r\n';
-  bat += ') else ( echo   No crash.log found )\r\n';
-  bat += 'echo.\r\n';
-  bat += 'explorer "%DIR%"\r\n';
-  bat += 'pause\r\n';
 
   return bat;
 }
