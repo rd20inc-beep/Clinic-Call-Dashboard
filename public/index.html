@@ -2042,12 +2042,13 @@
         console.log('[Dashboard] Event rejected — identity not loaded yet');
         return false;
       }
-      // Admin sees everything
+      // Admin sees everything (including untagged)
       if (myRole === 'admin') return true;
-      // No agent tag (untagged monitor) — allow everyone to see it
-      if (!data.agent) return true;
-      // Agent-tagged event — only the matching agent sees it
-      if (data.agent !== myUsername) return false;
+      // STRICT: agents only see events tagged to them — never untagged events
+      if (!data.agent || data.agent !== myUsername) {
+        console.log('[Dashboard] Event rejected — agent mismatch or untagged | event.agent:', data.agent, 'me:', myUsername);
+        return false;
+      }
       return true;
     }
 
@@ -2118,9 +2119,9 @@
       playBeep();
 
       // Auto-open Clinicea profile:
-      // - Admin: monitors only — do NOT auto-open (admin sees banner + history)
-      // - Agent: auto-open if call is tagged to them, OR if call is untagged
-      const shouldAutoOpen = myRole !== 'admin' && (data.agent === myUsername || !data.agent);
+      // - Admin: monitors only — never auto-open
+      // - Agent: auto-open ONLY when call is tagged to this exact agent
+      const shouldAutoOpen = myRole !== 'admin' && data.agent === myUsername;
       const lockKey = 'call_opened_' + data.callId;
       if (shouldAutoOpen && !localStorage.getItem(lockKey)) {
         localStorage.setItem(lockKey, '1');
