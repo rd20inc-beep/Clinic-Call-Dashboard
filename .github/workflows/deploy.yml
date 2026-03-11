@@ -20,6 +20,7 @@ jobs:
             fi
             cd ~/Clinic-Call-Dashboard
             git remote set-url origin https://github.com/rd20inc-beep/Clinic-Call-Dashboard.git
-            git pull origin main
-            npm install --production
+            git fetch origin main
+            git reset --hard origin/main
+            npm install --omit=dev
             pm2 restart clinicea-call || pm2 start src/server.js --name clinicea-call
