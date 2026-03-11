@@ -252,6 +252,60 @@ async function findPatientByPhone(phone) {
 }
 
 // ---------------------------------------------------------------------------
+// Patient lookup by name (for saved contacts where phone is unavailable)
+// ---------------------------------------------------------------------------
+
+/**
+ * Look up a patient by name using the Clinicea API.
+ *
+ * Used when the call monitor sends a contact name instead of a phone number
+ * (e.g. "contact:Asad" — Phone Link shows the saved name, not the number).
+ *
+ * @param {string} name - patient name to search
+ * @returns {Promise<{ patientID: any, patientName: string|null, phone: string|null }|null>}
+ */
+async function findPatientByName(name) {
+  if (!name || typeof name !== 'string') return null;
+  const cleanName = name.trim();
+  if (!cleanName) return null;
+
+  logEvent('info', 'Looking up patient by name: ' + cleanName);
+
+  // Method 1: v2/getPatient with searchBy=1 (name search)
+  try {
+    const data = await cliniceaFetch(
+      `/api/v2/patients/getPatient?searchBy=1&searchText=${encodeURIComponent(cleanName)}`
+    );
+    const result = extractPatientFromSearch(data);
+    if (result) {
+      // Also extract phone from the raw data for Clinicea URL
+      const raw = Array.isArray(data) ? data[0] : data;
+      const phone = raw
+        ? (raw.Mobile || raw.MobilePhone || raw.PatientMobile || raw.Phone || '')
+        : '';
+      logEvent('info', 'Patient found by name: ' + result.patientName, 'ID: ' + result.patientID + ' | Phone: ' + phone);
+      return { ...result, phone: phone || null };
+    }
+  } catch (e) {
+    logEvent('warn', 'findPatientByName v2/getPatient error', e.message);
+  }
+
+  // Method 2: search in-memory patient cache
+  if (patientCache.patients && patientCache.patients.length > 0) {
+    const lower = cleanName.toLowerCase();
+    const match = patientCache.patients.find(
+      (p) => p.name && p.name.toLowerCase().includes(lower)
+    );
+    if (match) {
+      logEvent('info', 'Patient found by name (cache): ' + match.name, 'ID: ' + match.patientID);
+      return { patientID: match.patientID, patientName: match.name, phone: match.phone || null };
+    }
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Next appointment
 // ---------------------------------------------------------------------------
 
@@ -495,6 +549,7 @@ async function preloadCaches() {
 module.exports = {
   isClinicaConfigured,
   findPatientByPhone,
+  findPatientByName,
   getNextAppointmentForPatient,
   fetchProfileByPatientId,
   loadAllPatients,

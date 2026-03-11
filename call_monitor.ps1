@@ -136,18 +136,31 @@ while ($true) {
                         $phone = $Matches[1] -replace '[\s\-\(\)]', ''
                     }
 
+                    # Determine caller: phone number or contact name
+                    $caller = $null
                     if ($phone) {
-                        # Deduplicate: don't trigger for same number within 30 seconds
+                        $caller = $phone
+                    } else {
+                        # No phone number — use saved contact name (e.g. "Asad | Incoming Call" → "contact:Asad")
+                        if ($allTexts.Count -gt 0 -and $allTexts[0].Length -gt 0) {
+                            $contactName = $allTexts[0].Trim()
+                            $caller = "contact:$contactName"
+                            Write-Host "[$ts] No phone number — using contact name: $caller" -ForegroundColor Yellow
+                        }
+                    }
+
+                    if ($caller) {
+                        # Deduplicate: don't trigger for same caller within 30 seconds
                         $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
-                        if ($recentCalls.ContainsKey($phone) -and ($now - $recentCalls[$phone]) -lt 30) {
+                        if ($recentCalls.ContainsKey($caller) -and ($now - $recentCalls[$caller]) -lt 30) {
                             continue
                         }
-                        $recentCalls[$phone] = $now
+                        $recentCalls[$caller] = $now
 
-                        Write-Host "[$ts] INCOMING CALL: $phone" -ForegroundColor White -BackgroundColor DarkGreen
+                        Write-Host "[$ts] INCOMING CALL: $caller" -ForegroundColor White -BackgroundColor DarkGreen
 
                         # POST to webhook
-                        $body = "From=$([uri]::EscapeDataString($phone))&CallSid=local-$now&Agent=$([uri]::EscapeDataString($agentName))"
+                        $body = "From=$([uri]::EscapeDataString($caller))&CallSid=local-$now&Agent=$([uri]::EscapeDataString($agentName))"
                         $headers = @{ "X-Webhook-Secret" = $webhookSecret }
                         try {
                             $response = Invoke-RestMethod -Uri $webhookUrl -Method POST `
@@ -159,7 +172,7 @@ while ($true) {
                             Write-Host "     Is the server running?" -ForegroundColor Yellow
                         }
                     } else {
-                        Write-Host "[$ts] Call detected but could not extract number from: $fullText" -ForegroundColor Yellow
+                        Write-Host "[$ts] Call detected but could not extract number or name from: $fullText" -ForegroundColor Yellow
                     }
                 } else {
                     # Log other Phone Link notifications (SMS, etc.) for debugging

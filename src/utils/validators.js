@@ -52,15 +52,20 @@ function validateIncomingCall(body) {
     return { valid: false, errors: ['Body must be a non-null object'], sanitized };
   }
 
-  // From (optional)
+  // From (optional) — can be a phone number or "contact:Name" for saved contacts
   if (body.From !== undefined && body.From !== null && body.From !== '') {
     const from = clampString(String(body.From), 50);
-    // Strip non-phone characters for validation only; keep original (clamped) for storage
-    const phoneOnly = from.replace(PHONE_CHARS_RE, '');
-    if (phoneOnly.length === 0) {
-      errors.push('From contains no valid phone characters');
+    if (from.startsWith('contact:')) {
+      // Saved contact name — allow as-is (server will look up by name)
+      sanitized.From = from;
+    } else {
+      // Strip non-phone characters for validation only; keep original (clamped) for storage
+      const phoneOnly = from.replace(PHONE_CHARS_RE, '');
+      if (phoneOnly.length === 0) {
+        errors.push('From contains no valid phone characters');
+      }
+      sanitized.From = from;
     }
-    sanitized.From = from;
   }
 
   // CallSid (optional)

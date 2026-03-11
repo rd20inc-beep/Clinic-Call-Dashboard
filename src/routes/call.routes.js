@@ -42,20 +42,25 @@ router.post(
     const rawCaller = (req.validated && req.validated.From) || req.body.From || 'Unknown';
     const callSid = (req.validated && req.validated.CallSid) || req.body.CallSid || '';
 
-    // 2. Normalize phone
-    const caller = rawCaller !== 'Unknown' ? normalizePKPhone(rawCaller) : rawCaller;
+    // 2. Detect contact name vs phone number
+    const isContactName = rawCaller.startsWith('contact:');
+    const contactName = isContactName ? rawCaller.slice(8).trim() : null;
 
-    // 3. Resolve agent
+    // 3. Normalize phone (skip for contact names)
+    let caller = isContactName ? rawCaller : (rawCaller !== 'Unknown' ? normalizePKPhone(rawCaller) : rawCaller);
+
+    // 4. Resolve agent
     const { agent, method: routingMethod } = resolveAgent(req);
 
-    // 4. Remember IP for future resolution if agent was resolved explicitly
+    // 5. Remember IP for future resolution if agent was resolved explicitly
     if (agent && (routingMethod === 'explicit' || routingMethod === 'token')) {
       rememberAgentIP(req, agent);
     }
 
-    // 5. Build Clinicea URL (uses validated CLINICEA_BASE_URL from config)
-    const cliniceaUrl = config.CLINICEA_BASE_URL +
-      '?tp=pat&m=' + encodeURIComponent(caller);
+    // 6. Build Clinicea URL — use name search for contacts, phone search otherwise
+    let cliniceaUrl = isContactName
+      ? config.CLINICEA_BASE_URL + '?tp=pat&m=' + encodeURIComponent(contactName)
+      : config.CLINICEA_BASE_URL + '?tp=pat&m=' + encodeURIComponent(caller);
 
     // 6. Insert call to DB
     const sourceIp = getClientIP(req);
@@ -80,11 +85,17 @@ router.post(
 
     const { agentSockets, adminSockets } = routeCallEvent('incoming_call', callEvent);
 
-    // 8. Async Clinicea patient lookup + patient_info event
+    // 9. Async Clinicea patient lookup + patient_info event
     const clinicea = getClinicea();
-    if (isClinicaConfigured() && clinicea && typeof clinicea.findPatientByPhone === 'function') {
-      clinicea
-        .findPatientByPhone(caller)
+    if (isClinicaConfigured() && clinicea) {
+      // Choose lookup method: by name for saved contacts, by phone otherwise
+      const lookupPromise = isContactName && typeof clinicea.findPatientByName === 'function'
+        ? clinicea.findPatientByName(contactName)
+        : typeof clinicea.findPatientByPhone === 'function'
+          ? clinicea.findPatientByPhone(caller)
+          : Promise.resolve(null);
+
+      lookupPromise
         .then((patient) => {
           if (patient) {
             if (patient.patientName) {
@@ -93,18 +104,32 @@ router.post(
             if (patient.patientID) {
               callsRepo.updatePatientId(callId, patient.patientID);
             }
-            const patientEvent = {
-              caller,
-              callId,
-              agent: agent || null,
-              patientName: patient.patientName,
-              patientID: patient.patientID,
-            };
-            routeCallEvent('patient_info', patientEvent);
+            // If contact name lookup returned a phone, update the caller and Clinicea URL
+            if (isContactName && patient.phone) {
+              const resolvedPhone = normalizePKPhone(patient.phone);
+              const updatedUrl = config.CLINICEA_BASE_URL +
+                '?tp=pat&m=' + encodeURIComponent(resolvedPhone);
+              routeCallEvent('patient_info', {
+                caller: resolvedPhone,
+                callId,
+                agent: agent || null,
+                patientName: patient.patientName,
+                patientID: patient.patientID,
+                cliniceaUrl: updatedUrl,
+              });
+            } else {
+              routeCallEvent('patient_info', {
+                caller,
+                callId,
+                agent: agent || null,
+                patientName: patient.patientName,
+                patientID: patient.patientID,
+              });
+            }
             logEvent(
               'info',
               'Patient identified: ' + (patient.patientName || 'Unknown'),
-              caller
+              isContactName ? 'Contact: ' + contactName : caller
             );
           }
         })
