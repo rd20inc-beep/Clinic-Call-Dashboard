@@ -38,6 +38,10 @@ async function loadCallHistory(page) {
 
     calls.forEach(function(call) {
       var time = new Date(call.timestamp + 'Z').toLocaleString();
+      // Strip "contact:" prefix for display
+      var displayNumber = call.caller_number && call.caller_number.indexOf('contact:') === 0
+        ? call.caller_number.slice(8)
+        : call.caller_number;
       var waUrl = getWhatsappUrl(call.caller_number);
       var nameDisplay = call.patient_name
         ? '<span class="meeting-badge upcoming" id="name-' + call.id + '">' + escapeHtml(call.patient_name) + '</span>'
@@ -46,7 +50,7 @@ async function loadCallHistory(page) {
         '<td>' + call.id + '</td>' +
         '<td>' +
           '<span class="caller-number-wrap">' +
-            '<strong>' + escapeHtml(call.caller_number) + '</strong>' +
+            '<strong>' + escapeHtml(displayNumber) + '</strong>' +
             '<a href="' + waUrl + '" target="_blank" class="whatsapp-link" title="Message on WhatsApp">' + whatsappSvg + '</a>' +
           '</span>' +
         '</td>' +

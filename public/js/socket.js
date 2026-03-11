@@ -59,6 +59,14 @@ socket.on('patient_info', function(data) {
     patientNameBanner.textContent = data.patientName;
     patientNameBanner.style.display = 'block';
   }
+  // If server resolved a phone number (from contact name lookup), update the display
+  if (data.caller && data.caller.indexOf('contact:') !== 0) {
+    callerNumberText.textContent = data.caller;
+    callerWhatsapp.href = getWhatsappUrl(data.caller);
+  }
+  if (data.cliniceaUrl) {
+    cliniceaLink.href = data.cliniceaUrl;
+  }
   var nameEl = document.getElementById('name-' + data.callId);
   if (nameEl) {
     nameEl.textContent = data.patientName;
@@ -87,7 +95,11 @@ socket.on('incoming_call', function(data) {
 
   patientNameBanner.textContent = '';
   patientNameBanner.style.display = 'none';
-  callerNumberText.textContent = data.caller;
+  // Strip "contact:" prefix for display — show name cleanly
+  var displayCaller = data.caller && data.caller.indexOf('contact:') === 0
+    ? data.caller.slice(8)
+    : data.caller;
+  callerNumberText.textContent = displayCaller;
   callerWhatsapp.href = getWhatsappUrl(data.caller);
   callTime.textContent = 'Received at ' + new Date(data.timestamp).toLocaleTimeString();
   cliniceaLink.href = data.cliniceaUrl;
