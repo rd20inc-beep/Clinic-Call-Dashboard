@@ -55,6 +55,31 @@ db.exec(`
 `);
 
 try { db.exec('ALTER TABLE wa_messages ADD COLUMN agent TEXT'); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE wa_messages ADD COLUMN sent_at DATETIME'); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE wa_messages ADD COLUMN wa_message_id TEXT'); } catch (e) { /* already exists */ }
+
+// --- WhatsApp settings (global toggle, persisted paused chats) ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS wa_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// Seed default: bot globally enabled
+db.exec(`
+  INSERT OR IGNORE INTO wa_settings (key, value) VALUES ('bot_enabled', '1')
+`);
+
+// --- Persisted paused chats ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS wa_paused_chats (
+    chat_id TEXT PRIMARY KEY,
+    paused_by TEXT,
+    paused_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS wa_appointment_tracking (

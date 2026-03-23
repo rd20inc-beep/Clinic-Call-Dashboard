@@ -5,20 +5,92 @@ const { db } = require('./index');
 // --- Prepared statements ---
 
 const stmtInsertMessage = db.prepare(`
-  INSERT INTO wa_messages (phone, chat_name, direction, message, message_type, status, agent)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO wa_messages (phone, chat_name, direction, message, message_type, status, agent, wa_message_id)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-const stmtGetPendingOutgoing = db.prepare(
-  "SELECT * FROM wa_messages WHERE direction = 'out' AND status = 'pending' ORDER BY created_at ASC LIMIT 5"
+// Extension only picks up 'approved' messages (admin must approve first)
+const stmtGetApprovedOutgoing = db.prepare(
+  "SELECT * FROM wa_messages WHERE direction = 'out' AND status = 'approved' ORDER BY created_at ASC LIMIT 5"
+);
+
+// Pending = awaiting admin approval
+const stmtGetPendingApproval = db.prepare(
+  "SELECT * FROM wa_messages WHERE direction = 'out' AND status = 'pending' ORDER BY created_at DESC LIMIT 50"
+);
+
+const stmtApproveMessage = db.prepare(
+  "UPDATE wa_messages SET status = 'approved' WHERE id = ? AND status = 'pending'"
+);
+
+const stmtApproveAll = db.prepare(
+  "UPDATE wa_messages SET status = 'approved' WHERE direction = 'out' AND status = 'pending'"
+);
+
+const stmtRejectMessage = db.prepare(
+  "UPDATE wa_messages SET status = 'rejected' WHERE id = ? AND status = 'pending'"
+);
+
+const stmtMarkSending = db.prepare(
+  "UPDATE wa_messages SET status = 'sending' WHERE id = ?"
+);
+
+const stmtExpireStaleApproved = db.prepare(
+  "UPDATE wa_messages SET status = 'expired' WHERE direction = 'out' AND status = 'approved' AND created_at < datetime('now', '-10 minutes')"
+);
+
+// Expire 'sending' messages stuck for over 5 minutes (extension crashed mid-send)
+const stmtExpireStaleSending = db.prepare(
+  "UPDATE wa_messages SET status = 'failed' WHERE direction = 'out' AND status = 'sending' AND created_at < datetime('now', '-5 minutes')"
 );
 
 const stmtMarkMessageSent = db.prepare(
-  "UPDATE wa_messages SET status = 'sent' WHERE id = ?"
+  "UPDATE wa_messages SET status = 'sent', sent_at = datetime('now') WHERE id = ?"
 );
 
 const stmtMarkMessageFailed = db.prepare(
   "UPDATE wa_messages SET status = 'failed' WHERE id = ?"
+);
+
+// --- Incoming message dedup ---
+const stmtCheckMessageId = db.prepare(
+  "SELECT id FROM wa_messages WHERE wa_message_id = ? LIMIT 1"
+);
+
+// --- Global bot toggle ---
+const stmtGetSetting = db.prepare(
+  "SELECT value FROM wa_settings WHERE key = ?"
+);
+const stmtSetSetting = db.prepare(
+  "INSERT INTO wa_settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')"
+);
+
+// --- Persisted paused chats ---
+const stmtAddPausedChat = db.prepare(
+  "INSERT OR REPLACE INTO wa_paused_chats (chat_id, paused_by, paused_at) VALUES (?, ?, datetime('now'))"
+);
+const stmtRemovePausedChat = db.prepare(
+  "DELETE FROM wa_paused_chats WHERE chat_id = ?"
+);
+const stmtGetPausedChats = db.prepare(
+  "SELECT chat_id FROM wa_paused_chats"
+);
+const stmtIsChatPaused = db.prepare(
+  "SELECT chat_id FROM wa_paused_chats WHERE chat_id = ? LIMIT 1"
+);
+
+// --- Failed / expired messages ---
+const stmtFailedMessagesCount = db.prepare(
+  "SELECT COUNT(*) AS count FROM wa_messages WHERE status = 'failed'"
+);
+const stmtExpiredMessagesCount = db.prepare(
+  "SELECT COUNT(*) AS count FROM wa_messages WHERE status = 'expired'"
+);
+const stmtGetFailedMessages = db.prepare(
+  "SELECT * FROM wa_messages WHERE status IN ('failed', 'expired') ORDER BY created_at DESC LIMIT 50"
+);
+const stmtRetryMessage = db.prepare(
+  "UPDATE wa_messages SET status = 'pending', created_at = datetime('now') WHERE id = ? AND status IN ('failed', 'expired')"
 );
 
 const stmtGetConversationHistory = db.prepare(
@@ -121,7 +193,7 @@ module.exports = {
   /**
    * Insert a WhatsApp message record.
    */
-  insertMessage(phone, chatName, direction, message, messageType, status, agent) {
+  insertMessage(phone, chatName, direction, message, messageType, status, agent, waMessageId) {
     const result = stmtInsertMessage.run(
       phone,
       chatName || null,
@@ -129,17 +201,52 @@ module.exports = {
       message,
       messageType || 'chat',
       status || 'sent',
-      agent || null
+      agent || null,
+      waMessageId || null
     );
     return result.lastInsertRowid;
   },
 
   /**
-   * Get up to 5 pending outgoing messages.
+   * Check if an incoming message with this WA message ID already exists.
+   */
+  isMessageDuplicate(waMessageId) {
+    if (!waMessageId) return false;
+    return !!stmtCheckMessageId.get(waMessageId);
+  },
+
+  /**
+   * Get up to 5 approved outgoing messages and lock them as 'sending'
+   * so they won't be returned again on the next poll (prevents double-send).
+   * Only approved messages are picked up — pending ones need admin approval first.
    * @returns {object[]}
    */
   getPendingOutgoing() {
-    return stmtGetPendingOutgoing.all();
+    const rows = stmtGetApprovedOutgoing.all();
+    for (const row of rows) {
+      stmtMarkSending.run(row.id);
+    }
+    return rows;
+  },
+
+  /** Get messages awaiting admin approval. */
+  getPendingApproval() {
+    return stmtGetPendingApproval.all();
+  },
+
+  /** Approve a single message for sending. */
+  approveMessage(id) {
+    return stmtApproveMessage.run(id);
+  },
+
+  /** Approve all pending messages for sending. */
+  approveAll() {
+    return stmtApproveAll.run();
+  },
+
+  /** Reject a pending message (won't be sent). */
+  rejectMessage(id) {
+    return stmtRejectMessage.run(id);
   },
 
   /**
@@ -242,7 +349,6 @@ module.exports = {
    * Get aggregate stats for the WhatsApp dashboard.
    * @param {boolean} isAdmin
    * @param {string} agent
-   * @returns {{ totalMessages: number, todayMessages: number, pendingMessages: number, totalConfirmations: number, totalReminders: number, pendingConfirmations: number }}
    */
   getStats(isAdmin, agent) {
     let totalMessages, todayMessages, pendingMessages;
@@ -260,6 +366,8 @@ module.exports = {
     const totalConfirmations = stmtTotalConfirmations.get().count;
     const totalReminders = stmtTotalReminders.get().count;
     const pendingConfirmations = stmtPendingConfirmations.get().count;
+    const failedMessages = stmtFailedMessagesCount.get().count;
+    const expiredMessages = stmtExpiredMessagesCount.get().count;
 
     return {
       totalMessages,
@@ -268,6 +376,68 @@ module.exports = {
       totalConfirmations,
       totalReminders,
       pendingConfirmations,
+      failedMessages,
+      expiredMessages,
     };
+  },
+
+  // --- Global bot toggle ---
+
+  /** Get a setting value by key. */
+  getSetting(key) {
+    const row = stmtGetSetting.get(key);
+    return row ? row.value : null;
+  },
+
+  /** Set a setting value by key. */
+  setSetting(key, value) {
+    stmtSetSetting.run(key, String(value));
+  },
+
+  /** Check if bot is globally enabled. */
+  isBotEnabled() {
+    const val = this.getSetting('bot_enabled');
+    return val !== '0';
+  },
+
+  // --- Persisted paused chats ---
+
+  /** Add a chat to the paused list (persisted in DB). */
+  addPausedChat(chatId, pausedBy) {
+    stmtAddPausedChat.run(chatId, pausedBy || null);
+  },
+
+  /** Remove a chat from the paused list. */
+  removePausedChat(chatId) {
+    stmtRemovePausedChat.run(chatId);
+  },
+
+  /** Get all paused chat IDs. */
+  getAllPausedChats() {
+    return stmtGetPausedChats.all().map(r => r.chat_id);
+  },
+
+  /** Check if a specific chat is paused. */
+  isChatPaused(chatId) {
+    return !!stmtIsChatPaused.get(chatId);
+  },
+
+  // --- Failed messages ---
+
+  /** Get all failed messages. */
+  getFailedMessages() {
+    return stmtGetFailedMessages.all();
+  },
+
+  /** Retry a failed message by resetting its status to pending. */
+  retryFailedMessage(id) {
+    return stmtRetryMessage.run(id);
+  },
+
+  /** Expire stale approved messages (>10 min) and stuck sending messages (>5 min). Returns total expired. */
+  expireStaleMessages() {
+    const expiredApproved = stmtExpireStaleApproved.run().changes;
+    const stuckSending = stmtExpireStaleSending.run().changes;
+    return expiredApproved + stuckSending;
   },
 };

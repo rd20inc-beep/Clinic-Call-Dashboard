@@ -2,289 +2,13 @@
 
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
-const { apiLimiter } = require('../middleware/rateLimit');
 const { config } = require('../config/env');
 const { logEvent } = require('../services/logging.service');
 const waRepo = require('../db/whatsapp.repo');
+const waService = require('../services/whatsapp.service');
 
 // ---------------------------------------------------------------------------
-// GPT / Groq integration
-// ---------------------------------------------------------------------------
-
-const WEBSITE_BASE = 'https://drnakhoda.scalamatic.com';
-
-const SERVICE_LINKS = {
-  'laser-hair-removal': WEBSITE_BASE + '/services/laser-hair-removal',
-  'weightloss': WEBSITE_BASE + '/services/weightloss-and-slimming',
-  'coolsculpting': WEBSITE_BASE + '/services/weightloss-and-slimming#coolsculpting',
-  'emsculpt': WEBSITE_BASE + '/services/weightloss-and-slimming#emsculpt-neo',
-  'fat-dissolving': WEBSITE_BASE + '/services/weightloss-and-slimming#fat-dissolving',
-  'skin-rejuvenation': WEBSITE_BASE + '/services/skin-rejuvenation',
-  'hydrafacial': WEBSITE_BASE + '/services/skin-rejuvenation#hydrafacial',
-  'prx-t33': WEBSITE_BASE + '/services/skin-rejuvenation#prx-t33',
-  'rf-microneedling': WEBSITE_BASE + '/services/skin-rejuvenation#rf-microneedling',
-  'chemical-peel': WEBSITE_BASE + '/services/skin-rejuvenation#chemical-peel',
-  'prp': WEBSITE_BASE + '/services/skin-rejuvenation#prp',
-  'anti-aging': WEBSITE_BASE + '/services/anti-aging-rejuvenation',
-  'botox': WEBSITE_BASE + '/services/anti-aging-rejuvenation#botox',
-  'fillers': WEBSITE_BASE + '/services/anti-aging-rejuvenation#dermal-fillers',
-  'thread-lift': WEBSITE_BASE + '/services/anti-aging-rejuvenation#thread-lift',
-  'dermatology': WEBSITE_BASE + '/services/dermatology',
-  'acne': WEBSITE_BASE + '/services/dermatology#acne-treatment',
-  'vitiligo': WEBSITE_BASE + '/services/dermatology#vitiligo-treatment',
-  'psoriasis': WEBSITE_BASE + '/services/dermatology#psoriasis-treatment',
-  'hair-restoration': WEBSITE_BASE + '/services/hair-restoration',
-  'regenera': WEBSITE_BASE + '/services/hair-restoration#regenera-activa',
-  'hair-prp': WEBSITE_BASE + '/services/hair-restoration#hair-prp',
-  'intimate-health': WEBSITE_BASE + '/services/intimate-health',
-  'thermiva': WEBSITE_BASE + '/services/intimate-health#thermiva',
-  'emsella': WEBSITE_BASE + '/services/intimate-health#emsella',
-  'treatments': WEBSITE_BASE + '/treatments',
-};
-
-const ALL_SERVICE_URLS = Object.values(SERVICE_LINKS);
-
-const SERVICE_KEYWORDS = {
-  'laser hair': 'laser-hair-removal',
-  'hair removal': 'laser-hair-removal',
-  'weight loss': 'weightloss',
-  'slimming': 'weightloss',
-  'coolsculpt': 'coolsculpting',
-  'emsculpt': 'emsculpt',
-  'fat dissolv': 'fat-dissolving',
-  'kybella': 'fat-dissolving',
-  'lemon bottle': 'fat-dissolving',
-  'hydrafacial': 'hydrafacial',
-  'prx-t33': 'prx-t33',
-  'prx t33': 'prx-t33',
-  'microneedling': 'rf-microneedling',
-  'morpheus': 'rf-microneedling',
-  'chemical peel': 'chemical-peel',
-  'prp': 'prp',
-  'platelet': 'prp',
-  'botox': 'botox',
-  'filler': 'fillers',
-  'dermal filler': 'fillers',
-  'thread lift': 'thread-lift',
-  'acne': 'acne',
-  'vitiligo': 'vitiligo',
-  'psoriasis': 'psoriasis',
-  'regenera': 'regenera',
-  'hair prp': 'hair-prp',
-  'hair restoration': 'hair-restoration',
-  'hair loss': 'hair-restoration',
-  'thermiva': 'thermiva',
-  'emsella': 'emsella',
-  'intimate': 'intimate-health',
-  'vaginal': 'intimate-health',
-  'pelvic': 'emsella',
-  'skin rejuvenation': 'skin-rejuvenation',
-  'anti aging': 'anti-aging',
-  'anti-aging': 'anti-aging',
-  'wrinkle': 'anti-aging',
-  'dermatology': 'dermatology',
-};
-
-function fixReplyLinks(reply) {
-  // Step 1: Replace [LINK:tag] with actual URLs
-  reply = reply.replace(/\[LINK:([a-z0-9\-]+)\]/gi, (match, tag) => {
-    const url = SERVICE_LINKS[tag.toLowerCase()];
-    return url ? '\n\n' + url + '\n' : '';
-  });
-
-  // Step 2: Strip all URLs from our domain
-  const strippedUrls = [];
-  reply = reply.replace(
-    /https?:\/\/drnakhoda\.scalamatic\.com[a-z0-9\-/.#]*/g,
-    (match) => {
-      strippedUrls.push(match);
-      return '';
-    }
-  );
-
-  // Step 3: Determine the correct URL to use
-  let correctUrl = null;
-  for (const url of strippedUrls) {
-    if (ALL_SERVICE_URLS.includes(url)) {
-      correctUrl = url;
-      break;
-    }
-  }
-
-  // If no valid URL found, detect topic from keywords
-  if (!correctUrl) {
-    const replyLower = reply.toLowerCase();
-    let bestMatch = null;
-    let bestLen = 0;
-    for (const [keyword, tag] of Object.entries(SERVICE_KEYWORDS)) {
-      if (replyLower.includes(keyword) && keyword.length > bestLen) {
-        bestMatch = tag;
-        bestLen = keyword.length;
-      }
-    }
-    if (bestMatch && SERVICE_LINKS[bestMatch]) {
-      correctUrl = SERVICE_LINKS[bestMatch];
-    }
-  }
-
-  // Step 4: Append the correct URL
-  if (correctUrl) {
-    reply = reply.trimEnd() + '\n\n' + correctUrl;
-  }
-
-  // Step 5: Clean up extra whitespace
-  reply = reply.replace(/\n{3,}/g, '\n\n').trim();
-
-  return reply;
-}
-
-const CLINIC_SYSTEM_PROMPT = `You are the WhatsApp assistant for Dr. Nakhoda's Skin Institute, a premier dermatology and aesthetic clinic in Karachi, Pakistan.
-
-CLINIC INFO:
-- Name: Dr. Nakhoda's Skin Institute
-- Lead Doctor: Dr. Tasneem Nakhoda - Board Certified Dermatologist, 20+ years experience, trained in Pakistan & USA
-- Location: GPC 11, Rojhan Street, Block 5, Clifton, Karachi
-- Phone: +92-300-2105374, +92-321-3822113
-- Hours: 9 AM to 11 PM (call to book)
-- Onsite pharmacy with skincare products
-
-SERVICES (use the tag in square brackets when mentioning a service):
-1. Laser Hair Removal [LINK:laser-hair-removal] - Permanent hair reduction using light energy for all skin types. 3-7 sessions, 80-90% reduction.
-2. Weight Loss & Slimming [LINK:weightloss]
-   - CoolSculpting [LINK:coolsculpting]: Non-invasive fat freezing. Up to 25% fat reduction per session.
-   - Emsculpt Neo [LINK:emsculpt]: Builds muscle + reduces fat. ~25% more muscle, 30% less fat.
-   - Fat Dissolving (Kybella, Lemon Bottle) [LINK:fat-dissolving]: Injections for double chin, love handles.
-3. Skin Rejuvenation [LINK:skin-rejuvenation]
-   - HydraFacial [LINK:hydrafacial]: Cleansing, exfoliation, hydration. Instant glow, zero downtime.
-   - PRX-T33 [LINK:prx-t33]: Needle-free bio-revitalizer. Lifts and brightens skin.
-   - RF Microneedling [LINK:rf-microneedling]: Deep collagen for acne scars, pores, melasma.
-   - Chemical Peel [LINK:chemical-peel]: Removes damaged skin for smoother, brighter tone.
-   - PRP [LINK:prp]: Your own blood platelets for skin and hair rejuvenation.
-4. Anti-Aging [LINK:anti-aging]
-   - Botox [LINK:botox]: Smooths wrinkles in 10-15 min, lasts 3-6 months.
-   - Dermal Fillers [LINK:fillers]: Restores volume, enhances lips/cheeks. Lasts 6-18 months.
-   - Thread Lift [LINK:thread-lift]: Lifts sagging skin with dissolvable threads. Lasts 1-2 years.
-5. Dermatology [LINK:dermatology]
-   - Acne Treatment [LINK:acne]: Medical-grade topicals, peels, laser therapy.
-   - Vitiligo [LINK:vitiligo]: Phototherapy and combination therapies.
-   - Psoriasis [LINK:psoriasis]: Expert management of chronic skin conditions.
-6. Hair Restoration [LINK:hair-restoration]
-   - Regenera Activa [LINK:regenera]: Stem cell therapy for hair regrowth.
-   - Hair PRP & Exosomes [LINK:hair-prp]: Growth factors injected into scalp.
-7. Intimate Health [LINK:intimate-health]
-   - THERMIva [LINK:thermiva]: Non-surgical vaginal rejuvenation.
-   - Emsella [LINK:emsella]: Pelvic floor strengthening chair.
-
-RULES:
-- KEEP REPLIES SHORT. Max 2-3 sentences. No bullet points or lists. Conversational tone.
-- Use the same language the patient writes in (Urdu/Roman Urdu or English)
-- When a patient asks about a treatment, write 1-2 sentences about it, then include the relevant [LINK:tag] on its own line. Example:
-
-Laser hair removal permanently reduces hair growth using light energy. 3-7 sessions with 80-90% reduction!
-
-[LINK:laser-hair-removal]
-
-Would you like to book a consultation?
-
-- ALWAYS put [LINK:tag] on its own separate line with a blank line before and after it. Never write a URL yourself - only use [LINK:tag] tags.
-- If a patient asks generally about services, use [LINK:treatments]
-- If asked about pricing, say "Prices vary by treatment. Would you like me to schedule a consultation so the doctor can assess and give you exact pricing?"
-- Always try to guide toward booking an appointment
-- Be warm, professional, and helpful
-- If you don't know something specific, say you'll check with the doctor and get back
-- For emergencies, tell them to call the clinic directly
-- Never make up medical advice or diagnoses
-- If someone confirms an appointment reminder, say "Great! We look forward to seeing you. If you need to reschedule, just let us know."
-- Sign off messages naturally, no need for formal signatures`;
-
-async function getGPTReply(phone, incomingText, chatName) {
-  if (!config.GROQ_API_KEY) {
-    return 'Thank you for your message. Our team will get back to you shortly. For immediate assistance, call us at +92-300-2105374.';
-  }
-
-  // Get conversation history for context
-  const history = waRepo.getConversationHistory(phone, 20).reverse();
-
-  let systemInstruction = CLINIC_SYSTEM_PROMPT;
-  if (chatName) {
-    systemInstruction += '\n\nCurrent patient\'s WhatsApp name: ' + chatName;
-  }
-
-  const messages = [{ role: 'system', content: systemInstruction }];
-
-  for (const msg of history) {
-    messages.push({
-      role: msg.direction === 'in' ? 'user' : 'assistant',
-      content: msg.message,
-    });
-  }
-
-  messages.push({ role: 'user', content: incomingText });
-
-  try {
-    logEvent(
-      'info',
-      'Groq request for ' + phone,
-      messages.length + ' messages, last: "' + incomingText.substring(0, 50) + '"'
-    );
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + config.GROQ_API_KEY,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: messages,
-        max_tokens: 350,
-        temperature: 0.7,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      const errMsg =
-        (data.error && data.error.message) ||
-        JSON.stringify(data).substring(0, 200);
-      logEvent('error', 'Groq API error', response.status + ': ' + errMsg);
-      return 'Sorry, I\'m having trouble responding right now. Please call us directly at +92-300-2105374.';
-    }
-
-    let reply =
-      data.choices &&
-      data.choices[0] &&
-      data.choices[0].message &&
-      data.choices[0].message.content;
-    reply = reply ? reply.trim() : null;
-
-    if (!reply) {
-      logEvent(
-        'error',
-        'Groq empty response',
-        JSON.stringify(data).substring(0, 200)
-      );
-      return 'Thank you for reaching out! Please call us at +92-300-2105374 for assistance.';
-    }
-
-    reply = fixReplyLinks(reply);
-
-    logEvent('info', 'Groq reply for ' + phone, reply.substring(0, 80));
-    return reply;
-  } catch (err) {
-    logEvent('error', 'Groq API error', err.message);
-    return 'Sorry, I\'m having trouble responding right now. Please call us directly at +92-300-2105374.';
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Paused chats (in memory)
-// ---------------------------------------------------------------------------
-const pausedChats = new Set();
-
-// ---------------------------------------------------------------------------
-// Extension auth middleware (inline)
+// Extension auth middleware
 // ---------------------------------------------------------------------------
 function requireExtensionAuth(req, res, next) {
   if (!config.EXTENSION_SECRET) return next();
@@ -304,6 +28,9 @@ function requireExtensionAuth(req, res, next) {
  * @param {import('socket.io').Server} io
  * @returns {import('express').Router}
  */
+// Track when the extension last polled (in-memory is fine — resets on restart)
+let extensionLastSeen = null;
+
 module.exports = function setupWhatsAppRoutes(io) {
   const router = express.Router();
 
@@ -311,6 +38,7 @@ module.exports = function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/incoming - incoming WA message (extension-auth)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/incoming', requireExtensionAuth, async (req, res) => {
+    extensionLastSeen = new Date().toISOString();
     const { messageId, text, phone, chatName, timestamp } = req.body;
 
     if (!text || (!phone && !chatName)) {
@@ -318,48 +46,55 @@ module.exports = function setupWhatsAppRoutes(io) {
     }
 
     const contactId = phone || chatName || 'unknown';
+
+    // --- Dedup: skip if we already processed this messageId ---
+    if (messageId && waRepo.isMessageDuplicate(messageId)) {
+      logEvent('info', 'WA duplicate message skipped: ' + messageId);
+      return res.json({ reply: null, duplicate: true });
+    }
+
     logEvent(
       'info',
       'WA message from ' + (chatName || phone) + ': ' + text.substring(0, 50)
     );
 
-    // Store incoming message
-    waRepo.insertMessage(contactId, chatName || null, 'in', text, 'chat', 'sent', null);
+    // Store incoming message (with WA messageId for dedup)
+    waRepo.insertMessage(contactId, chatName || null, 'in', text, 'chat', 'sent', null, messageId || null);
 
-    // Check if bot is paused for this chat
-    if (pausedChats.has(contactId) || pausedChats.has(chatName)) {
-      logEvent('info', 'WA bot paused for ' + (chatName || phone) + ', skipping reply');
-      // IMPORTANT: emit to admin only, not io.emit to all
+    // --- Global kill switch ---
+    if (!waService.isBotEnabled()) {
+      logEvent('info', 'WA bot globally disabled, skipping reply for ' + (chatName || phone));
       io.to('role:admin').emit('wa_message', {
-        phone: contactId,
-        chatName,
-        direction: 'in',
-        text,
-        reply: null,
-        timestamp: new Date().toISOString(),
+        phone: contactId, chatName, direction: 'in', text,
+        reply: null, timestamp: new Date().toISOString(),
+      });
+      return res.json({ reply: null });
+    }
+
+    // --- Per-chat pause check (now DB-backed) ---
+    if (waService.isPaused(contactId) || (chatName && waService.isPaused(chatName))) {
+      logEvent('info', 'WA bot paused for ' + (chatName || phone) + ', skipping reply');
+      io.to('role:admin').emit('wa_message', {
+        phone: contactId, chatName, direction: 'in', text,
+        reply: null, timestamp: new Date().toISOString(),
       });
       return res.json({ reply: null });
     }
 
     // Get GPT reply
-    const reply = await getGPTReply(contactId, text, chatName);
+    const reply = await waService.getGPTReply(contactId, text, chatName);
 
-    // Store outgoing reply
-    waRepo.insertMessage(contactId, chatName || null, 'out', reply, 'chat', 'sent', null);
+    // Store outgoing reply as PENDING (not 'sent') — extension must confirm delivery
+    waRepo.insertMessage(contactId, chatName || null, 'out', reply, 'chat', 'pending', null);
 
     logEvent(
       'info',
       'WA reply to ' + (chatName || phone) + ': ' + reply.substring(0, 50)
     );
 
-    // IMPORTANT: emit to admin only, not io.emit to all
     io.to('role:admin').emit('wa_message', {
-      phone: contactId,
-      chatName,
-      direction: 'in',
-      text,
-      reply,
-      timestamp: new Date().toISOString(),
+      phone: contactId, chatName, direction: 'in', text,
+      reply, timestamp: new Date().toISOString(),
     });
 
     return res.json({ reply });
@@ -369,6 +104,20 @@ module.exports = function setupWhatsAppRoutes(io) {
   // GET /api/whatsapp/outgoing - poll for pending outgoing messages
   // -----------------------------------------------------------------------
   router.get('/api/whatsapp/outgoing', requireExtensionAuth, (req, res) => {
+    // Record that extension is alive
+    extensionLastSeen = new Date().toISOString();
+
+    // Expire stale approved messages (>10 min) and stuck sending (>5 min)
+    const expired = waRepo.expireStaleMessages();
+    if (expired > 0) {
+      logEvent('info', 'WA expired ' + expired + ' stale pending message(s)');
+    }
+
+    // If bot is globally disabled, return nothing — extension sends nothing
+    if (!waService.isBotEnabled()) {
+      return res.json({ messages: [] });
+    }
+
     const pending = waRepo.getPendingOutgoing();
     const messages = pending.map((m) => ({
       id: m.id,
@@ -386,11 +135,11 @@ module.exports = function setupWhatsAppRoutes(io) {
     const { id, phone, success } = req.body;
     if (id) {
       if (success) {
-        waRepo.markMessageSent(id);
-        logEvent('info', 'WA scheduled message delivered to ' + phone);
+        waRepo.markMessageSent(id); // now also sets sent_at timestamp
+        logEvent('info', 'WA message delivered to ' + phone);
       } else {
         waRepo.markMessageFailed(id);
-        logEvent('warn', 'WA scheduled message failed for ' + phone);
+        logEvent('warn', 'WA message failed for ' + phone);
       }
     }
     return res.json({ ok: true });
@@ -406,12 +155,7 @@ module.exports = function setupWhatsAppRoutes(io) {
     }
 
     waRepo.insertMessage(
-      phone,
-      null,
-      'out',
-      message,
-      'chat',
-      'pending',
+      phone, null, 'out', message, 'chat', 'pending',
       req.session.username || null
     );
     logEvent(
@@ -422,16 +166,13 @@ module.exports = function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
-  // POST /api/whatsapp/pause - pause bot for a specific chat
+  // POST /api/whatsapp/pause - pause bot for a specific chat (DB-persisted)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/pause', requireAuth, (req, res) => {
     const { chatId } = req.body;
     if (!chatId) return res.json({ error: 'chatId required' });
-    pausedChats.add(chatId);
-    logEvent(
-      'info',
-      'WA bot paused for "' + chatId + '" by ' + req.session.username
-    );
+    waService.pauseChat(chatId, req.session.username);
+    logEvent('info', 'WA bot paused for "' + chatId + '" by ' + req.session.username);
     return res.json({ ok: true, paused: true });
   });
 
@@ -441,11 +182,8 @@ module.exports = function setupWhatsAppRoutes(io) {
   router.post('/api/whatsapp/resume', requireAuth, (req, res) => {
     const { chatId } = req.body;
     if (!chatId) return res.json({ error: 'chatId required' });
-    pausedChats.delete(chatId);
-    logEvent(
-      'info',
-      'WA bot resumed for "' + chatId + '" by ' + req.session.username
-    );
+    waService.resumeChat(chatId);
+    logEvent('info', 'WA bot resumed for "' + chatId + '" by ' + req.session.username);
     return res.json({ ok: true, paused: false });
   });
 
@@ -453,7 +191,99 @@ module.exports = function setupWhatsAppRoutes(io) {
   // GET /api/whatsapp/paused - list paused chats
   // -----------------------------------------------------------------------
   router.get('/api/whatsapp/paused', requireAuth, (req, res) => {
-    return res.json({ pausedChats: Array.from(pausedChats) });
+    return res.json({ pausedChats: waService.getPausedChats() });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/bot-toggle - global enable/disable bot
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/bot-toggle', requireAuth, (req, res) => {
+    if (req.session.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const { enabled } = req.body;
+    waService.setBotEnabled(!!enabled);
+    logEvent('info', 'WA bot globally ' + (enabled ? 'ENABLED' : 'DISABLED') + ' by ' + req.session.username);
+    return res.json({ ok: true, enabled: !!enabled });
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/whatsapp/bot-status - get global bot status
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/bot-status', requireAuth, (req, res) => {
+    return res.json({ enabled: waService.isBotEnabled() });
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/whatsapp/failed - list failed messages
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/failed', requireAuth, (req, res) => {
+    const messages = waRepo.getFailedMessages();
+    return res.json({ messages });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/retry - retry a failed message
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/retry', requireAuth, (req, res) => {
+    const { id } = req.body;
+    if (!id) return res.json({ error: 'id required' });
+    waRepo.retryFailedMessage(id);
+    logEvent('info', 'WA message #' + id + ' retried by ' + req.session.username);
+    return res.json({ ok: true });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/retry-all - retry all failed messages
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/retry-all', requireAuth, (req, res) => {
+    const failed = waRepo.getFailedMessages();
+    let count = 0;
+    for (const msg of failed) {
+      waRepo.retryFailedMessage(msg.id);
+      count++;
+    }
+    logEvent('info', 'WA retry-all: ' + count + ' messages re-queued by ' + req.session.username);
+    return res.json({ ok: true, count });
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/whatsapp/pending-approval - messages awaiting admin approval
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/pending-approval', requireAuth, (req, res) => {
+    const messages = waRepo.getPendingApproval();
+    return res.json({ messages });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/approve - approve a single message for sending
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/approve', requireAuth, (req, res) => {
+    const { id } = req.body;
+    if (!id) return res.json({ error: 'id required' });
+    waRepo.approveMessage(id);
+    logEvent('info', 'WA message #' + id + ' approved by ' + req.session.username);
+    return res.json({ ok: true });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/approve-all - approve all pending messages
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/approve-all', requireAuth, (req, res) => {
+    const result = waRepo.approveAll();
+    logEvent('info', 'WA approve-all: ' + result.changes + ' message(s) approved by ' + req.session.username);
+    return res.json({ ok: true, count: result.changes });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/reject - reject a pending message
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/reject', requireAuth, (req, res) => {
+    const { id } = req.body;
+    if (!id) return res.json({ error: 'id required' });
+    waRepo.rejectMessage(id);
+    logEvent('info', 'WA message #' + id + ' rejected by ' + req.session.username);
+    return res.json({ ok: true });
   });
 
   // -----------------------------------------------------------------------
@@ -491,6 +321,8 @@ module.exports = function setupWhatsAppRoutes(io) {
     const isAdmin = req.session.role === 'admin';
     const agent = req.session.username;
     const stats = waRepo.getStats(isAdmin, agent);
+    stats.botEnabled = waService.isBotEnabled();
+    stats.extensionLastSeen = extensionLastSeen;
     return res.json(stats);
   });
 

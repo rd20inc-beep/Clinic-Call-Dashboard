@@ -170,25 +170,35 @@ Would you like to book a consultation?
 - Sign off messages naturally, no need for formal signatures`;
 
 // ---------------------------------------------------------------------------
-// Paused chats
+// Paused chats (DB-persisted — survives server restarts)
 // ---------------------------------------------------------------------------
 
-const pausedChats = new Set();
-
 function isPaused(contactId) {
-  return pausedChats.has(contactId);
+  return waRepo.isChatPaused(contactId);
 }
 
-function pauseChat(chatId) {
-  pausedChats.add(chatId);
+function pauseChat(chatId, username) {
+  waRepo.addPausedChat(chatId, username || null);
 }
 
 function resumeChat(chatId) {
-  pausedChats.delete(chatId);
+  waRepo.removePausedChat(chatId);
 }
 
 function getPausedChats() {
-  return Array.from(pausedChats);
+  return waRepo.getAllPausedChats();
+}
+
+// ---------------------------------------------------------------------------
+// Global bot toggle (DB-persisted)
+// ---------------------------------------------------------------------------
+
+function isBotEnabled() {
+  return waRepo.isBotEnabled();
+}
+
+function setBotEnabled(enabled) {
+  waRepo.setSetting('bot_enabled', enabled ? '1' : '0');
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +358,10 @@ async function getGPTReply(phone, incomingText, chatName) {
  */
 async function syncAppointmentsAndScheduleMessages() {
   if (!isClinicaConfigured() || !cliniceaService) return;
+  if (!isBotEnabled()) {
+    logEvent('info', 'Appointment sync skipped — WA bot globally disabled');
+    return;
+  }
 
   try {
     // Fetch appointments for the next 7 days
@@ -482,5 +496,7 @@ module.exports = {
   pauseChat,
   resumeChat,
   getPausedChats,
+  isBotEnabled,
+  setBotEnabled,
   setClinicaService,
 };

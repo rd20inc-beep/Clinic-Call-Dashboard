@@ -9,6 +9,51 @@ function escapeHtml(str) {
   return d.innerHTML;
 }
 
+function formatCallDuration(seconds) {
+  if (!seconds && seconds !== 0) return '--';
+  if (seconds < 60) return seconds + 's';
+  var m = Math.floor(seconds / 60);
+  var s = seconds % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+// ===== CALL STATS =====
+async function loadCallStats() {
+  try {
+    var res = await fetch('/api/call-stats');
+    var data = await res.json();
+    var el = document.getElementById('callStats');
+    if (!el) return;
+    el.innerHTML =
+      '<div class="call-stat-card">' +
+        '<div class="call-stat-value">' + (data.today.total || 0) + '</div>' +
+        '<div class="call-stat-label">Today</div>' +
+      '</div>' +
+      '<div class="call-stat-card inbound">' +
+        '<div class="call-stat-value">' + (data.today.inbound || 0) + '</div>' +
+        '<div class="call-stat-label">Inbound</div>' +
+      '</div>' +
+      '<div class="call-stat-card outbound">' +
+        '<div class="call-stat-value">' + (data.today.outbound || 0) + '</div>' +
+        '<div class="call-stat-label">Outbound</div>' +
+      '</div>' +
+      '<div class="call-stat-card answered">' +
+        '<div class="call-stat-value">' + (data.today.answered || 0) + '</div>' +
+        '<div class="call-stat-label">Answered</div>' +
+      '</div>' +
+      '<div class="call-stat-card missed">' +
+        '<div class="call-stat-value">' + (data.today.missed || 0) + '</div>' +
+        '<div class="call-stat-label">Missed</div>' +
+      '</div>' +
+      '<div class="call-stat-card">' +
+        '<div class="call-stat-value">' + formatCallDuration(data.avgDuration) + '</div>' +
+        '<div class="call-stat-label">Avg Duration</div>' +
+      '</div>';
+  } catch (err) {
+    console.error('Failed to load call stats:', err);
+  }
+}
+
 // ===== CALL HISTORY =====
 async function loadCallHistory(page) {
   if (page !== undefined) currentPage = page;
@@ -28,8 +73,11 @@ async function loadCallHistory(page) {
       '<thead>' +
         '<tr>' +
           '<th>#</th>' +
+          '<th>Direction</th>' +
           '<th>Caller</th>' +
           '<th>Patient</th>' +
+          '<th>Status</th>' +
+          '<th>Duration</th>' +
           '<th>Time</th>' +
           '<th>Next Meeting</th>' +
           '<th>Profile</th>' +
@@ -46,8 +94,26 @@ async function loadCallHistory(page) {
       var nameDisplay = call.patient_name
         ? '<span class="meeting-badge upcoming" id="name-' + call.id + '">' + escapeHtml(call.patient_name) + '</span>'
         : '<span class="meeting-badge loading" id="name-' + call.id + '">--</span>';
-      html += '<tr>' +
+
+      // Direction badge
+      var dir = call.direction || 'inbound';
+      var dirBadge = dir === 'outbound'
+        ? '<span class="call-dir outbound">&#8599; Out</span>'
+        : '<span class="call-dir inbound">&#8601; In</span>';
+
+      // Status badge
+      var st = call.call_status || 'unknown';
+      var stBadge = st === 'answered' ? '<span class="call-st answered">Answered</span>'
+        : st === 'missed' ? '<span class="call-st missed">Missed</span>'
+        : st === 'rejected' ? '<span class="call-st missed">Rejected</span>'
+        : '<span class="call-st unknown">--</span>';
+
+      // Duration
+      var durDisplay = formatCallDuration(call.duration);
+
+      html += '<tr data-call-id="' + call.id + '">' +
         '<td>' + call.id + '</td>' +
+        '<td>' + dirBadge + '</td>' +
         '<td>' +
           '<span class="caller-number-wrap">' +
             '<strong>' + escapeHtml(displayNumber) + '</strong>' +
@@ -55,6 +121,8 @@ async function loadCallHistory(page) {
           '</span>' +
         '</td>' +
         '<td>' + nameDisplay + '</td>' +
+        '<td><span id="status-' + call.id + '">' + stBadge + '</span></td>' +
+        '<td><span id="duration-' + call.id + '">' + durDisplay + '</span></td>' +
         '<td>' + escapeHtml(time) + '</td>' +
         '<td><span class="meeting-badge loading" id="meeting-' + call.id + '">Loading...</span></td>' +
         '<td style="display:flex;gap:6px;align-items:center;">' +
@@ -417,6 +485,65 @@ function loadWaStats() {
       document.getElementById('waConfirmations').textContent = data.totalConfirmations || 0;
       document.getElementById('waReminders').textContent = data.totalReminders || 0;
       document.getElementById('waPending').textContent = data.pendingMessages || 0;
+
+      // Failed + expired messages card
+      var failed = (data.failedMessages || 0) + (data.expiredMessages || 0);
+      var failedCard = document.getElementById('waFailedCard');
+      if (failed > 0) {
+        failedCard.style.display = '';
+        document.getElementById('waFailed').textContent = failed;
+      } else {
+        failedCard.style.display = 'none';
+      }
+
+      // Global bot toggle state
+      waUpdateBotToggle(data.botEnabled !== false);
+
+      // Extension connection status
+      waUpdateExtensionStatus(data.extensionLastSeen);
+
+      // Load approval queue
+      loadWaApprovalQueue();
+    })
+    .catch(function() {});
+}
+
+function loadWaApprovalQueue() {
+  fetch('/api/whatsapp/pending-approval')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var section = document.getElementById('waApprovalSection');
+      var container = document.getElementById('waApprovalQueue');
+      var countBadge = document.getElementById('waApprovalCount');
+      var msgs = data.messages || [];
+
+      if (msgs.length === 0) {
+        section.style.display = 'none';
+        return;
+      }
+
+      section.style.display = '';
+      countBadge.textContent = msgs.length;
+
+      container.innerHTML = msgs.map(function(m) {
+        var time = new Date(m.created_at).toLocaleString();
+        var preview = escapeHtml((m.message || '').substring(0, 150));
+        if (m.message && m.message.length > 150) preview += '...';
+        var typeTag = m.message_type !== 'chat' ? '<span style="background:rgba(52,152,219,0.2);color:#3498db;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;">' + m.message_type + '</span>' : '';
+        return '<div style="background:rgba(243,156,18,0.08);border:1px solid rgba(243,156,18,0.25);border-radius:8px;padding:12px;margin-bottom:8px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">' +
+            '<div style="flex:1;min-width:0;">' +
+              '<div style="font-weight:600;font-size:13px;">' + escapeHtml(m.phone) + typeTag + '</div>' +
+              '<div style="font-size:11px;color:#999;margin-top:2px;">' + time + (m.agent ? ' by ' + m.agent : ' (AI)') + '</div>' +
+              '<div style="font-size:13px;margin-top:6px;color:#ddd;white-space:pre-wrap;word-break:break-word;">' + preview + '</div>' +
+            '</div>' +
+            '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">' +
+              '<button onclick="waApproveMessage(' + m.id + ')" style="padding:5px 14px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:12px;font-weight:600;cursor:pointer;">Approve</button>' +
+              '<button onclick="waRejectMessage(' + m.id + ')" style="padding:5px 14px;border:none;border-radius:4px;background:#e74c3c;color:white;font-size:12px;font-weight:600;cursor:pointer;">Reject</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
     })
     .catch(function() {});
 }
