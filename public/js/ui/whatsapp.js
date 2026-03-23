@@ -1,6 +1,7 @@
 // ===== WHATSAPP CHAT UI =====
 
 var waBotEnabled = true;
+var waExtensionConnected = false;
 
 function waOpenChat(phone, name) {
   waCurrentChatPhone = phone;
@@ -50,13 +51,35 @@ function waOpenChat(phone, name) {
 
 function waUpdatePauseBtn() {
   var btn = document.getElementById('waPauseBtn');
+
+  if (!waExtensionConnected) {
+    btn.textContent = 'Not Connected';
+    btn.style.background = '#e74c3c';
+    btn.style.cursor = 'not-allowed';
+    btn.style.opacity = '0.7';
+    btn.disabled = true;
+    return;
+  }
+
+  if (!waBotEnabled) {
+    btn.textContent = 'Bot Disabled';
+    btn.style.background = '#e74c3c';
+    btn.style.cursor = 'not-allowed';
+    btn.style.opacity = '0.7';
+    btn.disabled = true;
+    return;
+  }
+
+  btn.disabled = false;
+  btn.style.cursor = 'pointer';
+  btn.style.opacity = '1';
   var isPaused = waPausedChats.has(waCurrentChatPhone);
   btn.textContent = isPaused ? 'Resume Bot' : 'Pause Bot';
   btn.style.background = isPaused ? '#2ecc71' : 'rgba(255,255,255,0.2)';
 }
 
 function waTogglePause() {
-  if (!waCurrentChatPhone) return;
+  if (!waCurrentChatPhone || !waExtensionConnected || !waBotEnabled) return;
   var isPaused = waPausedChats.has(waCurrentChatPhone);
   var endpoint = isPaused ? '/api/whatsapp/resume' : '/api/whatsapp/pause';
 
@@ -158,13 +181,16 @@ function waUpdateExtensionStatus(lastSeen) {
   var label = document.getElementById('waExtLabel');
   var detail = document.getElementById('waExtDetail');
   var container = document.getElementById('waExtensionStatus');
+  var prevConnected = waExtensionConnected;
 
   if (!lastSeen) {
+    waExtensionConnected = false;
     dot.style.background = '#e74c3c';
     label.textContent = 'Extension: Disconnected';
     detail.textContent = 'No activity detected since server start';
     container.style.background = 'rgba(231,76,60,0.15)';
     container.style.borderColor = 'rgba(231,76,60,0.3)';
+    if (prevConnected !== waExtensionConnected) waUpdatePauseBtn();
     return;
   }
 
@@ -172,14 +198,14 @@ function waUpdateExtensionStatus(lastSeen) {
   var secondsAgo = Math.floor((Date.now() - lastSeenDate.getTime()) / 1000);
 
   if (secondsAgo < 60) {
-    // Connected — polled within the last minute
+    waExtensionConnected = true;
     dot.style.background = '#2ecc71';
     label.textContent = 'Extension: Connected';
     detail.textContent = 'Last seen ' + secondsAgo + 's ago';
     container.style.background = 'rgba(46,204,113,0.15)';
     container.style.borderColor = 'rgba(46,204,113,0.3)';
   } else if (secondsAgo < 300) {
-    // Stale — no poll in 1-5 minutes
+    waExtensionConnected = false;
     dot.style.background = '#f39c12';
     label.textContent = 'Extension: Idle';
     var mins = Math.floor(secondsAgo / 60);
@@ -187,7 +213,7 @@ function waUpdateExtensionStatus(lastSeen) {
     container.style.background = 'rgba(243,156,18,0.15)';
     container.style.borderColor = 'rgba(243,156,18,0.3)';
   } else {
-    // Disconnected — no poll in 5+ minutes
+    waExtensionConnected = false;
     dot.style.background = '#e74c3c';
     label.textContent = 'Extension: Disconnected';
     var minsAgo = Math.floor(secondsAgo / 60);
@@ -195,6 +221,8 @@ function waUpdateExtensionStatus(lastSeen) {
     container.style.background = 'rgba(231,76,60,0.15)';
     container.style.borderColor = 'rgba(231,76,60,0.3)';
   }
+
+  if (prevConnected !== waExtensionConnected) waUpdatePauseBtn();
 }
 
 // ===== GLOBAL BOT TOGGLE =====
@@ -220,6 +248,9 @@ function waUpdateBotToggle(enabled) {
     btn.textContent = 'Enable Bot';
     btn.style.background = '#2ecc71';
   }
+
+  // Refresh pause button since it depends on bot enabled state
+  waUpdatePauseBtn();
 }
 
 function waToggleBot() {
