@@ -31,7 +31,14 @@ function requireExtensionAuth(req, res, next) {
 // Track when the extension last polled (in-memory is fine — resets on restart)
 let extensionLastSeen = null;
 
-module.exports = function setupWhatsAppRoutes(io) {
+/** Check if the extension has polled within the last 60 seconds. */
+function isExtensionConnected() {
+  if (!extensionLastSeen) return false;
+  const secondsAgo = (Date.now() - new Date(extensionLastSeen).getTime()) / 1000;
+  return secondsAgo < 60;
+}
+
+function setupWhatsAppRoutes(io) {
   const router = express.Router();
 
   // -----------------------------------------------------------------------
@@ -323,8 +330,12 @@ module.exports = function setupWhatsAppRoutes(io) {
     const stats = waRepo.getStats(isAdmin, agent);
     stats.botEnabled = waService.isBotEnabled();
     stats.extensionLastSeen = extensionLastSeen;
+    stats.extensionConnected = isExtensionConnected();
     return res.json(stats);
   });
 
   return router;
-};
+}
+
+setupWhatsAppRoutes.isExtensionConnected = isExtensionConnected;
+module.exports = setupWhatsAppRoutes;

@@ -183,6 +183,13 @@
           </div>
         </div>
 
+        <!-- Disconnected Banner (shown when extension is not connected) -->
+        <div id="waDisconnectedBanner" style="display:none;padding:16px 20px;margin-bottom:16px;background:rgba(231,76,60,0.12);border:1px solid rgba(231,76,60,0.35);border-radius:10px;text-align:center;">
+          <div style="font-size:20px;margin-bottom:4px;">&#9888;</div>
+          <div style="font-weight:700;font-size:15px;color:#e74c3c;">WhatsApp Bot is Paused</div>
+          <div style="font-size:13px;color:#ccc;margin-top:4px;">Extension is not connected. No messages will be sent or received until WhatsApp Web is open with the extension active.</div>
+        </div>
+
         <!-- Stats Cards -->
         <div class="wa-stats" id="waStats">
           <div class="wa-stat-card">
@@ -217,7 +224,7 @@
           <div class="wa-send-form">
             <input type="text" id="waSendPhone" placeholder="Phone number (e.g. +923001234567)">
             <textarea id="waSendMessage" placeholder="Type your message..." rows="3"></textarea>
-            <button onclick="waSendManual()">Queue Message</button>
+            <button id="waSendBtn" onclick="waSendManual()">Queue Message</button>
           </div>
         </div>
 

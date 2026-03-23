@@ -8,6 +8,7 @@ const { normalizePKPhone } = require('../utils/phone');
 
 // Lazy-loaded to avoid circular dependency — set via setClinicaService()
 let cliniceaService = null;
+let extensionConnectedCheck = null;
 
 /**
  * Inject the Clinicea service reference (avoids circular require).
@@ -17,6 +18,21 @@ let cliniceaService = null;
  */
 function setClinicaService(svc) {
   cliniceaService = svc;
+}
+
+/**
+ * Inject a function that returns whether the extension is connected.
+ * Called from app.js after routes are set up to avoid circular require.
+ *
+ * @param {() => boolean} fn
+ */
+function setExtensionConnectedCheck(fn) {
+  extensionConnectedCheck = fn;
+}
+
+/** Check if the WA extension is currently connected. */
+function isExtensionConnected() {
+  return extensionConnectedCheck ? extensionConnectedCheck() : false;
 }
 
 // ---------------------------------------------------------------------------
@@ -362,6 +378,10 @@ async function syncAppointmentsAndScheduleMessages() {
     logEvent('info', 'Appointment sync skipped — WA bot globally disabled');
     return;
   }
+  if (!isExtensionConnected()) {
+    logEvent('info', 'Appointment sync skipped — WA extension disconnected');
+    return;
+  }
 
   try {
     // Fetch appointments for the next 7 days
@@ -498,5 +518,7 @@ module.exports = {
   getPausedChats,
   isBotEnabled,
   setBotEnabled,
+  isExtensionConnected,
+  setExtensionConnectedCheck,
   setClinicaService,
 };

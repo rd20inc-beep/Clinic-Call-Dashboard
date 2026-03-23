@@ -110,6 +110,7 @@ function waCloseChat() {
 }
 
 function waSendManual() {
+  if (!waExtensionConnected) return alert('Cannot send — WhatsApp extension is not connected.');
   var phone = document.getElementById('waSendPhone').value.trim();
   var message = document.getElementById('waSendMessage').value.trim();
   if (!phone || !message) return alert('Please enter both phone number and message');
@@ -222,7 +223,30 @@ function waUpdateExtensionStatus(lastSeen) {
     container.style.borderColor = 'rgba(231,76,60,0.3)';
   }
 
+  // Update dependent UI elements
+  waUpdateDisconnectedState();
   if (prevConnected !== waExtensionConnected) waUpdatePauseBtn();
+}
+
+function waUpdateDisconnectedState() {
+  var banner = document.getElementById('waDisconnectedBanner');
+  var sendBtn = document.getElementById('waSendBtn');
+
+  if (!waExtensionConnected) {
+    banner.style.display = '';
+    if (sendBtn) {
+      sendBtn.disabled = true;
+      sendBtn.style.opacity = '0.5';
+      sendBtn.style.cursor = 'not-allowed';
+    }
+  } else {
+    banner.style.display = 'none';
+    if (sendBtn) {
+      sendBtn.disabled = false;
+      sendBtn.style.opacity = '1';
+      sendBtn.style.cursor = 'pointer';
+    }
+  }
 }
 
 // ===== GLOBAL BOT TOGGLE =====
