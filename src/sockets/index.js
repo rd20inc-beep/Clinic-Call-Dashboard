@@ -112,7 +112,8 @@ function setupSockets(io, sessionMiddleware) {
       agentPresence[username].online = true;
       agentPresence[username].lastActivity = Date.now();
 
-      // Broadcast presence update to admins
+      // Update DB status + broadcast
+      try { require('../db/users.repo').setStatus(username, 'online'); } catch (e) { /* ignore */ }
       io.to('role:admin').emit('agent_presence', {
         username, status: 'online', lastActivity: agentPresence[username].lastActivity,
       });
@@ -163,7 +164,8 @@ function setupSockets(io, sessionMiddleware) {
         if (agentPresence[username].socketCount === 0) {
           agentPresence[username].online = false;
           agentPresence[username].lastActivity = Date.now();
-          // Broadcast to admins
+          // Update DB status + broadcast
+          try { require('../db/users.repo').setStatus(username, 'offline'); } catch (e) { /* ignore */ }
           io.to('role:admin').emit('agent_presence', {
             username, status: 'offline', lastActivity: agentPresence[username].lastActivity,
           });

@@ -145,56 +145,49 @@ const ALL_USERS = ['admin', ...AGENT_NAMES];
 function getUsers() {
   const users = {};
 
-  // 1. Load from env vars (legacy support)
-  for (const name of ALL_USERS) {
-    const envKey = name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
-    const hashVar = `USER_${envKey}_HASH`;
-    const passVar = `USER_${envKey}_PASS`;
-
-    const hash = process.env[hashVar] && process.env[hashVar].trim();
-    const pass = process.env[passVar] && process.env[passVar].trim();
-
-    if (hash) {
-      users[name] = {
-        passwordHash: hash,
-        role: name === 'admin' ? 'admin' : 'agent',
-        isMigration: false,
-        source: 'env',
-      };
-    } else if (pass) {
-      users[name] = {
-        passwordHash: pass,
-        role: name === 'admin' ? 'admin' : 'agent',
-        isMigration: true,
-        source: 'env',
-      };
-    }
-  }
-
-  // 2. Load from DB (overrides env for same username, adds new ones)
+  // 1. PRIMARY: Load from database (all agents are DB-driven after migration)
   try {
     const usersRepo = require('../db/users.repo');
     const dbUsers = usersRepo.getAll();
     for (const u of dbUsers) {
       if (!u.active) continue; // skip deactivated users
+      const full = usersRepo.getByUsername(u.username);
       users[u.username] = {
-        passwordHash: usersRepo.getByUsername(u.username).password_hash,
+        passwordHash: full ? full.password_hash : '',
         role: u.role || 'agent',
         displayName: u.display_name,
+        status: u.status || 'offline',
+        lastLogin: u.last_login,
+        lastSeen: u.last_seen,
         isMigration: false,
         source: 'db',
         dbId: u.id,
       };
     }
   } catch (e) {
-    // DB not available yet during early init — fall through
+    // DB not available yet during early init — fall through to env
   }
 
-  // 3. Fallback defaults if nothing configured
+  // 2. FALLBACK: Load from env vars (only if DB is empty / first boot)
   if (Object.keys(users).length === 0) {
-    console.warn(
-      '[env] WARNING: No users configured. Using built-in defaults.'
-    );
+    for (const name of ALL_USERS) {
+      const envKey = name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+      const hashVar = `USER_${envKey}_HASH`;
+      const passVar = `USER_${envKey}_PASS`;
+      const hash = process.env[hashVar] && process.env[hashVar].trim();
+      const pass = process.env[passVar] && process.env[passVar].trim();
+
+      if (hash) {
+        users[name] = { passwordHash: hash, role: name === 'admin' ? 'admin' : 'agent', isMigration: false, source: 'env' };
+      } else if (pass) {
+        users[name] = { passwordHash: pass, role: name === 'admin' ? 'admin' : 'agent', isMigration: true, source: 'env' };
+      }
+    }
+  }
+
+  // 3. Last resort defaults if nothing configured anywhere
+  if (Object.keys(users).length === 0) {
+    console.warn('[env] WARNING: No users configured. Using built-in defaults.');
     const defaults = {
       admin: 'clinicea2025',
       agent1: 'password1',

@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 // --- Prepared statements ---
 
 const stmtGetAll = db.prepare(
-  'SELECT id, username, display_name, role, active, notes, created_at, updated_at FROM users WHERE deleted_at IS NULL ORDER BY role ASC, username ASC'
+  'SELECT id, username, display_name, role, active, status, notes, last_login, last_seen, created_at, updated_at FROM users WHERE deleted_at IS NULL ORDER BY role ASC, username ASC'
 );
 
 const stmtGetAllIncludeDeleted = db.prepare(
@@ -48,11 +48,19 @@ const stmtSetActive = db.prepare(
 );
 
 const stmtUpdateLastLogin = db.prepare(
-  "UPDATE users SET last_login = datetime('now'), last_seen = datetime('now') WHERE username = ?"
+  "UPDATE users SET last_login = datetime('now'), last_seen = datetime('now'), status = 'online' WHERE username = ?"
 );
 
 const stmtUpdateLastSeen = db.prepare(
   "UPDATE users SET last_seen = datetime('now') WHERE username = ?"
+);
+
+const stmtSetStatus = db.prepare(
+  "UPDATE users SET status = ? WHERE username = ?"
+);
+
+const stmtGetById = db.prepare(
+  'SELECT * FROM users WHERE id = ? AND deleted_at IS NULL'
 );
 
 const stmtCountAdmins = db.prepare(
@@ -128,6 +136,16 @@ module.exports = {
   /** Update last seen timestamp for a user. */
   updateLastSeen(username) {
     stmtUpdateLastSeen.run(username);
+  },
+
+  /** Set agent status (online, offline, idle, busy). */
+  setStatus(username, status) {
+    stmtSetStatus.run(status, username);
+  },
+
+  /** Get user by ID. */
+  getById(id) {
+    return stmtGetById.get(id) || null;
   },
 
   /** Count active admin users in DB. */

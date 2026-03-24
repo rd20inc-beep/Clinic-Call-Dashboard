@@ -114,9 +114,10 @@ db.exec(`
   )
 `);
 
-// User presence columns
+// User presence and status columns
 try { db.exec('ALTER TABLE users ADD COLUMN last_login DATETIME'); } catch (e) { /* exists */ }
 try { db.exec('ALTER TABLE users ADD COLUMN last_seen DATETIME'); } catch (e) { /* exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'offline'"); } catch (e) { /* exists */ }
 
 // Call timing columns
 try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* exists */ }
@@ -136,6 +137,45 @@ db.exec(`
 
 // --- Soft delete support for users ---
 try { db.exec('ALTER TABLE users ADD COLUMN deleted_at DATETIME'); } catch (e) { /* exists */ }
+
+// --- One-time migration: seed env-based agents into DB ---
+// This makes the system fully database-driven. Env vars become fallback only.
+(function migrateEnvAgentsToDb() {
+  const bcrypt = require('bcryptjs');
+  const envDefaults = {
+    admin:  { pass: 'clinicea2025', role: 'admin' },
+    agent1: { pass: 'password1',    role: 'agent' },
+    agent2: { pass: 'password2',    role: 'agent' },
+    agent3: { pass: 'password3',    role: 'agent' },
+    agent4: { pass: 'password4',    role: 'agent' },
+    agent5: { pass: 'password5',    role: 'agent' },
+  };
+
+  const stmtCheck = db.prepare('SELECT id FROM users WHERE username = ?');
+  const stmtInsertMigrate = db.prepare(
+    'INSERT INTO users (username, password_hash, display_name, role, active, status) VALUES (?, ?, ?, ?, 1, ?)'
+  );
+
+  for (const [username, cfg] of Object.entries(envDefaults)) {
+    if (stmtCheck.get(username)) continue; // already in DB
+
+    // Try env var hash first, then env var pass, then default
+    const envKey = username.toUpperCase().replace(/[^A-Z0-9]/g, '_');
+    const envHash = process.env['USER_' + envKey + '_HASH'];
+    const envPass = process.env['USER_' + envKey + '_PASS'];
+
+    let hash;
+    if (envHash && envHash.trim()) {
+      hash = envHash.trim();
+    } else {
+      const plainPass = (envPass && envPass.trim()) || cfg.pass;
+      hash = bcrypt.hashSync(plainPass, 10);
+    }
+
+    stmtInsertMigrate.run(username, hash, username, cfg.role, 'offline');
+    console.log(`[MIGRATION] Seeded agent "${username}" into users table`);
+  }
+})();
 
 // --- One-time migration: normalize 03XXX phone numbers to +92XXX ---
 const oldNumbers = db

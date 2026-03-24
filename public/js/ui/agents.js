@@ -8,6 +8,7 @@ var agentSearchTerm = '';
 // ===== PRESENCE STATUS HELPERS =====
 var presenceConfig = {
   online:          { color: '#2ecc71', label: 'Online',          dot: '#2ecc71' },
+  busy:            { color: '#e67e22', label: 'Busy',            dot: '#e67e22' },
   idle:            { color: '#f39c12', label: 'Idle',            dot: '#f39c12' },
   offline:         { color: '#95a5a6', label: 'Offline',         dot: '#95a5a6' },
   never_connected: { color: '#bdc3c7', label: 'Never Connected', dot: '#bdc3c7' },
@@ -157,7 +158,7 @@ function renderAgentCards() {
       case 'score': return b.score - a.score;
       case 'lastseen': return (b.lastSeen || 0) - (a.lastSeen || 0);
       default:
-        var order = { online: 0, idle: 1, offline: 2, never_connected: 3, disabled: 4 };
+        var order = { online: 0, busy: 1, idle: 2, offline: 3, never_connected: 4, disabled: 5 };
         return (order[a.presenceStatus] || 3) - (order[b.presenceStatus] || 3);
     }
   });

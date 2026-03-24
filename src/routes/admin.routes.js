@@ -270,16 +270,18 @@ module.exports = function setupAdminRoutes(io) {
       const pres = presence[username] || { online: false, lastActivity: null };
       const isAccountActive = user.source === 'db' ? (user.active !== false) : true;
 
-      // Get persisted last_seen from DB
+      // Get persisted data from DB
       let dbLastSeen = null;
       let dbLastLogin = null;
+      let dbStatus = 'offline';
       try {
         const dbUser = usersRepo.getByUsername(username);
         if (dbUser) {
           dbLastSeen = dbUser.last_seen ? new Date(dbUser.last_seen).getTime() : null;
           dbLastLogin = dbUser.last_login ? new Date(dbUser.last_login).getTime() : null;
+          dbStatus = dbUser.status || 'offline';
         }
-      } catch (e) { /* env-based user, no DB record */ }
+      } catch (e) { /* ignore */ }
 
       // Best available "last seen" — prefer live presence, fall back to DB, then heartbeat
       const lastSeenTs = pres.lastActivity || dbLastSeen || (hb ? hb.lastHeartbeat : null);
@@ -291,10 +293,13 @@ module.exports = function setupAdminRoutes(io) {
       } else if (!hasEverConnected) {
         presenceStatus = 'never_connected';
       } else if (pres.online) {
+        // Live socket connected — check activity recency
         const actAgo = pres.lastActivity ? (Date.now() - pres.lastActivity) / 1000 : 9999;
         presenceStatus = actAgo < 300 ? 'online' : 'idle';
       } else if (hb && hb.alive) {
         presenceStatus = 'online';
+      } else if (dbStatus === 'busy') {
+        presenceStatus = 'busy';
       } else {
         presenceStatus = 'offline';
       }
@@ -307,6 +312,7 @@ module.exports = function setupAdminRoutes(io) {
         active: isAccountActive,
         source: user.source || 'env',
         dbId: user.dbId || null,
+        dbStatus,
         online: pres.online,
         monitorAlive: hb ? hb.alive : false,
         lastHeartbeat: hb ? hb.lastHeartbeat : null,
@@ -335,7 +341,7 @@ module.exports = function setupAdminRoutes(io) {
     agents.sort(function(a, b) {
       if (a.role === 'admin' && b.role !== 'admin') return 1;
       if (a.role !== 'admin' && b.role === 'admin') return -1;
-      var order = { online: 0, idle: 1, offline: 2, never_connected: 3, disabled: 4 };
+      var order = { online: 0, busy: 1, idle: 2, offline: 3, never_connected: 4, disabled: 5 };
       return (order[a.presenceStatus] || 3) - (order[b.presenceStatus] || 3);
     });
 
