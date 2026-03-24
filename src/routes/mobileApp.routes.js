@@ -279,4 +279,7 @@ router.post('/api/incoming-call', (req, res) => {
   }
 });
 
+// Expose appTokens for admin force-logout
+router.appTokens = appTokens;
+
 module.exports = router;

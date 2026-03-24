@@ -28,6 +28,20 @@ function dismissAlert(btn, text) {
   setTimeout(function() { alertDiv.remove(); }, 300);
 }
 
+// ===== FORCE LOGOUT ALL =====
+function forceLogoutAll() {
+  if (!confirm('Force logout ALL agents from dashboard and mobile app?\n\nThis will disconnect everyone immediately.')) return;
+  waFetch('/api/force-logout-all', { method: 'POST' })
+    .then(function(data) {
+      if (data.ok) {
+        alert('Logged out ' + data.dashboardDisconnected + ' dashboard session(s) and ' + data.mobileInvalidated + ' mobile session(s).');
+      } else {
+        alert('Error: ' + (data.error || 'Unknown'));
+      }
+    })
+    .catch(function(err) { alert('Error: ' + err.message); });
+}
+
 // ===== SAFE FETCH HELPER (for non-waFetch callers) =====
 async function safeFetch(url, opts) {
   var res = await fetch(url, opts);

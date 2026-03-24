@@ -796,5 +796,44 @@ module.exports = function setupAdminRoutes(io) {
     }
   });
 
+  // -------------------------------------------------------------------------
+  // POST /api/force-logout-all — disconnect all agents from dashboard + mobile
+  // -------------------------------------------------------------------------
+  router.post('/api/force-logout-all', requireAuth, requireAdmin, (req, res) => {
+    let dashboardDisconnected = 0;
+    let mobileInvalidated = 0;
+
+    // 1. Disconnect all dashboard sockets (except the admin doing this)
+    if (io) {
+      for (const [, socket] of io.sockets.sockets) {
+        if (socket.agentUsername && socket.agentUsername !== req.session.username) {
+          socket.disconnect(true);
+          dashboardDisconnected++;
+        }
+      }
+    }
+
+    // 2. Invalidate all mobile app tokens
+    try {
+      const mobileRoutes = require('./mobileApp.routes');
+      const tokens = mobileRoutes.appTokens;
+      for (const token of Object.keys(tokens)) {
+        delete tokens[token];
+        mobileInvalidated++;
+      }
+    } catch (e) { /* ignore */ }
+
+    // 3. Set all agents to offline in DB
+    try {
+      const { db } = require('../db/index');
+      db.prepare("UPDATE users SET status = 'offline' WHERE role = 'agent' AND deleted_at IS NULL").run();
+    } catch (e) { /* ignore */ }
+
+    auditRepo.log('force_logout_all', null, dashboardDisconnected + ' dashboard, ' + mobileInvalidated + ' mobile', req.session.username);
+    logEvent('warn', 'Force logout ALL by ' + req.session.username + ': ' + dashboardDisconnected + ' dashboard, ' + mobileInvalidated + ' mobile sessions');
+
+    res.json({ ok: true, dashboardDisconnected, mobileInvalidated });
+  });
+
   return router;
 };

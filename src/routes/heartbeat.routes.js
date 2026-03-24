@@ -55,15 +55,9 @@ router.post(
         logEvent('info', 'Call monitor connected: ' + agent, 'IP: ' + ip);
       }
     } else {
+      // Unidentified heartbeat — suppress from dashboard (debug only)
       if (wasDown) {
-        // Unidentified monitor — log with body details for debugging
-        const bodyAgent = (req.body && req.body.Agent) || '';
-        const hasToken = !!req.headers['x-monitor-token'];
-        logEvent(
-          'warn',
-          'Unidentified heartbeat (no agent resolved)',
-          'IP: ' + ip + ' | Method: ' + method + ' | Agent field: ' + (bodyAgent || 'empty') + ' | Token: ' + (hasToken ? 'yes' : 'no')
-        );
+        console.log('[heartbeat] Unidentified source IP: ' + ip + ' | Agent: ' + ((req.body && req.body.Agent) || 'empty'));
       }
     }
 
