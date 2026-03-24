@@ -673,9 +673,106 @@ router.post('/api/calls/:id/status', requireAuth, requireAdmin, (req, res) => {
 });
 
 // -------------------------------------------------------------------------
-// Stubs for features not yet implemented
+// GET /admin/wa-sessions — WhatsApp client status
 // -------------------------------------------------------------------------
-router.get('/admin/wa-sessions', (req, res) => res.json({ sessions: [] }));
-router.get('/admin/appointments', (req, res) => res.json({ appointments: [] }));
+router.get('/admin/wa-sessions', (req, res) => {
+  try {
+    const waClient = require('../services/whatsappClient.service');
+    const status = waClient.getStatus();
+    const sessions = {};
+    // Show the shared WhatsApp session
+    sessions['clinic'] = { status: status === 'ready' ? 'connected' : status === 'qr' ? 'qr_pending' : 'disconnected' };
+    res.json({ sessions });
+  } catch (e) {
+    res.json({ sessions: {} });
+  }
+});
+
+// -------------------------------------------------------------------------
+// GET /admin/appointments — today's appointments from tracking table
+// -------------------------------------------------------------------------
+router.get('/admin/appointments', (req, res) => {
+  try {
+    const { db } = require('../db/index');
+    const period = req.query.period || 'today';
+    const agent = req.query.agent || '';
+    const service = req.query.service || '';
+
+    let dateFilter = "date(appointment_date) = date('now')";
+    if (period === 'week') dateFilter = "appointment_date >= datetime('now', '-7 days')";
+    else if (period === 'month') dateFilter = "appointment_date >= datetime('now', '-30 days')";
+    else if (period === '') dateFilter = '1=1';
+
+    let where = 'WHERE ' + dateFilter;
+    const params = [];
+
+    // Agent filter: match appointment phone to calls table
+    // Service filter on appointment service field
+    if (service) { where += ' AND service LIKE ?'; params.push('%' + service + '%'); }
+
+    const appointments = db.prepare(
+      'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 200'
+    ).all(...params);
+
+    // Get unique services for filter
+    const services = db.prepare("SELECT DISTINCT service FROM wa_appointment_tracking WHERE service IS NOT NULL AND service != '' ORDER BY service").all().map(r => r.service);
+
+    // Get agents who handled these patients' calls
+    const agents = [];
+    try {
+      const agentRows = db.prepare("SELECT DISTINCT agent FROM calls WHERE agent IS NOT NULL ORDER BY agent").all();
+      agentRows.forEach(r => agents.push(r.agent));
+    } catch (e) { /* ignore */ }
+
+    res.json({ appointments, agents, services, total: appointments.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message, appointments: [] });
+  }
+});
+
+// -------------------------------------------------------------------------
+// GET /admin/analytics/export — CSV export of call data
+// -------------------------------------------------------------------------
+router.get('/admin/analytics/export', (req, res) => {
+  try {
+    const { db } = require('../db/index');
+    const range = req.query.range || 'week';
+    const agent = req.query.agent || '';
+
+    let dateFilter = "timestamp >= datetime('now', '-7 days')";
+    if (range === 'today') dateFilter = "date(timestamp) = date('now')";
+    else if (range === 'month') dateFilter = "timestamp >= datetime('now', '-30 days')";
+    else if (range === 'all') dateFilter = '1=1';
+
+    let where = 'WHERE ' + dateFilter;
+    const params = [];
+    if (agent) { where += ' AND agent = ?'; params.push(agent); }
+
+    const calls = db.prepare('SELECT * FROM calls ' + where + ' ORDER BY timestamp DESC').all(...params);
+
+    // Build CSV
+    const headers = ['ID', 'Timestamp', 'Caller', 'Patient', 'Agent', 'Direction', 'Status', 'Duration', 'Source'];
+    let csv = headers.join(',') + '\n';
+    calls.forEach(c => {
+      csv += [
+        c.id,
+        c.timestamp || '',
+        '"' + (c.caller_number || '').replace(/"/g, '""') + '"',
+        '"' + (c.patient_name || '').replace(/"/g, '""') + '"',
+        c.agent || '',
+        c.direction || '',
+        c.call_status || '',
+        c.duration || '',
+        c.routing_method || '',
+      ].join(',') + '\n';
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="calls_export_' + range + '.csv"');
+    res.send(csv);
+  } catch (err) {
+    res.status(500).send('Export failed: ' + err.message);
+  }
+});
 
 module.exports = router;
