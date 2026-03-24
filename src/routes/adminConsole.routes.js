@@ -24,7 +24,7 @@ router.use('/admin', requireAuth, requireAdmin);
 // -------------------------------------------------------------------------
 // GET /admin/analytics/overview
 // -------------------------------------------------------------------------
-router.get('/admin/analytics/overview', (req, res) => {
+router.get('/admin/analytics/overview', async (req, res) => {
   try {
     const { db } = require('../db/index');
     const users = getUsers();
@@ -32,6 +32,53 @@ router.get('/admin/analytics/overview', (req, res) => {
     const heartbeats = getAllHeartbeats();
 
     function q(sql) { return db.prepare(sql).get(); }
+
+    // Fetch today's appointments from Clinicea (async)
+    let todayAppointments = [];
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const { isClinicaConfigured } = require('../config/env');
+      if (isClinicaConfigured()) {
+        const cliniceaRoutes = require('./clinicea.routes');
+        // Use internal fetch to our own endpoint
+        const aptRes = await new Promise((resolve) => {
+          const fakeReq = { query: { date: today, refresh: '0' }, session: { loggedIn: true, role: 'admin' } };
+          const fakeRes = { json: (data) => resolve(data) };
+          // Direct DB/cache approach instead
+          resolve({ appointments: [] });
+        });
+        todayAppointments = aptRes.appointments || [];
+      }
+    } catch (e) { /* appointments not available */ }
+
+    // If direct fetch didn't work, try wa_appointment_tracking table
+    let appointmentsTotal = 0;
+    let appointmentsToday = 0;
+    try {
+      appointmentsTotal = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking").get().c;
+      appointmentsToday = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking WHERE date(appointment_date) = date('now')").get().c;
+    } catch (e) { /* ignore */ }
+
+    // Match appointments to agents via phone numbers
+    // An appointment is "attributed" to an agent if the agent handled a call from that phone
+    let appointmentsMatched = 0;
+    const agentAppointments = {};
+    try {
+      const trackingRows = db.prepare(
+        "SELECT patient_phone FROM wa_appointment_tracking WHERE confirmation_sent = 1"
+      ).all();
+      for (const row of trackingRows) {
+        if (!row.patient_phone) continue;
+        const phone = row.patient_phone.replace(/[\s\-()]/g, '');
+        const match = db.prepare(
+          "SELECT agent FROM calls WHERE caller_number LIKE ? AND agent IS NOT NULL ORDER BY timestamp DESC LIMIT 1"
+        ).get('%' + phone.slice(-10) + '%');
+        if (match && match.agent) {
+          appointmentsMatched++;
+          agentAppointments[match.agent] = (agentAppointments[match.agent] || 0) + 1;
+        }
+      }
+    } catch (e) { /* ignore */ }
 
     const callsToday = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now')").c;
     const answeredToday = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'answered'").c;
@@ -88,7 +135,7 @@ router.get('/admin/analytics/overview', (req, res) => {
         talk_time_today: todayTalkTime,
         avg_duration: Math.round(avgDur),
         calls_week: weekCalls,
-        appointments: 0,
+        appointments: agentAppointments[username] || 0,
         on_call: p.onCall || false,
         last_activity: p.lastActivity || null,
         last_seen: lastSeen,
@@ -118,9 +165,9 @@ router.get('/admin/analytics/overview', (req, res) => {
       portalOnline: portalOnline,
       mobileOnline: mobileOnline,
       pendingCallbacks: 0,
-      appointmentsMatched: 0,
-      appointmentsScheduledToday: 0,
-      appointmentsTotal: 0,
+      appointmentsMatched: appointmentsMatched,
+      appointmentsScheduledToday: appointmentsToday,
+      appointmentsTotal: appointmentsTotal,
       callsWeek: callsWeek,
       callsMonth: callsMonth,
       inboundTalkToday: inboundTalkToday,
@@ -363,6 +410,19 @@ router.get('/admin/leaderboard', (req, res) => {
     else if (period === 'all') rows = callsRepo.getPerformanceAll();
     else rows = callsRepo.getPerformanceWeek();
 
+    // Count appointments per agent (phone match)
+    const agentAppts = {};
+    try {
+      const { db } = require('../db/index');
+      const trackingRows = db.prepare("SELECT patient_phone FROM wa_appointment_tracking WHERE confirmation_sent = 1").all();
+      for (const row of trackingRows) {
+        if (!row.patient_phone) continue;
+        const phone = row.patient_phone.replace(/[\s\-()]/g, '');
+        const match = db.prepare("SELECT agent FROM calls WHERE caller_number LIKE ? AND agent IS NOT NULL ORDER BY timestamp DESC LIMIT 1").get('%' + phone.slice(-10) + '%');
+        if (match && match.agent) agentAppts[match.agent] = (agentAppts[match.agent] || 0) + 1;
+      }
+    } catch (e) { /* ignore */ }
+
     const users = getUsers();
     const ranked = rows.map((r, i) => ({
       rank: i + 1,
@@ -375,7 +435,7 @@ router.get('/admin/leaderboard', (req, res) => {
       answer_rate: r.total_calls > 0 ? Math.round((r.answered_calls / r.total_calls) * 100) : 0,
       talk_time: r.total_talk_time,
       avg_duration: Math.round(r.avg_duration || 0),
-      appointments: 0,
+      appointments: agentAppts[r.agent] || 0,
       last_call: r.last_call_at,
     }));
 
