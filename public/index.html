@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Clinic Call Dashboard</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📞</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="/socket.io/socket.io.js"></script>
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/layout.css">
@@ -295,9 +298,9 @@
         <div id="agentExtraSection"></div>
       </div>
 
-      <!-- ===== ADMIN CONSOLE PAGE (embedded) ===== -->
-      <div class="page-container" id="page-admin-console" style="padding:0;margin:0;">
-        <iframe id="adminConsoleFrame" src="" style="width:100%;border:none;min-height:calc(100vh - 60px);" onload="this.style.height=this.contentWindow.document.body.scrollHeight+'px'"></iframe>
+      <!-- ===== ADMIN CONSOLE PAGE (embedded, full width) ===== -->
+      <div class="page-container" id="page-admin-console" style="padding:0;margin:0;max-width:none;">
+        <iframe id="adminConsoleFrame" src="" style="width:100%;border:none;min-height:calc(100vh - 56px);display:block;" onload="try{this.style.height=Math.max(this.contentWindow.document.body.scrollHeight,window.innerHeight-56)+'px'}catch(e){}"></iframe>
       </div>
 
       <!-- ===== WHATSAPP BOT PAGE ===== -->
