@@ -741,16 +741,18 @@ router.get('/admin/appointments', (req, res) => {
     let where = 'WHERE ' + dateFilter;
     const params = [];
 
-    // Agent filter: match appointment phone to calls table
-    // Service filter on appointment service field
+    // Filters
     if (service) { where += ' AND service LIKE ?'; params.push('%' + service + '%'); }
+    const doctor = req.query.doctor || '';
+    if (doctor) { where += ' AND doctor_name LIKE ?'; params.push('%' + doctor + '%'); }
 
     const appointments = db.prepare(
       'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 200'
     ).all(...params);
 
-    // Get unique services for filter
+    // Get unique values for filter dropdowns
     const services = db.prepare("SELECT DISTINCT service FROM wa_appointment_tracking WHERE service IS NOT NULL AND service != '' ORDER BY service").all().map(r => r.service);
+    const doctors = db.prepare("SELECT DISTINCT doctor_name FROM wa_appointment_tracking WHERE doctor_name IS NOT NULL AND doctor_name != '' ORDER BY doctor_name").all().map(r => r.doctor_name);
 
     // Get agents who handled these patients' calls
     const agents = [];
@@ -759,7 +761,7 @@ router.get('/admin/appointments', (req, res) => {
       agentRows.forEach(r => agents.push(r.agent));
     } catch (e) { /* ignore */ }
 
-    res.json({ appointments, agents, services, total: appointments.length });
+    res.json({ appointments, agents, services, doctors, total: appointments.length });
   } catch (err) {
     res.status(500).json({ error: err.message, appointments: [] });
   }
