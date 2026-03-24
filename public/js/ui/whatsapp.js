@@ -154,6 +154,51 @@ function waApproveAllMessages() {
     .catch(function() {});
 }
 
+// ===== MESSAGE PREVIEW MODAL =====
+
+function waShowPreview(title, phone, name, msg) {
+  // Remove existing modal if any
+  var existing = document.getElementById('waPreviewModal');
+  if (existing) existing.remove();
+
+  var overlay = document.createElement('div');
+  overlay.id = 'waPreviewModal';
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+
+  var modal = document.createElement('div');
+  modal.style.cssText = 'background:#fff;border-radius:12px;max-width:480px;width:100%;max-height:80vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,0.3);';
+
+  modal.innerHTML =
+    '<div style="padding:16px 20px;border-bottom:1px solid #eee;">' +
+      '<div style="font-weight:700;font-size:16px;color:#222;">' + escapeHtml(title) + '</div>' +
+      '<div style="font-size:13px;color:#888;margin-top:2px;">To: ' + escapeHtml(name) + ' (' + escapeHtml(phone) + ')</div>' +
+    '</div>' +
+    '<div style="padding:20px;background:#f0f2f0;margin:12px;border-radius:8px;">' +
+      '<div style="font-size:14px;color:#222;white-space:pre-wrap;word-break:break-word;line-height:1.5;">' + escapeHtml(msg) + '</div>' +
+    '</div>' +
+    '<div style="padding:12px 20px 16px;display:flex;gap:10px;justify-content:flex-end;">' +
+      '<button id="waPreviewCancel" style="padding:8px 20px;border:1px solid #ddd;border-radius:6px;background:#fff;color:#555;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>' +
+      '<button id="waPreviewSend" style="padding:8px 20px;border:none;border-radius:6px;background:#2ecc71;color:white;font-size:13px;font-weight:600;cursor:pointer;">Send</button>' +
+    '</div>';
+
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  document.getElementById('waPreviewCancel').onclick = function() { overlay.remove(); };
+
+  return new Promise(function(resolve) {
+    document.getElementById('waPreviewSend').onclick = function() {
+      overlay.remove();
+      resolve(true);
+    };
+    document.getElementById('waPreviewCancel').onclick = function() {
+      overlay.remove();
+      resolve(false);
+    };
+  });
+}
+
 // ===== CALENDAR SEND ACTIONS =====
 
 function calSendConfirmation(phone, name, date, time, service, doctor) {
@@ -167,33 +212,32 @@ function calSendConfirmation(phone, name, date, time, service, doctor) {
   if (doctor) msg += 'Doctor: ' + doctor + '\n';
   msg += '\nIf you need to reschedule, call +92-300-2105374. We look forward to seeing you!';
 
-  if (!confirm('Send confirmation to ' + name + ' (' + phone + ')?\n\n' + msg)) return;
-
-  waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
-    .then(function(data) {
-      if (data.ok) alert('Confirmation queued for approval.');
-      else alert('Error: ' + (data.error || 'Unknown'));
-    })
-    .catch(function(err) { alert('Error: ' + err.message); });
+  waShowPreview('Send Confirmation', phone, name, msg).then(function(ok) {
+    if (!ok) return;
+    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
+      .then(function(data) {
+        if (data.ok) alert('Confirmation queued for approval.');
+        else alert('Error: ' + (data.error || 'Unknown'));
+      })
+      .catch(function(err) { alert('Error: ' + err.message); });
+  });
 }
 
 function calSendReminder(phone, name, date, time, service, doctor) {
-  var dateObj = new Date(date + 'T00:00:00');
-  var dateStr = dateObj.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-
   var msg = 'Assalam o Alaikum ' + name + '! This is a friendly reminder about your appointment at Dr. Nakhoda\'s Skin Institute.\n\n';
   msg += 'Time: ' + time + '\n';
   msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9\n';
   msg += '\nPlease arrive 10 minutes early. See you soon!';
 
-  if (!confirm('Send reminder to ' + name + ' (' + phone + ')?\n\n' + msg)) return;
-
-  waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
-    .then(function(data) {
-      if (data.ok) alert('Reminder queued for approval.');
-      else alert('Error: ' + (data.error || 'Unknown'));
-    })
-    .catch(function(err) { alert('Error: ' + err.message); });
+  waShowPreview('Send Reminder', phone, name, msg).then(function(ok) {
+    if (!ok) return;
+    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
+      .then(function(data) {
+        if (data.ok) alert('Reminder queued for approval.');
+        else alert('Error: ' + (data.error || 'Unknown'));
+      })
+      .catch(function(err) { alert('Error: ' + err.message); });
+  });
 }
 
 function calSendMessage(phone, name) {
