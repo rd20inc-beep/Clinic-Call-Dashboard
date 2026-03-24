@@ -305,6 +305,18 @@ router.get('/admin/agents/:id/performance', (req, res) => {
     const pres = getPresence(u.username);
     const hb = getAllHeartbeats()[u.username];
 
+    // 14-day daily breakdown for performance chart
+    let dailyCalls = [];
+    try {
+      dailyCalls = db.prepare(
+        "SELECT date(timestamp) as day, " +
+        "SUM(CASE WHEN call_status = 'answered' THEN 1 ELSE 0 END) as answered, " +
+        "SUM(CASE WHEN call_status = 'missed' THEN 1 ELSE 0 END) as missed " +
+        "FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-14 days') " +
+        "GROUP BY day ORDER BY day"
+      ).all(u.username);
+    } catch (e) { /* ignore */ }
+
     res.json({
       agent: {
         username: u.username, full_name: u.display_name, role: u.role,
@@ -322,7 +334,7 @@ router.get('/admin/agents/:id/performance', (req, res) => {
       },
       hourly,
       recentCalls: recent,
-      dailyCalls: [],
+      daily: dailyCalls,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -406,10 +418,39 @@ router.get('/admin/calls/history', (req, res) => {
 });
 
 // -------------------------------------------------------------------------
+// GET /admin/analytics/trends - daily trends for charts
+// -------------------------------------------------------------------------
+router.get('/admin/analytics/trends', (req, res) => {
+  try {
+    const { db } = require('../db/index');
+    const days = parseInt(req.query.days) || 14;
+    const agent = req.query.agent || '';
+
+    const agentWhere = agent ? ' AND agent = ?' : '';
+    const params = agent ? [agent] : [];
+
+    const rows = db.prepare(
+      "SELECT date(timestamp) as day, " +
+      "SUM(CASE WHEN call_status = 'answered' THEN 1 ELSE 0 END) as answered, " +
+      "SUM(CASE WHEN call_status = 'missed' THEN 1 ELSE 0 END) as missed, " +
+      "SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outgoing, " +
+      "COALESCE(SUM(duration), 0) as talk_time " +
+      "FROM calls WHERE timestamp >= datetime('now', '-' || ? || ' days')" + agentWhere +
+      " GROUP BY day ORDER BY day"
+    ).all(days, ...params);
+
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------------------
 // Stubs for unimplemented features (prevent 404s)
 // -------------------------------------------------------------------------
 router.get('/admin/callbacks/summary', (req, res) => res.json({ pending: 0, overdue: 0, resolved: 0, recovery_rate: 0 }));
 router.get('/admin/callbacks', (req, res) => res.json({ callbacks: [], total: 0, page: 1, totalPages: 1 }));
+router.put('/admin/callbacks/:id/status', (req, res) => res.json({ success: true }));
 router.get('/admin/wa-sessions', (req, res) => res.json({ sessions: [] }));
 router.post('/admin/broadcast', (req, res) => res.json({ success: true, sent: 0 }));
 router.get('/admin/appointments', (req, res) => res.json({ appointments: [] }));
