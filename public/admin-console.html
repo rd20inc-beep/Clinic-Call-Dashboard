@@ -378,9 +378,9 @@
         </div>
       </div>
 
-      <!-- ROW 5: Agent Table -->
+      <!-- ROW 5: Agent Quick View -->
       <div class="card">
-        <h3 class="section-header">Agent Performance</h3>
+        <h2>Agent Quick View <span class="card-muted" id="overviewAgentCount"></span></h2>
         <div style="overflow-x:auto;" id="overviewAgentTable"><div class="empty"><div class="loading-spinner"></div></div></div>
       </div>
     </div>
@@ -720,20 +720,51 @@
 
     function renderOverviewTable(stats) {
       if (!stats.length) { document.getElementById('overviewAgentTable').innerHTML = '<div class="empty">No agents</div>'; return; }
-      var html = '<table><thead><tr><th>Agent</th><th style="text-align:center;">Status</th><th style="text-align:right;">Calls</th><th style="text-align:right;">Ans</th><th style="text-align:right;">Miss</th><th style="text-align:right;">Ans%</th><th style="text-align:right;">Talk Time</th><th style="text-align:right;">Avg</th><th style="text-align:right;">Appts</th><th style="text-align:right;">Active</th><th></th></tr></thead><tbody>';
-      stats.filter(function(a) { return a.status !== 'disabled'; }).forEach(function(a) {
-        html += '<tr>';
-        html += '<td><strong>' + esc(a.full_name || a.username) + '</strong></td>';
-        html += '<td style="text-align:center;">' + statusDot(a.portal_online) + statusDot(a.mobile_online) + statusDot(a.monitor_online) + '</td>';
-        html += '<td style="text-align:right;font-weight:700;">' + a.today + '</td>';
-        html += '<td style="text-align:right;color:#10b981;font-weight:600;">' + (a.answered_today || 0) + '</td>';
-        html += '<td style="text-align:right;color:#ef4444;font-weight:600;">' + (a.missed_today || 0) + '</td>';
-        html += '<td style="text-align:right;font-weight:700;">' + (a.answer_rate || 0) + '%</td>';
+      var agents = stats.filter(function(a) { return a.status !== 'disabled'; });
+      document.getElementById('overviewAgentCount').textContent = agents.length + ' agents';
+
+      // Status badge helper
+      function presenceBadge(status) {
+        var cfg = {
+          online:  { color: '#059669', bg: '#ecfdf5', label: 'Online' },
+          busy:    { color: '#d97706', bg: '#fffbeb', label: 'Busy' },
+          idle:    { color: '#d97706', bg: '#fffbeb', label: 'Idle' },
+          offline: { color: '#64748b', bg: '#f1f5f9', label: 'Offline' },
+        }[status] || { color: '#94a3b8', bg: '#f8fafc', label: status || 'Unknown' };
+        return '<span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:' + cfg.bg + ';color:' + cfg.color + ';">' + cfg.label + '</span>';
+      }
+
+      var html = '<table><thead><tr>';
+      html += '<th>Agent</th>';
+      html += '<th style="text-align:center;">Presence</th>';
+      html += '<th style="text-align:center;">Connected</th>';
+      html += '<th style="text-align:right;">Today</th>';
+      html += '<th style="text-align:right;">Talk Time</th>';
+      html += '<th style="text-align:right;">Week</th>';
+      html += '<th style="text-align:right;">Ans%</th>';
+      html += '<th style="text-align:right;">Appts</th>';
+      html += '<th>Last Seen</th>';
+      html += '<th></th>';
+      html += '</tr></thead><tbody>';
+
+      agents.forEach(function(a) {
+        // Connection dots
+        var portalDot = '<span title="Dashboard" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (a.portal_online ? '#10b981' : '#e2e8f0') + ';margin-right:3px;"></span>';
+        var mobileDot = '<span title="Mobile App" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (a.mobile_online ? '#3b82f6' : '#e2e8f0') + ';margin-right:3px;"></span>';
+        var monitorDot = '<span title="Monitor" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (a.monitor_online ? '#f59e0b' : '#e2e8f0') + ';"></span>';
+        var onCallBadge = a.on_call ? ' <span style="display:inline-block;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:600;background:#ea580c;color:#fff;">ON CALL</span>' : '';
+
+        html += '<tr style="cursor:pointer;" onclick="viewPerformance(' + a.id + ')">';
+        html += '<td><strong>' + esc(a.full_name || a.username) + '</strong>' + onCallBadge + '<br><span class="meta">' + esc(a.username) + '</span></td>';
+        html += '<td style="text-align:center;">' + presenceBadge(a.status) + '</td>';
+        html += '<td style="text-align:center;">' + portalDot + mobileDot + monitorDot + '</td>';
+        html += '<td style="text-align:right;font-weight:700;">' + (a.today || 0) + ' <span style="color:#10b981;font-size:11px;">' + (a.answered_today || 0) + '</span> / <span style="color:#ef4444;font-size:11px;">' + (a.missed_today || 0) + '</span></td>';
         html += '<td style="text-align:right;">' + fmtDuration(a.talk_time_today || 0) + '</td>';
-        html += '<td style="text-align:right;">' + (a.avg_duration || 0) + 's</td>';
+        html += '<td style="text-align:right;">' + (a.calls_week || 0) + '</td>';
+        html += '<td style="text-align:right;font-weight:700;">' + (a.answer_rate || 0) + '%</td>';
         html += '<td style="text-align:right;">' + (a.appointments || 0) + '</td>';
-        html += '<td style="text-align:right;" class="meta">' + fmtAgo(a.last_activity || a.last_seen) + '</td>';
-        html += '<td><button class="btn btn-outline btn-xs" onclick="viewPerformance(' + a.id + ')">Details</button></td>';
+        html += '<td class="meta">' + fmtAgo(a.last_activity || a.last_seen) + '</td>';
+        html += '<td><button class="btn btn-outline btn-xs" onclick="event.stopPropagation();viewPerformance(' + a.id + ')">Stats</button></td>';
         html += '</tr>';
       });
       html += '</tbody></table>';
