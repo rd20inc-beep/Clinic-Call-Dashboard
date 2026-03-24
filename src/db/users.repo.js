@@ -6,7 +6,7 @@ const bcrypt = require('bcryptjs');
 // --- Prepared statements ---
 
 const stmtGetAll = db.prepare(
-  'SELECT id, username, display_name, role, active, status, notes, last_login, last_seen, created_at, updated_at FROM users WHERE deleted_at IS NULL ORDER BY role ASC, username ASC'
+  'SELECT id, username, display_name, role, active, status, notes, phone, email, device_info, activity_reset_at, last_login, last_seen, created_at, updated_at FROM users WHERE deleted_at IS NULL ORDER BY role ASC, username ASC'
 );
 
 const stmtGetAllIncludeDeleted = db.prepare(
@@ -18,14 +18,22 @@ const stmtGetByUsername = db.prepare(
 );
 
 const stmtInsert = db.prepare(`
-  INSERT INTO users (username, password_hash, display_name, role, active, notes)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO users (username, password_hash, display_name, role, active, notes, phone, email)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const stmtUpdate = db.prepare(`
-  UPDATE users SET display_name = ?, role = ?, active = ?, notes = ?, updated_at = datetime('now')
+  UPDATE users SET display_name = ?, role = ?, active = ?, notes = ?, phone = ?, email = ?, updated_at = datetime('now')
   WHERE id = ?
 `);
+
+const stmtResetActivity = db.prepare(
+  "UPDATE users SET activity_reset_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+);
+
+const stmtResetAllActivity = db.prepare(
+  "UPDATE users SET activity_reset_at = datetime('now'), updated_at = datetime('now') WHERE deleted_at IS NULL"
+);
 
 const stmtUpdatePassword = db.prepare(
   "UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?"
@@ -79,7 +87,7 @@ module.exports = {
   },
 
   /** Create a new user. Returns the new user ID. */
-  create(username, password, displayName, role, notes) {
+  create(username, password, displayName, role, notes, phone, email) {
     const hash = bcrypt.hashSync(password, 10);
     const result = stmtInsert.run(
       username,
@@ -87,14 +95,26 @@ module.exports = {
       displayName || null,
       role || 'agent',
       1,
-      notes || null
+      notes || null,
+      phone || null,
+      email || null
     );
     return result.lastInsertRowid;
   },
 
   /** Update user details (not password). */
-  update(id, displayName, role, active, notes) {
-    stmtUpdate.run(displayName || null, role || 'agent', active ? 1 : 0, notes || null, id);
+  update(id, displayName, role, active, notes, phone, email) {
+    stmtUpdate.run(displayName || null, role || 'agent', active ? 1 : 0, notes || null, phone || null, email || null, id);
+  },
+
+  /** Reset activity baseline for a single agent (soft reset — raw data preserved). */
+  resetActivity(id) {
+    stmtResetActivity.run(id);
+  },
+
+  /** Reset activity baseline for all agents. */
+  resetAllActivity() {
+    return stmtResetAllActivity.run().changes;
   },
 
   /** Change a user's password. */

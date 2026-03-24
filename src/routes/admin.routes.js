@@ -297,6 +297,13 @@ module.exports = function setupAdminRoutes(io) {
         presenceStatus = 'never_connected';
       }
 
+      // Get phone/email from DB
+      let phone = null, email = null, notes = null;
+      try {
+        const dbFull = usersRepo.getByUsername(username);
+        if (dbFull) { phone = dbFull.phone; email = dbFull.email; notes = dbFull.notes; }
+      } catch (e) { /* ignore */ }
+
       agents.push({
         username,
         displayName: user.displayName || username,
@@ -306,6 +313,7 @@ module.exports = function setupAdminRoutes(io) {
         source: user.source || 'env',
         dbId: user.dbId || null,
         dbStatus,
+        phone, email, notes,
         onCall: livePres.onCall || false,
         online: livePres.online || false,
         monitorAlive: hb ? hb.alive : false,
@@ -357,7 +365,8 @@ module.exports = function setupAdminRoutes(io) {
     const envUsers = getUsers();
     if (envUsers[username]) return res.json({ error: 'Username already exists' });
 
-    const id = usersRepo.create(username, password, displayName, role || 'agent', notes);
+    const { phone, email } = req.body;
+    const id = usersRepo.create(username, password, displayName, role || 'agent', notes, phone, email);
     auditRepo.log('agent_created', username, 'Role: ' + (role || 'agent') + (displayName ? ', Name: ' + displayName : ''), req.session.username);
     logEvent('info', 'Agent created: ' + username + ' by ' + req.session.username);
     res.json({ ok: true, id });
@@ -380,7 +389,8 @@ module.exports = function setupAdminRoutes(io) {
       }
     }
 
-    usersRepo.update(dbUser.id, displayName, role, active, notes);
+    const { phone, email } = req.body;
+    usersRepo.update(dbUser.id, displayName, role, active, notes, phone, email);
     auditRepo.log('agent_updated', username, 'Role: ' + role + ', Active: ' + active, req.session.username);
     logEvent('info', 'Agent updated: ' + username + ' by ' + req.session.username);
     res.json({ ok: true });
@@ -485,6 +495,76 @@ module.exports = function setupAdminRoutes(io) {
     const all = usersRepo.getAllIncludeDeleted();
     const archived = all.filter(function(u) { return u.deleted_at; });
     res.json({ agents: archived });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/clear-activity - reset activity for one agent (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/clear-activity', requireAuth, requireAdmin, (req, res) => {
+    const { username } = req.body;
+    if (!username) return res.json({ error: 'Username required' });
+    const dbUser = usersRepo.getByUsername(username);
+    if (!dbUser) return res.json({ error: 'Agent not found' });
+    usersRepo.resetActivity(dbUser.id);
+    auditRepo.log('activity_cleared', username, 'Soft reset', req.session.username);
+    logEvent('info', 'Activity cleared for ' + username + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/clear-all-activity - reset activity for all agents (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/clear-all-activity', requireAuth, requireAdmin, (req, res) => {
+    const count = usersRepo.resetAllActivity();
+    auditRepo.log('all_activity_cleared', null, count + ' agents', req.session.username);
+    logEvent('info', 'All activity cleared by ' + req.session.username);
+    res.json({ ok: true, count });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/clear-history - delete call history for one agent (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/clear-history', requireAuth, requireAdmin, (req, res) => {
+    const { username } = req.body;
+    if (!username) return res.json({ error: 'Username required' });
+    const { db } = require('../db/index');
+    const result = db.prepare('DELETE FROM calls WHERE agent = ?').run(username);
+    auditRepo.log('history_deleted', username, result.changes + ' calls', req.session.username);
+    logEvent('warn', 'Call history deleted for ' + username + ' by ' + req.session.username + ' (' + result.changes + ' calls)');
+    res.json({ ok: true, deleted: result.changes });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/clear-all-history - delete all call history (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/clear-all-history', requireAuth, requireAdmin, (req, res) => {
+    const { db } = require('../db/index');
+    const result = db.prepare('DELETE FROM calls').run();
+    auditRepo.log('all_history_deleted', null, result.changes + ' calls', req.session.username);
+    logEvent('warn', 'ALL call history deleted by ' + req.session.username + ' (' + result.changes + ' calls)');
+    res.json({ ok: true, deleted: result.changes });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/force-logout - destroy agent sessions (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/force-logout', requireAuth, requireAdmin, (req, res) => {
+    const { username } = req.body;
+    if (!username) return res.json({ error: 'Username required' });
+    // Disconnect all sockets for this agent
+    let destroyed = 0;
+    if (io) {
+      const room = io.sockets.adapter.rooms.get('agent:' + username);
+      if (room) {
+        for (const sid of room) {
+          const s = io.sockets.sockets.get(sid);
+          if (s) { s.disconnect(true); destroyed++; }
+        }
+      }
+    }
+    auditRepo.log('force_logout', username, destroyed + ' sessions', req.session.username);
+    logEvent('info', 'Force logout ' + username + ': ' + destroyed + ' sessions by ' + req.session.username);
+    res.json({ ok: true, sessionsDestroyed: destroyed });
   });
 
   // -------------------------------------------------------------------------

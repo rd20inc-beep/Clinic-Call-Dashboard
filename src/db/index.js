@@ -118,6 +118,10 @@ db.exec(`
 try { db.exec('ALTER TABLE users ADD COLUMN last_login DATETIME'); } catch (e) { /* exists */ }
 try { db.exec('ALTER TABLE users ADD COLUMN last_seen DATETIME'); } catch (e) { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'offline'"); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE users ADD COLUMN phone TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE users ADD COLUMN activity_reset_at DATETIME'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE users ADD COLUMN device_info TEXT'); } catch (e) { /* exists */ }
 
 // Call timing columns
 try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* exists */ }
