@@ -358,3 +358,95 @@ function agentCreate() {
     })
     .catch(function(err) { agentToast(err.message, 'warn'); });
 }
+
+// ===== ARCHIVED AGENTS =====
+
+function agentShowArchived() {
+  var section = document.getElementById('agentExtraSection');
+  section.innerHTML = '<div class="empty-state"><div class="modal-loading"><div class="spinner"></div><p>Loading...</p></div></div>';
+
+  waFetch('/api/agents/archived')
+    .then(function(data) {
+      var agents = data.agents || [];
+      if (agents.length === 0) {
+        section.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:20px;"><p style="color:#888;margin:0;">No archived agents</p></div>';
+        return;
+      }
+      section.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:16px;">' +
+        '<h3 style="margin:0 0 12px;font-size:14px;color:#222;font-weight:600;">Archived Agents</h3>' +
+        agents.map(function(a) {
+          var deletedAt = a.deleted_at ? new Date(a.deleted_at).toLocaleString() : '';
+          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;">' +
+            '<div>' +
+              '<span style="font-weight:600;color:#222;">' + escapeHtml(a.username) + '</span>' +
+              '<span style="font-size:11px;color:#999;margin-left:8px;">' + a.role + '</span>' +
+              (a.display_name ? '<span style="font-size:11px;color:#888;margin-left:8px;">(' + escapeHtml(a.display_name) + ')</span>' : '') +
+              '<div style="font-size:11px;color:#bbb;">Deleted: ' + deletedAt + '</div>' +
+            '</div>' +
+            '<button onclick="agentRestore(' + a.id + ')" style="padding:4px 12px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:11px;font-weight:600;cursor:pointer;">Restore</button>' +
+          '</div>';
+        }).join('') +
+      '</div>';
+    })
+    .catch(function() { section.innerHTML = '<p style="color:#e74c3c;">Failed to load archived agents</p>'; });
+}
+
+function agentRestore(id) {
+  agentConfirm('Restore Agent', 'Restore this agent? They will be able to log in again.', 'Restore', '#2ecc71')
+    .then(function(ok) {
+      if (!ok) return;
+      waFetch('/api/agents/restore', { method: 'POST', body: JSON.stringify({ id: id }) })
+        .then(function(data) {
+          if (data.ok) { agentToast('Agent restored', 'success'); agentShowArchived(); loadAgents(); }
+          else agentToast(data.error || 'Restore failed', 'warn');
+        })
+        .catch(function() {});
+    });
+}
+
+// ===== AUDIT LOG =====
+
+function agentShowAuditLog() {
+  var section = document.getElementById('agentExtraSection');
+  section.innerHTML = '<div class="empty-state"><div class="modal-loading"><div class="spinner"></div><p>Loading...</p></div></div>';
+
+  waFetch('/api/audit-log?limit=50')
+    .then(function(data) {
+      var logs = data.logs || [];
+      if (logs.length === 0) {
+        section.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:20px;"><p style="color:#888;margin:0;">No audit entries yet</p></div>';
+        return;
+      }
+
+      var actionColors = {
+        agent_created: '#2ecc71', agent_updated: '#3498db', agent_deleted: '#e74c3c',
+        agent_activated: '#2ecc71', agent_deactivated: '#f39c12', agent_restored: '#2ecc71',
+        password_changed: '#9b59b6',
+      };
+
+      section.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:16px;max-height:400px;overflow:auto;">' +
+        '<h3 style="margin:0 0 12px;font-size:14px;color:#222;font-weight:600;">Audit Log</h3>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+        '<tr style="border-bottom:2px solid #eee;text-align:left;">' +
+          '<th style="padding:6px 8px;color:#888;font-weight:600;">Time</th>' +
+          '<th style="padding:6px 8px;color:#888;font-weight:600;">Action</th>' +
+          '<th style="padding:6px 8px;color:#888;font-weight:600;">Target</th>' +
+          '<th style="padding:6px 8px;color:#888;font-weight:600;">Details</th>' +
+          '<th style="padding:6px 8px;color:#888;font-weight:600;">By</th>' +
+        '</tr>' +
+        logs.map(function(l) {
+          var color = actionColors[l.action] || '#555';
+          var time = new Date(l.created_at).toLocaleString();
+          var actionLabel = l.action.replace(/_/g, ' ');
+          return '<tr style="border-bottom:1px solid #f5f5f5;">' +
+            '<td style="padding:6px 8px;color:#999;white-space:nowrap;">' + time + '</td>' +
+            '<td style="padding:6px 8px;"><span style="color:' + color + ';font-weight:600;">' + escapeHtml(actionLabel) + '</span></td>' +
+            '<td style="padding:6px 8px;font-weight:500;color:#222;">' + escapeHtml(l.target || '-') + '</td>' +
+            '<td style="padding:6px 8px;color:#888;">' + escapeHtml(l.details || '-') + '</td>' +
+            '<td style="padding:6px 8px;color:#888;">' + escapeHtml(l.performed_by) + '</td>' +
+          '</tr>';
+        }).join('') +
+        '</table></div>';
+    })
+    .catch(function() { section.innerHTML = '<p style="color:#e74c3c;">Failed to load audit log</p>'; });
+}

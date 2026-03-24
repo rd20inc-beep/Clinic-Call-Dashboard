@@ -114,6 +114,21 @@ db.exec(`
   )
 `);
 
+// --- Audit log table ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    target TEXT,
+    details TEXT,
+    performed_by TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// --- Soft delete support for users ---
+try { db.exec('ALTER TABLE users ADD COLUMN deleted_at DATETIME'); } catch (e) { /* exists */ }
+
 // --- One-time migration: normalize 03XXX phone numbers to +92XXX ---
 const oldNumbers = db
   .prepare(

@@ -6,11 +6,15 @@ const bcrypt = require('bcryptjs');
 // --- Prepared statements ---
 
 const stmtGetAll = db.prepare(
-  'SELECT id, username, display_name, role, active, notes, created_at, updated_at FROM users ORDER BY role ASC, username ASC'
+  'SELECT id, username, display_name, role, active, notes, created_at, updated_at FROM users WHERE deleted_at IS NULL ORDER BY role ASC, username ASC'
+);
+
+const stmtGetAllIncludeDeleted = db.prepare(
+  'SELECT id, username, display_name, role, active, notes, created_at, updated_at, deleted_at FROM users ORDER BY deleted_at DESC, role ASC, username ASC'
 );
 
 const stmtGetByUsername = db.prepare(
-  'SELECT * FROM users WHERE username = ?'
+  'SELECT * FROM users WHERE username = ? AND deleted_at IS NULL'
 );
 
 const stmtInsert = db.prepare(`
@@ -27,7 +31,15 @@ const stmtUpdatePassword = db.prepare(
   "UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?"
 );
 
-const stmtDelete = db.prepare(
+const stmtSoftDelete = db.prepare(
+  "UPDATE users SET deleted_at = datetime('now'), active = 0 WHERE id = ?"
+);
+
+const stmtRestore = db.prepare(
+  "UPDATE users SET deleted_at = NULL, active = 1, updated_at = datetime('now') WHERE id = ?"
+);
+
+const stmtHardDelete = db.prepare(
   'DELETE FROM users WHERE id = ?'
 );
 
@@ -36,7 +48,7 @@ const stmtSetActive = db.prepare(
 );
 
 const stmtCountAdmins = db.prepare(
-  "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND active = 1"
+  "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND active = 1 AND deleted_at IS NULL"
 );
 
 module.exports = {
@@ -80,9 +92,24 @@ module.exports = {
     stmtSetActive.run(active ? 1 : 0, id);
   },
 
-  /** Delete a user permanently. */
+  /** Soft-delete a user (can be restored). */
   deleteUser(id) {
-    stmtDelete.run(id);
+    stmtSoftDelete.run(id);
+  },
+
+  /** Permanently delete a user (no undo). */
+  hardDelete(id) {
+    stmtHardDelete.run(id);
+  },
+
+  /** Restore a soft-deleted user. */
+  restore(id) {
+    stmtRestore.run(id);
+  },
+
+  /** Get all users including soft-deleted ones. */
+  getAllIncludeDeleted() {
+    return stmtGetAllIncludeDeleted.all();
   },
 
   /** Count active admin users in DB. */

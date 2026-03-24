@@ -253,6 +253,15 @@
 
         <div id="agentSummary" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
         <div id="agentCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;"></div>
+
+        <!-- Archived agents + Audit log (collapsible) -->
+        <div style="margin-top:20px;">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;">
+            <button onclick="agentShowArchived()" style="padding:6px 14px;border:1px solid #ddd;border-radius:6px;background:#fff;color:#555;font-size:12px;font-weight:600;cursor:pointer;">Archived Agents</button>
+            <button onclick="agentShowAuditLog()" style="padding:6px 14px;border:1px solid #ddd;border-radius:6px;background:#fff;color:#555;font-size:12px;font-weight:600;cursor:pointer;">Audit Log</button>
+          </div>
+          <div id="agentExtraSection" style="margin-top:12px;"></div>
+        </div>
       </div>
 
       <!-- ===== WHATSAPP BOT PAGE ===== -->

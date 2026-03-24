@@ -9,6 +9,7 @@ const { getUsers } = require('../config/env');
 const { getAllHeartbeats } = require('../services/agentRegistry.service');
 const { getAllPresence } = require('../sockets/index');
 const usersRepo = require('../db/users.repo');
+const auditRepo = require('../db/audit.repo');
 const bcrypt = require('bcryptjs');
 
 // In-memory monitor log storage: { agent: "log text" }
@@ -328,6 +329,7 @@ module.exports = function setupAdminRoutes(io) {
     if (envUsers[username]) return res.json({ error: 'Username already exists' });
 
     const id = usersRepo.create(username, password, displayName, role || 'agent', notes);
+    auditRepo.log('agent_created', username, 'Role: ' + (role || 'agent') + (displayName ? ', Name: ' + displayName : ''), req.session.username);
     logEvent('info', 'Agent created: ' + username + ' by ' + req.session.username);
     res.json({ ok: true, id });
   });
@@ -350,6 +352,7 @@ module.exports = function setupAdminRoutes(io) {
     }
 
     usersRepo.update(dbUser.id, displayName, role, active, notes);
+    auditRepo.log('agent_updated', username, 'Role: ' + role + ', Active: ' + active, req.session.username);
     logEvent('info', 'Agent updated: ' + username + ' by ' + req.session.username);
     res.json({ ok: true });
   });
@@ -366,6 +369,7 @@ module.exports = function setupAdminRoutes(io) {
     const dbUser = usersRepo.getByUsername(username);
     if (dbUser) {
       usersRepo.changePassword(dbUser.id, password);
+      auditRepo.log('password_changed', username, 'DB user', req.session.username);
       logEvent('info', 'Password changed for ' + username + ' by ' + req.session.username);
       return res.json({ ok: true });
     }
@@ -380,6 +384,7 @@ module.exports = function setupAdminRoutes(io) {
     const passKey = 'USER_' + username.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_PASS';
     delete process.env[passKey];
 
+    auditRepo.log('password_changed', username, 'Env user', req.session.username);
     logEvent('info', 'Password changed for ' + username + ' by ' + req.session.username);
     res.json({ ok: true });
   });
@@ -400,6 +405,7 @@ module.exports = function setupAdminRoutes(io) {
     }
 
     usersRepo.setActive(dbUser.id, !!active);
+    auditRepo.log(active ? 'agent_activated' : 'agent_deactivated', username, null, req.session.username);
     logEvent('info', 'Agent ' + (active ? 'activated' : 'deactivated') + ': ' + username + ' by ' + req.session.username);
     res.json({ ok: true });
   });
@@ -425,8 +431,49 @@ module.exports = function setupAdminRoutes(io) {
     }
 
     usersRepo.deleteUser(dbUser.id);
+    auditRepo.log('agent_deleted', username, 'Soft-deleted (can be restored)', req.session.username);
     logEvent('info', 'Agent deleted: ' + username + ' by ' + req.session.username);
     res.json({ ok: true });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/restore - restore a soft-deleted agent (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/restore', requireAuth, requireAdmin, (req, res) => {
+    const { id } = req.body;
+    if (!id) return res.json({ error: 'ID required' });
+
+    usersRepo.restore(id);
+    auditRepo.log('agent_restored', 'id:' + id, null, req.session.username);
+    logEvent('info', 'Agent #' + id + ' restored by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/agents/archived - list soft-deleted agents (admin only)
+  // -------------------------------------------------------------------------
+  router.get('/api/agents/archived', requireAuth, requireAdmin, (req, res) => {
+    const all = usersRepo.getAllIncludeDeleted();
+    const archived = all.filter(function(u) { return u.deleted_at; });
+    res.json({ agents: archived });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/audit-log - admin audit log
+  // -------------------------------------------------------------------------
+  router.get('/api/audit-log', requireAuth, requireAdmin, (req, res) => {
+    const limit = Math.min(100, parseInt(req.query.limit) || 50);
+    const logs = auditRepo.getRecent(limit);
+    res.json({ logs });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/audit-log/:target - audit log for specific target
+  // -------------------------------------------------------------------------
+  router.get('/api/audit-log/:target', requireAuth, requireAdmin, (req, res) => {
+    const target = decodeURIComponent(req.params.target);
+    const logs = auditRepo.getByTarget(target, 20);
+    res.json({ logs });
   });
 
   return router;
