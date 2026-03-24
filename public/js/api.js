@@ -161,7 +161,7 @@ function loadCallbackBadge() {
           if (overdue > 0) msg += ' (' + overdue + ' overdue)';
           msg += ' — click to review';
           textEl.textContent = msg;
-          el.style.display = 'flex';
+          el.style.display = 'flex';  // flex layout for text + dismiss button
         } else {
           el.style.display = 'none';
         }
