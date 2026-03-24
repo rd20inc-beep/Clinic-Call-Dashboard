@@ -184,36 +184,11 @@ async function initialize() {
       // Store incoming message
       waRepo.insertMessage(phone, chatName, 'in', text, 'chat', 'sent', null, messageId);
 
-      // Global kill switch
-      if (!waService.isBotEnabled()) {
-        if (io) io.to('role:admin').emit('wa_message', {
-          phone, chatName, direction: 'in', text,
-          reply: null, timestamp: new Date().toISOString(),
-        });
-        return;
-      }
-
-      // Per-chat pause check
-      if (waService.isPaused(phone) || (chatName && waService.isPaused(chatName))) {
-        logEvent('info', 'WA bot paused for ' + (chatName || phone) + ', skipping reply');
-        if (io) io.to('role:admin').emit('wa_message', {
-          phone, chatName, direction: 'in', text,
-          reply: null, timestamp: new Date().toISOString(),
-        });
-        return;
-      }
-
-      // Generate AI reply
-      const reply = await waService.getGPTReply(phone, text, chatName);
-
-      // Store as pending (needs admin approval)
-      waRepo.insertMessage(phone, chatName, 'out', reply, 'chat', 'pending', null);
-
-      logEvent('info', 'WA reply queued for ' + (chatName || phone) + ': ' + reply.substring(0, 50));
-
+      // Notify admin dashboard of incoming message (no auto-reply)
+      // System only sends queued messages (confirmations, reminders, manual sends)
       if (io) io.to('role:admin').emit('wa_message', {
         phone, chatName, direction: 'in', text,
-        reply, timestamp: new Date().toISOString(),
+        reply: null, timestamp: new Date().toISOString(),
       });
     } catch (err) {
       logEvent('error', 'WA message handler error: ' + err.message);

@@ -55,33 +55,14 @@ function setupWhatsAppRoutes(io) {
       return res.json({ reply: null });
     }
 
-    // --- Per-chat pause check (DB-backed) ---
-    if (waService.isPaused(contactId) || (chatName && waService.isPaused(chatName))) {
-      logEvent('info', 'WA bot paused for ' + (chatName || phone) + ', skipping reply');
-      io.to('role:admin').emit('wa_message', {
-        phone: contactId, chatName, direction: 'in', text,
-        reply: null, timestamp: new Date().toISOString(),
-      });
-      return res.json({ reply: null });
-    }
-
-    // Get GPT reply
-    const reply = await waService.getGPTReply(contactId, text, chatName);
-
-    // Store outgoing reply as PENDING — needs admin approval before sending
-    waRepo.insertMessage(contactId, chatName || null, 'out', reply, 'chat', 'pending', null);
-
-    logEvent(
-      'info',
-      'WA reply to ' + (chatName || phone) + ': ' + reply.substring(0, 50)
-    );
-
+    // No auto-reply — system only sends queued messages (confirmations, reminders, manual)
+    // Incoming messages are stored and shown to admin, but no AI reply is generated
     io.to('role:admin').emit('wa_message', {
       phone: contactId, chatName, direction: 'in', text,
-      reply, timestamp: new Date().toISOString(),
+      reply: null, timestamp: new Date().toISOString(),
     });
 
-    return res.json({ reply });
+    return res.json({ reply: null });
   });
 
   // -----------------------------------------------------------------------
