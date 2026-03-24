@@ -208,6 +208,32 @@ socket.on('agent_presence', function(data) {
   }
 });
 
+// Admin message / broadcast — show as notification on agent dashboard
+socket.on('admin_message', function(data) {
+  var isBroadcast = data.broadcast ? ' (Broadcast)' : '';
+  var msg = (data.from || 'Admin') + isBroadcast + ': ' + (data.message || '');
+
+  // Show as a toast notification
+  var toast = document.createElement('div');
+  toast.className = 'error-toast';
+  toast.style.cssText = 'background:#eff6ff;border-color:#3b82f6;color:#1e40af;';
+  toast.innerHTML = '<strong style="display:block;margin-bottom:2px;">Message from ' + escapeHtml(data.from || 'Admin') + isBroadcast + '</strong>' +
+    escapeHtml(data.message || '') +
+    '<button class="error-toast-close" onclick="dismissToast(this)" style="color:#1e40af;">&times;</button>';
+  toastContainer.appendChild(toast);
+
+  // Auto-dismiss after 15 seconds (longer than normal toasts)
+  setTimeout(function() {
+    if (toast.parentNode) {
+      toast.style.animation = 'toastOut 0.3s ease-in forwards';
+      setTimeout(function() { toast.remove(); }, 300);
+    }
+  }, 15000);
+
+  // Also play a notification sound
+  try { playBeep(); } catch(e) {}
+});
+
 // Send activity pings every 60 seconds so server knows we're active
 setInterval(function() {
   if (socket.connected) socket.emit('activity');
