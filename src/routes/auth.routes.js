@@ -66,6 +66,13 @@ router.post('/login', loginLimiter, validateLoginMw, async (req, res) => {
   req.session.loggedIn = true;
   req.session.username = username;
   req.session.role = user.role;
+
+  // Record login timestamp
+  try {
+    const usersRepo = require('../db/users.repo');
+    usersRepo.recordLogin(username);
+  } catch (e) { /* DB user may not exist for env-based agents */ }
+
   return res.redirect('/');
 });
 

@@ -120,6 +120,11 @@ function setupSockets(io, sessionMiddleware) {
       // Listen for activity pings from frontend
       socket.on('activity', function() {
         updateActivity(username);
+        // Persist last_seen to DB (throttled — only every 60s via frontend ping)
+        try {
+          const usersRepo = require('../db/users.repo');
+          usersRepo.updateLastSeen(username);
+        } catch (e) { /* ignore */ }
       });
 
       // Tell the client which rooms it joined so the frontend can verify

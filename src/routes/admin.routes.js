@@ -255,38 +255,65 @@ module.exports = function setupAdminRoutes(io) {
         lastCallAt = lastRow ? lastRow.timestamp : null;
       } catch (e) { /* ignore */ }
 
+      // Extra metrics
+      let longestToday = 0, longestWeek = 0, todayAnswered = 0;
+      try {
+        longestToday = db.prepare("SELECT COALESCE(MAX(duration),0) as m FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL").get(username).m;
+        longestWeek = db.prepare("SELECT COALESCE(MAX(duration),0) as m FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days') AND duration IS NOT NULL").get(username).m;
+        todayAnswered = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'answered'").get(username).c;
+      } catch (e) { /* ignore */ }
+
       // Performance score: answered +2, missed -3, talk time bonus
       const score = Math.max(0, (answeredCalls * 2) - (missedCalls * 3) + Math.floor(totalTalkTime / 300));
 
-      // Determine status using presence + heartbeat
+      // --- Compute presence status ---
       const pres = presence[username] || { online: false, lastActivity: null };
-      let status = 'offline';
-      if (pres.online) {
-        // Socket connected — check activity recency
-        const lastAct = pres.lastActivity || 0;
-        const actAgo = (Date.now() - lastAct) / 1000;
-        if (actAgo < 300) status = 'active';  // activity within 5 min
-        else status = 'idle';
-      }
-      // Override with heartbeat if monitor is alive (agent has call monitor running)
-      if (hb && hb.alive) {
-        const hbAgo = (Date.now() - hb.lastHeartbeat) / 1000;
-        if (hbAgo < 30) status = 'active';
+      const isAccountActive = user.source === 'db' ? (user.active !== false) : true;
+
+      // Get persisted last_seen from DB
+      let dbLastSeen = null;
+      let dbLastLogin = null;
+      try {
+        const dbUser = usersRepo.getByUsername(username);
+        if (dbUser) {
+          dbLastSeen = dbUser.last_seen ? new Date(dbUser.last_seen).getTime() : null;
+          dbLastLogin = dbUser.last_login ? new Date(dbUser.last_login).getTime() : null;
+        }
+      } catch (e) { /* env-based user, no DB record */ }
+
+      // Best available "last seen" — prefer live presence, fall back to DB, then heartbeat
+      const lastSeenTs = pres.lastActivity || dbLastSeen || (hb ? hb.lastHeartbeat : null);
+      const hasEverConnected = !!(lastSeenTs || dbLastLogin);
+
+      let presenceStatus = 'offline';
+      if (!isAccountActive) {
+        presenceStatus = 'disabled';
+      } else if (!hasEverConnected) {
+        presenceStatus = 'never_connected';
+      } else if (pres.online) {
+        const actAgo = pres.lastActivity ? (Date.now() - pres.lastActivity) / 1000 : 9999;
+        presenceStatus = actAgo < 300 ? 'online' : 'idle';
+      } else if (hb && hb.alive) {
+        presenceStatus = 'online';
+      } else {
+        presenceStatus = 'offline';
       }
 
       agents.push({
         username,
         displayName: user.displayName || username,
         role: user.role,
-        status,
-        active: user.source === 'db' ? (user.active !== false) : true,
+        presenceStatus,
+        active: isAccountActive,
         source: user.source || 'env',
         dbId: user.dbId || null,
         online: pres.online,
         monitorAlive: hb ? hb.alive : false,
         lastHeartbeat: hb ? hb.lastHeartbeat : null,
-        lastActivity: pres.lastActivity || (hb ? hb.lastHeartbeat : null),
+        lastSeen: lastSeenTs,
+        lastLogin: dbLastLogin,
         todayCalls,
+        todayAnswered,
         weekCalls,
         weekAnswered,
         totalCalls,
@@ -297,17 +324,19 @@ module.exports = function setupAdminRoutes(io) {
         todayTalkTime,
         weekTalkTime,
         totalTalkTime,
+        longestToday,
+        longestWeek,
         lastCallAt,
         score,
       });
     }
 
-    // Sort: agents first (by status: active > idle > offline), admin last
+    // Sort: by presence (online first), then admin last
     agents.sort(function(a, b) {
       if (a.role === 'admin' && b.role !== 'admin') return 1;
       if (a.role !== 'admin' && b.role === 'admin') return -1;
-      var order = { active: 0, idle: 1, offline: 2 };
-      return (order[a.status] || 2) - (order[b.status] || 2);
+      var order = { online: 0, idle: 1, offline: 2, never_connected: 3, disabled: 4 };
+      return (order[a.presenceStatus] || 3) - (order[b.presenceStatus] || 3);
     });
 
     res.json({ agents });
@@ -474,6 +503,64 @@ module.exports = function setupAdminRoutes(io) {
     const target = decodeURIComponent(req.params.target);
     const logs = auditRepo.getByTarget(target, 20);
     res.json({ logs });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/weekly-report - comprehensive weekly report (admin only)
+  // -------------------------------------------------------------------------
+  router.get('/api/weekly-report', requireAuth, requireAdmin, (req, res) => {
+    try {
+      const { db } = require('../db/index');
+      function q(sql, ...params) { return db.prepare(sql).get(...params); }
+      function qa(sql, ...params) { return db.prepare(sql).all(...params); }
+
+      // This week vs last week
+      const thisWeek = q("SELECT COUNT(*) as calls, COALESCE(SUM(duration),0) as talkTime, SUM(CASE WHEN call_status='answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN call_status='missed' THEN 1 ELSE 0 END) as missed FROM calls WHERE timestamp >= datetime('now', '-7 days')");
+      const lastWeek = q("SELECT COUNT(*) as calls, COALESCE(SUM(duration),0) as talkTime, SUM(CASE WHEN call_status='answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN call_status='missed' THEN 1 ELSE 0 END) as missed FROM calls WHERE timestamp >= datetime('now', '-14 days') AND timestamp < datetime('now', '-7 days')");
+
+      // Change percentages
+      const callChange = lastWeek.calls > 0 ? Math.round(((thisWeek.calls - lastWeek.calls) / lastWeek.calls) * 100) : null;
+      const talkTimeChange = lastWeek.talkTime > 0 ? Math.round(((thisWeek.talkTime - lastWeek.talkTime) / lastWeek.talkTime) * 100) : null;
+
+      // Best agents
+      const bestByCalls = q("SELECT agent, COUNT(*) as c FROM calls WHERE agent IS NOT NULL AND timestamp >= datetime('now', '-7 days') GROUP BY agent ORDER BY c DESC LIMIT 1");
+      const bestByTalkTime = q("SELECT agent, COALESCE(SUM(duration),0) as t FROM calls WHERE agent IS NOT NULL AND timestamp >= datetime('now', '-7 days') AND duration IS NOT NULL GROUP BY agent ORDER BY t DESC LIMIT 1");
+
+      // Agent rankings
+      const agentRankings = qa("SELECT agent, COUNT(*) as calls, SUM(CASE WHEN call_status='answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN call_status='missed' THEN 1 ELSE 0 END) as missed, COALESCE(SUM(duration),0) as talkTime, COALESCE(AVG(duration),0) as avgDuration FROM calls WHERE agent IS NOT NULL AND timestamp >= datetime('now', '-7 days') GROUP BY agent ORDER BY calls DESC");
+
+      // Daily breakdown
+      const dailyBreakdown = qa("SELECT date(timestamp) as day, COUNT(*) as calls, SUM(CASE WHEN call_status='answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN call_status='missed' THEN 1 ELSE 0 END) as missed, COALESCE(SUM(duration),0) as talkTime FROM calls WHERE timestamp >= datetime('now', '-7 days') GROUP BY day ORDER BY day");
+
+      // Peak hours by calls and talk time
+      const peakByCalls = qa("SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as count FROM calls WHERE timestamp >= datetime('now', '-7 days') GROUP BY hour ORDER BY count DESC LIMIT 5");
+      const peakByTalkTime = qa("SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COALESCE(SUM(duration),0) as talkTime FROM calls WHERE timestamp >= datetime('now', '-7 days') AND duration IS NOT NULL GROUP BY hour ORDER BY talkTime DESC LIMIT 5");
+
+      // Low activity agents (< 5 calls this week)
+      const users = getUsers();
+      const allAgents = Object.keys(users).filter(u => users[u].role !== 'admin');
+      const activeAgents = new Set(agentRankings.map(r => r.agent));
+      const lowActivity = allAgents.filter(a => {
+        const ranking = agentRankings.find(r => r.agent === a);
+        return !ranking || ranking.calls < 5;
+      });
+
+      res.json({
+        thisWeek: { calls: thisWeek.calls, talkTime: thisWeek.talkTime, answered: thisWeek.answered || 0, missed: thisWeek.missed || 0 },
+        lastWeek: { calls: lastWeek.calls, talkTime: lastWeek.talkTime, answered: lastWeek.answered || 0, missed: lastWeek.missed || 0 },
+        callChange,
+        talkTimeChange,
+        bestByCalls: bestByCalls ? { agent: bestByCalls.agent, calls: bestByCalls.c } : null,
+        bestByTalkTime: bestByTalkTime ? { agent: bestByTalkTime.agent, talkTime: bestByTalkTime.t } : null,
+        agentRankings,
+        dailyBreakdown,
+        peakByCalls,
+        peakByTalkTime,
+        lowActivity,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   return router;

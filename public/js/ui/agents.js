@@ -5,18 +5,63 @@ var agentSortBy = 'status';
 var agentFilterStatus = 'all';
 var agentSearchTerm = '';
 
-// ===== TOAST HELPER =====
+// ===== PRESENCE STATUS HELPERS =====
+var presenceConfig = {
+  online:          { color: '#2ecc71', label: 'Online',          dot: '#2ecc71' },
+  idle:            { color: '#f39c12', label: 'Idle',            dot: '#f39c12' },
+  offline:         { color: '#95a5a6', label: 'Offline',         dot: '#95a5a6' },
+  never_connected: { color: '#bdc3c7', label: 'Never Connected', dot: '#bdc3c7' },
+  disabled:        { color: '#e74c3c', label: 'Disabled',        dot: '#e74c3c' },
+};
+
+function presenceBadge(status) {
+  var cfg = presenceConfig[status] || presenceConfig.offline;
+  return '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:' + cfg.color + ';background:' + cfg.color + '15;padding:2px 8px;border-radius:10px;"><span style="width:6px;height:6px;border-radius:50%;background:' + cfg.dot + ';display:inline-block;"></span>' + cfg.label + '</span>';
+}
+
+// ===== TALK TIME FORMATTER =====
+function formatTalkTime(seconds) {
+  if (!seconds || seconds <= 0) return '--';
+  if (seconds < 60) return seconds + 's';
+  var m = Math.floor(seconds / 60);
+  var s = seconds % 60;
+  if (m < 60) return m + 'm ' + (s > 0 ? s + 's' : '');
+  var h = Math.floor(m / 60);
+  m = m % 60;
+  return h + 'h ' + (m > 0 ? m + 'm' : '');
+}
+
+// ===== LAST SEEN FORMATTER =====
+function formatLastSeen(ts) {
+  if (!ts) return 'Never';
+  var now = Date.now();
+  var ago = Math.floor((now - ts) / 1000);
+  if (ago < 10) return 'Just now';
+  if (ago < 60) return ago + ' sec ago';
+  if (ago < 3600) return Math.floor(ago / 60) + ' min ago';
+  if (ago < 86400) return Math.floor(ago / 3600) + ' hr ago';
+
+  var d = new Date(ts);
+  var yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) {
+    return 'Yesterday ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function lastSeenTooltip(ts) {
+  if (!ts) return '';
+  return new Date(ts).toLocaleString();
+}
+
+// ===== TOAST =====
 function agentToast(message, type) {
   var toast = document.createElement('div');
   toast.className = 'error-toast' + (type === 'warn' ? ' warn' : type === 'success' ? ' success' : '');
   toast.innerHTML = escapeHtml(message) + '<button class="error-toast-close" onclick="dismissToast(this)">&times;</button>';
   toastContainer.appendChild(toast);
-  setTimeout(function() {
-    if (toast.parentNode) {
-      toast.style.animation = 'toastOut 0.3s ease-in forwards';
-      setTimeout(function() { toast.remove(); }, 300);
-    }
-  }, 4000);
+  setTimeout(function() { if (toast.parentNode) { toast.style.animation = 'toastOut 0.3s ease-in forwards'; setTimeout(function() { toast.remove(); }, 300); } }, 4000);
 }
 
 // ===== CONFIRM MODAL =====
@@ -24,26 +69,18 @@ function agentConfirm(title, message, btnText, btnColor) {
   return new Promise(function(resolve) {
     var existing = document.getElementById('agentConfirmModal');
     if (existing) existing.remove();
-
     var overlay = document.createElement('div');
     overlay.id = 'agentConfirmModal';
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
-
     var modal = document.createElement('div');
     modal.style.cssText = 'background:#fff;border-radius:12px;max-width:400px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.3);';
-    modal.innerHTML =
-      '<div style="padding:20px 24px;border-bottom:1px solid #eee;">' +
-        '<div style="font-weight:700;font-size:16px;color:#222;">' + escapeHtml(title) + '</div>' +
-      '</div>' +
+    modal.innerHTML = '<div style="padding:20px 24px;border-bottom:1px solid #eee;"><div style="font-weight:700;font-size:16px;color:#222;">' + escapeHtml(title) + '</div></div>' +
       '<div style="padding:16px 24px;font-size:14px;color:#555;line-height:1.5;">' + escapeHtml(message) + '</div>' +
       '<div style="padding:12px 24px 20px;display:flex;gap:10px;justify-content:flex-end;">' +
         '<button id="acmCancel" style="padding:8px 20px;border:1px solid #ddd;border-radius:6px;background:#fff;color:#555;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>' +
-        '<button id="acmConfirm" style="padding:8px 20px;border:none;border-radius:6px;background:' + (btnColor || '#e74c3c') + ';color:white;font-size:13px;font-weight:600;cursor:pointer;">' + (btnText || 'Confirm') + '</button>' +
-      '</div>';
-
+        '<button id="acmConfirm" style="padding:8px 20px;border:none;border-radius:6px;background:' + (btnColor || '#e74c3c') + ';color:white;font-size:13px;font-weight:600;cursor:pointer;">' + (btnText || 'Confirm') + '</button></div>';
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
-
     overlay.onclick = function(e) { if (e.target === overlay) { overlay.remove(); resolve(false); } };
     document.getElementById('acmCancel').onclick = function() { overlay.remove(); resolve(false); };
     document.getElementById('acmConfirm').onclick = function() { overlay.remove(); resolve(true); };
@@ -54,24 +91,18 @@ function agentConfirm(title, message, btnText, btnColor) {
 function loadAgents() {
   var container = document.getElementById('agentCards');
   container.innerHTML = '<div class="empty-state"><div class="modal-loading"><div class="spinner"></div><p>Loading agents...</p></div></div>';
-
-  waFetch('/api/agents')
-    .then(function(data) {
-      if (!data.agents || data.agents.length === 0) {
-        document.getElementById('agentSummary').innerHTML = '';
-        container.innerHTML = '<div class="empty-state"><p>No agents configured</p></div>';
-        return;
-      }
-      agentData = data.agents;
-      renderAgentSummary();
-      renderAgentCards();
-    })
-    .catch(function() {
-      container.innerHTML = '<div class="empty-state"><p>Failed to load agents</p></div>';
-    });
+  waFetch('/api/agents').then(function(data) {
+    if (!data.agents || data.agents.length === 0) {
+      document.getElementById('agentSummary').innerHTML = '';
+      container.innerHTML = '<div class="empty-state"><p>No agents configured</p></div>';
+      return;
+    }
+    agentData = data.agents;
+    renderAgentSummary();
+    renderAgentCards();
+  }).catch(function() { container.innerHTML = '<div class="empty-state"><p>Failed to load agents</p></div>'; });
 }
 
-// ===== SEARCH =====
 function agentSearch() {
   agentSearchTerm = (document.getElementById('agentSearchInput').value || '').toLowerCase().trim();
   renderAgentCards();
@@ -79,57 +110,43 @@ function agentSearch() {
 
 // ===== SUMMARY =====
 function renderAgentSummary() {
-  var active = 0, idle = 0, offline = 0, totalAgents = 0;
+  var online = 0, idle = 0, offline = 0, total = 0;
   agentData.forEach(function(a) {
     if (a.role === 'admin') return;
-    totalAgents++;
-    if (a.status === 'active') active++;
-    else if (a.status === 'idle') idle++;
+    total++;
+    if (a.presenceStatus === 'online') online++;
+    else if (a.presenceStatus === 'idle') idle++;
     else offline++;
   });
   document.getElementById('agentSummary').innerHTML =
-    agentSummaryCard('Total', totalAgents, '#222', 'all') +
-    agentSummaryCard('Active', active, '#2ecc71', 'active') +
-    agentSummaryCard('Idle', idle, '#f39c12', 'idle') +
-    agentSummaryCard('Offline', offline, '#e74c3c', 'offline');
+    summaryCard('Total', total, '#222', 'all') +
+    summaryCard('Online', online, '#2ecc71', 'online') +
+    summaryCard('Idle', idle, '#f39c12', 'idle') +
+    summaryCard('Offline', offline, '#95a5a6', 'offline');
 }
 
-function agentSummaryCard(label, value, color, filter) {
-  var selected = agentFilterStatus === filter;
-  var border = selected ? '2px solid ' + color : '1px solid #eee';
-  return '<div onclick="agentFilterBy(\'' + filter + '\')" style="flex:1;min-width:90px;text-align:center;padding:10px;background:#fff;border-radius:8px;border:' + border + ';cursor:pointer;transition:border 0.2s;">' +
+function summaryCard(label, value, color, filter) {
+  var sel = agentFilterStatus === filter;
+  return '<div onclick="agentFilterBy(\'' + filter + '\')" style="flex:1;min-width:80px;text-align:center;padding:10px;background:#fff;border-radius:8px;border:' + (sel ? '2px solid ' + color : '1px solid #eee') + ';cursor:pointer;">' +
     '<div style="font-weight:700;font-size:20px;color:' + color + ';">' + value + '</div>' +
-    '<div style="font-size:11px;color:#999;">' + label + '</div>' +
-  '</div>';
+    '<div style="font-size:11px;color:#999;">' + label + '</div></div>';
 }
 
-function agentFilterBy(status) {
-  agentFilterStatus = status;
-  renderAgentSummary();
-  renderAgentCards();
-}
-
-function agentSortByField(field) {
-  agentSortBy = field;
-  renderAgentCards();
-}
+function agentFilterBy(s) { agentFilterStatus = s; renderAgentSummary(); renderAgentCards(); }
+function agentSortByField(f) { agentSortBy = f; renderAgentCards(); }
 
 // ===== CARD RENDERING =====
 function renderAgentCards() {
   var container = document.getElementById('agentCards');
-
-  // Filter by status
   var filtered = agentData.filter(function(a) {
-    if (agentFilterStatus !== 'all' && a.status !== agentFilterStatus) return false;
-    // Filter by search
+    if (agentFilterStatus !== 'all' && a.presenceStatus !== agentFilterStatus) return false;
     if (agentSearchTerm) {
-      var haystack = (a.username + ' ' + (a.displayName || '') + ' ' + a.role).toLowerCase();
-      if (haystack.indexOf(agentSearchTerm) === -1) return false;
+      var h = (a.username + ' ' + (a.displayName || '') + ' ' + a.role).toLowerCase();
+      if (h.indexOf(agentSearchTerm) === -1) return false;
     }
     return true;
   });
 
-  // Sort
   filtered.sort(function(a, b) {
     if (a.role === 'admin' && b.role !== 'admin') return 1;
     if (a.role !== 'admin' && b.role === 'admin') return -1;
@@ -138,314 +155,189 @@ function renderAgentCards() {
       case 'talktime': return b.todayTalkTime - a.todayTalkTime;
       case 'rate': return b.answerRate - a.answerRate;
       case 'score': return b.score - a.score;
-      case 'lastseen': return (b.lastActivity || 0) - (a.lastActivity || 0);
+      case 'lastseen': return (b.lastSeen || 0) - (a.lastSeen || 0);
       default:
-        var order = { active: 0, idle: 1, offline: 2 };
-        return (order[a.status] || 2) - (order[b.status] || 2);
+        var order = { online: 0, idle: 1, offline: 2, never_connected: 3, disabled: 4 };
+        return (order[a.presenceStatus] || 3) - (order[b.presenceStatus] || 3);
     }
   });
 
-  // Sort controls
   var sortHtml = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap;">' +
     '<span style="font-size:12px;color:#888;">Sort:</span>' +
     sortBtn('Status', 'status') + sortBtn('Calls', 'calls') + sortBtn('Talk Time', 'talktime') +
     sortBtn('Rate', 'rate') + sortBtn('Score', 'score') + sortBtn('Last Seen', 'lastseen') +
-    '<span style="margin-left:auto;font-size:12px;color:#999;">' + filtered.length + ' of ' + agentData.length + ' agents</span>' +
-  '</div>';
+    '<span style="margin-left:auto;font-size:12px;color:#999;">' + filtered.length + ' of ' + agentData.length + '</span></div>';
 
   if (filtered.length === 0) {
     container.innerHTML = sortHtml + '<div class="empty-state"><p>No agents match this filter</p></div>';
     return;
   }
 
-  container.innerHTML = sortHtml + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;">' +
-    filtered.map(function(a) { return renderAgentCard(a); }).join('') + '</div>';
+  container.innerHTML = sortHtml + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;">' +
+    filtered.map(renderAgentCard).join('') + '</div>';
 }
 
 function sortBtn(label, field) {
-  var active = agentSortBy === field;
-  return '<button onclick="agentSortByField(\'' + field + '\')" style="padding:3px 10px;border:' + (active ? 'none' : '1px solid #ddd') + ';border-radius:4px;background:' + (active ? '#1a1a2e' : '#fff') + ';color:' + (active ? '#fff' : '#555') + ';font-size:11px;font-weight:600;cursor:pointer;">' + label + '</button>';
+  var a = agentSortBy === field;
+  return '<button onclick="agentSortByField(\'' + field + '\')" style="padding:3px 10px;border:' + (a ? 'none' : '1px solid #ddd') + ';border-radius:4px;background:' + (a ? '#1a1a2e' : '#fff') + ';color:' + (a ? '#fff' : '#555') + ';font-size:11px;font-weight:600;cursor:pointer;">' + label + '</button>';
 }
 
-function agentStatCell(label, value, color) {
-  var valStyle = color ? 'color:' + color + ';' : 'color:#222;';
-  return '<div style="background:#fff;text-align:center;padding:8px 4px;">' +
-    '<div style="font-weight:700;font-size:15px;' + valStyle + '">' + value + '</div>' +
-    '<div style="font-size:9px;color:#999;margin-top:1px;">' + label + '</div>' +
-  '</div>';
+function stat(label, value, color) {
+  var s = color ? 'color:' + color + ';' : 'color:#222;';
+  return '<div style="background:#fff;text-align:center;padding:8px 2px;"><div style="font-weight:700;font-size:14px;' + s + '">' + value + '</div><div style="font-size:9px;color:#aaa;margin-top:1px;">' + label + '</div></div>';
 }
 
 function renderAgentCard(a) {
-  var statusColor = { active: '#2ecc71', idle: '#f39c12', offline: '#e74c3c' }[a.status] || '#e74c3c';
-  var statusLabel = a.status.charAt(0).toUpperCase() + a.status.slice(1);
+  var pcfg = presenceConfig[a.presenceStatus] || presenceConfig.offline;
   var roleBadge = a.role === 'admin'
-    ? '<span style="background:#7b1fa2;color:white;font-size:10px;padding:2px 8px;border-radius:4px;">ADMIN</span>'
-    : '<span style="background:#1565c0;color:white;font-size:10px;padding:2px 8px;border-radius:4px;">AGENT</span>';
-
-  var inactiveBadge = !a.active ? ' <span style="background:#e74c3c;color:white;font-size:9px;padding:1px 6px;border-radius:3px;">INACTIVE</span>' : '';
-  var monitorBadge = '';
-  if (a.role !== 'admin') {
-    var mColor = a.monitorAlive ? '#2ecc71' : '#e74c3c';
-    monitorBadge = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:' + mColor + ';margin-left:6px;"><span style="width:5px;height:5px;border-radius:50%;background:' + mColor + ';display:inline-block;"></span>' + (a.monitorAlive ? 'Mon' : 'Mon Off') + '</span>';
-  }
-
-  var lastSeen = agentLastSeen(a.lastActivity || a.lastHeartbeat);
-  var rateColor = a.answerRate >= 80 ? '#2ecc71' : a.answerRate >= 50 ? '#f39c12' : '#e74c3c';
+    ? '<span style="background:#7b1fa2;color:white;font-size:9px;padding:1px 6px;border-radius:3px;">ADMIN</span>'
+    : '<span style="background:#1565c0;color:white;font-size:9px;padding:1px 6px;border-radius:3px;">AGENT</span>';
   var scoreColor = a.score >= 20 ? '#2ecc71' : a.score >= 5 ? '#f39c12' : '#e74c3c';
+  var rateColor = a.answerRate >= 80 ? '#2ecc71' : a.answerRate >= 50 ? '#f39c12' : '#e74c3c';
   var displayName = a.displayName && a.displayName !== a.username ? '<div style="font-size:11px;color:#888;">' + escapeHtml(a.displayName) + '</div>' : '';
-  var isDbAgent = a.source === 'db';
-  var lastCall = a.lastCallAt ? agentLastSeen(new Date(a.lastCallAt).getTime()) : 'Never';
-  var uid = 'agent-detail-' + a.username.replace(/[^a-z0-9]/gi, '');
+  var monBadge = a.role !== 'admin' ? '<span style="font-size:9px;color:' + (a.monitorAlive ? '#2ecc71' : '#ccc') + ';">' + (a.monitorAlive ? '● Mon' : '○ Mon') + '</span>' : '';
+  var uid = 'ad-' + a.username.replace(/\W/g, '');
+  var isDb = a.source === 'db';
+  var lastCall = a.lastCallAt ? formatLastSeen(new Date(a.lastCallAt).getTime()) : 'Never';
 
-  // Actions
-  var actions = '<button onclick="agentChangePassword(\'' + a.username + '\')" style="padding:3px 8px;border:1px solid #ddd;border-radius:4px;background:#fff;color:#555;font-size:10px;cursor:pointer;">Reset PW</button>';
-  if (isDbAgent) {
-    if (a.active) {
-      actions += ' <button onclick="agentToggleActive(\'' + a.username + '\',false)" style="padding:3px 8px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:10px;cursor:pointer;">Deactivate</button>';
-    } else {
-      actions += ' <button onclick="agentToggleActive(\'' + a.username + '\',true)" style="padding:3px 8px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:10px;cursor:pointer;">Activate</button>';
-    }
-    actions += ' <button onclick="agentDelete(\'' + a.username + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#e74c3c;color:white;font-size:10px;cursor:pointer;">Delete</button>';
+  var actions = '<button onclick="agentChangePassword(\'' + a.username + '\')" style="padding:2px 8px;border:1px solid #ddd;border-radius:4px;background:#fff;color:#555;font-size:10px;cursor:pointer;">Reset PW</button>';
+  if (isDb) {
+    actions += a.active
+      ? ' <button onclick="agentToggleActive(\'' + a.username + '\',false)" style="padding:2px 8px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:10px;cursor:pointer;">Deactivate</button>'
+      : ' <button onclick="agentToggleActive(\'' + a.username + '\',true)" style="padding:2px 8px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:10px;cursor:pointer;">Activate</button>';
+    actions += ' <button onclick="agentDelete(\'' + a.username + '\')" style="padding:2px 8px;border:none;border-radius:4px;background:#e74c3c;color:white;font-size:10px;cursor:pointer;">Delete</button>';
   }
 
-  return '<div style="background:#fff;border-radius:10px;border:1px solid #eee;box-shadow:0 1px 4px rgba(0,0,0,0.06);overflow:hidden;' + (!a.active ? 'opacity:0.55;' : '') + '">' +
-    // Header — clickable to expand
-    '<div onclick="agentToggleDetail(\'' + uid + '\')" style="padding:12px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #f0f0f0;cursor:pointer;">' +
-      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
-        '<span style="width:10px;height:10px;border-radius:50%;background:' + statusColor + ';display:inline-block;flex-shrink:0;"></span>' +
-        '<div>' +
-          '<span style="font-weight:700;font-size:14px;color:#222;">' + escapeHtml(a.username) + '</span> ' + roleBadge + inactiveBadge + monitorBadge +
-          displayName +
-        '</div>' +
+  return '<div style="background:#fff;border-radius:10px;border:1px solid #eee;box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden;' + (!a.active ? 'opacity:0.5;' : '') + '">' +
+    // Header
+    '<div onclick="agentToggleDetail(\'' + uid + '\')" style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border-bottom:1px solid #f5f5f5;">' +
+      '<div style="display:flex;align-items:center;gap:6px;">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + pcfg.dot + ';display:inline-block;"></span>' +
+        '<div><span style="font-weight:700;font-size:14px;color:#222;">' + escapeHtml(a.username) + '</span> ' + roleBadge + ' ' + monBadge + displayName + '</div>' +
       '</div>' +
-      '<div style="display:flex;align-items:center;gap:8px;">' +
-        '<span style="font-size:11px;font-weight:700;color:' + scoreColor + ';">' + a.score + ' pts</span>' +
-        '<span style="font-size:11px;color:' + statusColor + ';font-weight:600;">' + statusLabel + '</span>' +
-        '<span style="font-size:12px;color:#ccc;">&#9660;</span>' +
+      '<div style="display:flex;align-items:center;gap:6px;">' +
+        '<span style="font-size:11px;font-weight:700;color:' + scoreColor + ';">' + a.score + '</span>' +
+        presenceBadge(a.presenceStatus) +
       '</div>' +
     '</div>' +
-    // Quick stats (always visible)
-    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:#f0f0f0;">' +
-      agentStatCell('Today', a.todayCalls) +
-      agentStatCell('Answered', a.answeredCalls, '#2ecc71') +
-      agentStatCell('Missed', a.missedCalls, '#e74c3c') +
-      agentStatCell('Rate', a.answerRate + '%', rateColor) +
-      agentStatCell('Avg', a.avgDuration > 0 ? formatCallDuration(a.avgDuration) : '--') +
+    // Quick stats
+    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:#f5f5f5;">' +
+      stat('Today', a.todayCalls) +
+      stat('Talk', formatTalkTime(a.todayTalkTime)) +
+      stat('Week', a.weekCalls) +
+      stat('Week Talk', formatTalkTime(a.weekTalkTime)) +
+      stat('Rate', a.answerRate + '%', rateColor) +
     '</div>' +
-    // Expandable detail section
+    // Expandable detail
     '<div id="' + uid + '" style="display:none;">' +
-      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#f0f0f0;">' +
-        agentStatCell('Week Calls', a.weekCalls) +
-        agentStatCell('Total Calls', a.totalCalls) +
-        agentStatCell('Today Talk', formatCallDuration(a.todayTalkTime)) +
-        agentStatCell('Week Talk', formatCallDuration(a.weekTalkTime)) +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#f5f5f5;">' +
+        stat('Total', a.totalCalls) +
+        stat('Answered', a.answeredCalls, '#2ecc71') +
+        stat('Missed', a.missedCalls, '#e74c3c') +
+        stat('Avg', formatTalkTime(a.avgDuration)) +
       '</div>' +
-      '<div style="padding:10px 14px;font-size:11px;color:#888;border-top:1px solid #f0f0f0;">' +
-        'Total talk time: ' + formatCallDuration(a.totalTalkTime) +
-        ' &middot; Last seen: ' + lastSeen +
-        ' &middot; Last call: ' + lastCall +
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#f5f5f5;">' +
+        stat('Total Talk', formatTalkTime(a.totalTalkTime)) +
+        stat('Best Today', formatTalkTime(a.longestToday)) +
+        stat('Best Week', formatTalkTime(a.longestWeek)) +
       '</div>' +
-      '<div style="padding:8px 14px 12px;display:flex;gap:4px;flex-wrap:wrap;border-top:1px solid #f0f0f0;">' + actions + '</div>' +
+      '<div style="padding:8px 14px;font-size:11px;color:#888;border-top:1px solid #f5f5f5;">' +
+        '<span title="' + lastSeenTooltip(a.lastSeen) + '">Last seen: ' + formatLastSeen(a.lastSeen) + '</span>' +
+        ' · Last call: ' + lastCall +
+        (a.lastLogin ? ' · Login: ' + formatLastSeen(a.lastLogin) : '') +
+      '</div>' +
+      '<div style="padding:6px 14px 10px;display:flex;gap:4px;flex-wrap:wrap;border-top:1px solid #f5f5f5;">' + actions + '</div>' +
     '</div>' +
   '</div>';
 }
 
 function agentToggleDetail(uid) {
   var el = document.getElementById(uid);
-  if (!el) return;
-  el.style.display = el.style.display === 'none' ? '' : 'none';
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
-function agentLastSeen(ts) {
-  if (!ts) return 'Never';
-  var ago = Math.floor((Date.now() - ts) / 1000);
-  if (ago < 10) return 'Just now';
-  if (ago < 60) return ago + 's ago';
-  if (ago < 3600) return Math.floor(ago / 60) + 'm ago';
-  if (ago < 86400) return Math.floor(ago / 3600) + 'h ago';
-  return new Date(ts).toLocaleDateString();
+// ===== ACTIONS =====
+function agentChangePassword(u) {
+  var pw = prompt('New password for ' + u + ' (min 6 chars):');
+  if (!pw || pw.length < 6) { if (pw !== null) agentToast('Min 6 characters', 'warn'); return; }
+  waFetch('/api/agents/change-password', { method: 'POST', body: JSON.stringify({ username: u, password: pw }) })
+    .then(function(d) { d.ok ? agentToast('Password changed for ' + u, 'success') : agentToast(d.error || 'Failed', 'warn'); })
+    .catch(function(e) { if (e.message !== 'Session expired') agentToast('Request failed', 'warn'); });
 }
 
-// ===== AGENT ACTIONS (with confirm modals and toasts) =====
-
-function agentChangePassword(username) {
-  var pw = prompt('New password for ' + username + ' (min 6 characters):');
-  if (!pw || pw.length < 6) {
-    if (pw !== null) agentToast('Password must be at least 6 characters.', 'warn');
-    return;
-  }
-  waFetch('/api/agents/change-password', { method: 'POST', body: JSON.stringify({ username: username, password: pw }) })
-    .then(function(data) {
-      if (data.ok) agentToast('Password changed for ' + username, 'success');
-      else agentToast(data.error || 'Failed to change password', 'warn');
-    })
-    .catch(function(err) { if (err.message !== 'Session expired') agentToast('Request failed', 'warn'); });
-}
-
-function agentToggleActive(username, active) {
-  var action = active ? 'activate' : 'deactivate';
-  agentConfirm(
-    (active ? 'Activate' : 'Deactivate') + ' Agent',
-    'Are you sure you want to ' + action + ' ' + username + '?' + (!active ? '\n\nThey will not be able to log in.' : ''),
-    active ? 'Activate' : 'Deactivate',
-    active ? '#2ecc71' : '#f39c12'
-  ).then(function(ok) {
-    if (!ok) return;
-    waFetch('/api/agents/toggle-active', { method: 'POST', body: JSON.stringify({ username: username, active: active }) })
-      .then(function(data) {
-        if (data.ok) { agentToast(username + ' ' + (active ? 'activated' : 'deactivated'), 'success'); loadAgents(); }
-        else agentToast(data.error || 'Action failed', 'warn');
-      })
-      .catch(function(err) { if (err.message !== 'Session expired') agentToast('Request failed', 'warn'); });
-  });
-}
-
-function agentDelete(username) {
-  agentConfirm(
-    'Delete Agent',
-    'Are you sure you want to permanently delete ' + username + '?\n\nThis action cannot be undone. All call history will remain but the agent will no longer be able to log in.',
-    'Delete Permanently',
-    '#e74c3c'
-  ).then(function(ok) {
-    if (!ok) return;
-    waFetch('/api/agents/delete', { method: 'POST', body: JSON.stringify({ username: username }) })
-      .then(function(data) {
-        if (data.ok) { agentToast(username + ' deleted', 'success'); loadAgents(); }
-        else agentToast(data.error || 'Delete failed', 'warn');
-      })
-      .catch(function(err) { if (err.message !== 'Session expired') agentToast('Request failed', 'warn'); });
-  });
-}
-
-// ===== CREATE AGENT =====
-
-function agentShowCreateForm() {
-  var section = document.getElementById('agentCreateSection');
-  section.style.display = section.style.display === 'none' ? '' : 'none';
-  if (section.style.display !== 'none') {
-    document.getElementById('newAgentUsername').focus();
-  }
-}
-
-function agentCreate() {
-  var username = document.getElementById('newAgentUsername').value.trim();
-  var password = document.getElementById('newAgentPassword').value;
-  var displayName = document.getElementById('newAgentName').value.trim();
-  var role = document.getElementById('newAgentRole').value;
-  var notes = document.getElementById('newAgentNotes').value.trim();
-
-  if (!username || !password) return agentToast('Username and password are required.', 'warn');
-  if (username.length < 3) return agentToast('Username must be at least 3 characters.', 'warn');
-  if (password.length < 6) return agentToast('Password must be at least 6 characters.', 'warn');
-
-  waFetch('/api/agents/create', {
-    method: 'POST',
-    body: JSON.stringify({ username: username, password: password, displayName: displayName, role: role, notes: notes })
-  })
-    .then(function(data) {
-      if (data.ok) {
-        agentToast('Agent ' + username + ' created', 'success');
-        document.getElementById('newAgentUsername').value = '';
-        document.getElementById('newAgentPassword').value = '';
-        document.getElementById('newAgentName').value = '';
-        document.getElementById('newAgentNotes').value = '';
-        document.getElementById('agentCreateSection').style.display = 'none';
-        loadAgents();
-      } else {
-        agentToast(data.error || 'Create failed', 'warn');
-      }
-    })
-    .catch(function(err) { agentToast(err.message, 'warn'); });
-}
-
-// ===== ARCHIVED AGENTS =====
-
-function agentShowArchived() {
-  var section = document.getElementById('agentExtraSection');
-  section.innerHTML = '<div class="empty-state"><div class="modal-loading"><div class="spinner"></div><p>Loading...</p></div></div>';
-
-  waFetch('/api/agents/archived')
-    .then(function(data) {
-      var agents = data.agents || [];
-      if (agents.length === 0) {
-        section.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:20px;"><p style="color:#888;margin:0;">No archived agents</p></div>';
-        return;
-      }
-      section.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:16px;">' +
-        '<h3 style="margin:0 0 12px;font-size:14px;color:#222;font-weight:600;">Archived Agents</h3>' +
-        agents.map(function(a) {
-          var deletedAt = a.deleted_at ? new Date(a.deleted_at).toLocaleString() : '';
-          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;">' +
-            '<div>' +
-              '<span style="font-weight:600;color:#222;">' + escapeHtml(a.username) + '</span>' +
-              '<span style="font-size:11px;color:#999;margin-left:8px;">' + a.role + '</span>' +
-              (a.display_name ? '<span style="font-size:11px;color:#888;margin-left:8px;">(' + escapeHtml(a.display_name) + ')</span>' : '') +
-              '<div style="font-size:11px;color:#bbb;">Deleted: ' + deletedAt + '</div>' +
-            '</div>' +
-            '<button onclick="agentRestore(' + a.id + ')" style="padding:4px 12px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:11px;font-weight:600;cursor:pointer;">Restore</button>' +
-          '</div>';
-        }).join('') +
-      '</div>';
-    })
-    .catch(function() { section.innerHTML = '<p style="color:#e74c3c;">Failed to load archived agents</p>'; });
-}
-
-function agentRestore(id) {
-  agentConfirm('Restore Agent', 'Restore this agent? They will be able to log in again.', 'Restore', '#2ecc71')
-    .then(function(ok) {
-      if (!ok) return;
-      waFetch('/api/agents/restore', { method: 'POST', body: JSON.stringify({ id: id }) })
-        .then(function(data) {
-          if (data.ok) { agentToast('Agent restored', 'success'); agentShowArchived(); loadAgents(); }
-          else agentToast(data.error || 'Restore failed', 'warn');
-        })
-        .catch(function(err) { if (err.message !== 'Session expired') agentToast('Request failed', 'warn'); });
+function agentToggleActive(u, active) {
+  agentConfirm(active ? 'Activate Agent' : 'Deactivate Agent', (active ? 'Activate ' : 'Deactivate ') + u + '?', active ? 'Activate' : 'Deactivate', active ? '#2ecc71' : '#f39c12')
+    .then(function(ok) { if (!ok) return;
+      waFetch('/api/agents/toggle-active', { method: 'POST', body: JSON.stringify({ username: u, active: active }) })
+        .then(function(d) { d.ok ? (agentToast(u + (active ? ' activated' : ' deactivated'), 'success'), loadAgents()) : agentToast(d.error, 'warn'); })
+        .catch(function(e) { if (e.message !== 'Session expired') agentToast('Request failed', 'warn'); });
     });
 }
 
+function agentDelete(u) {
+  agentConfirm('Delete Agent', 'Permanently delete ' + u + '? This can be undone from Archived Agents.', 'Delete', '#e74c3c')
+    .then(function(ok) { if (!ok) return;
+      waFetch('/api/agents/delete', { method: 'POST', body: JSON.stringify({ username: u }) })
+        .then(function(d) { d.ok ? (agentToast(u + ' deleted', 'success'), loadAgents()) : agentToast(d.error, 'warn'); })
+        .catch(function(e) { if (e.message !== 'Session expired') agentToast('Request failed', 'warn'); });
+    });
+}
+
+// ===== CREATE =====
+function agentShowCreateForm() {
+  var s = document.getElementById('agentCreateSection');
+  s.style.display = s.style.display === 'none' ? '' : 'none';
+  if (s.style.display !== 'none') document.getElementById('newAgentUsername').focus();
+}
+
+function agentCreate() {
+  var u = document.getElementById('newAgentUsername').value.trim();
+  var p = document.getElementById('newAgentPassword').value;
+  var n = document.getElementById('newAgentName').value.trim();
+  var r = document.getElementById('newAgentRole').value;
+  var notes = document.getElementById('newAgentNotes').value.trim();
+  if (!u || !p) return agentToast('Username and password required', 'warn');
+  if (u.length < 3) return agentToast('Username min 3 chars', 'warn');
+  if (p.length < 6) return agentToast('Password min 6 chars', 'warn');
+  waFetch('/api/agents/create', { method: 'POST', body: JSON.stringify({ username: u, password: p, displayName: n, role: r, notes: notes }) })
+    .then(function(d) {
+      if (d.ok) { agentToast(u + ' created', 'success'); document.getElementById('newAgentUsername').value = ''; document.getElementById('newAgentPassword').value = ''; document.getElementById('newAgentName').value = ''; document.getElementById('newAgentNotes').value = ''; document.getElementById('agentCreateSection').style.display = 'none'; loadAgents(); }
+      else agentToast(d.error || 'Failed', 'warn');
+    }).catch(function(e) { agentToast(e.message, 'warn'); });
+}
+
+// ===== ARCHIVED =====
+function agentShowArchived() {
+  var s = document.getElementById('agentExtraSection');
+  s.innerHTML = '<div class="empty-state"><div class="modal-loading"><div class="spinner"></div><p>Loading...</p></div></div>';
+  waFetch('/api/agents/archived').then(function(d) {
+    var a = d.agents || [];
+    if (!a.length) { s.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:20px;color:#888;">No archived agents</div>'; return; }
+    s.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:16px;"><h3 style="margin:0 0 12px;font-size:14px;color:#222;">Archived Agents</h3>' +
+      a.map(function(u) { return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;"><div><span style="font-weight:600;">' + escapeHtml(u.username) + '</span> <span style="font-size:11px;color:#999;">' + u.role + '</span><div style="font-size:11px;color:#bbb;">Deleted: ' + (u.deleted_at ? new Date(u.deleted_at).toLocaleString() : '') + '</div></div><button onclick="agentRestore(' + u.id + ')" style="padding:4px 12px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:11px;font-weight:600;cursor:pointer;">Restore</button></div>'; }).join('') +
+    '</div>';
+  }).catch(function() { s.innerHTML = '<p style="color:#e74c3c;">Failed to load</p>'; });
+}
+
+function agentRestore(id) {
+  agentConfirm('Restore Agent', 'Restore this agent?', 'Restore', '#2ecc71').then(function(ok) {
+    if (!ok) return;
+    waFetch('/api/agents/restore', { method: 'POST', body: JSON.stringify({ id: id }) })
+      .then(function(d) { d.ok ? (agentToast('Restored', 'success'), agentShowArchived(), loadAgents()) : agentToast(d.error, 'warn'); })
+      .catch(function() {});
+  });
+}
+
 // ===== AUDIT LOG =====
-
 function agentShowAuditLog() {
-  var section = document.getElementById('agentExtraSection');
-  section.innerHTML = '<div class="empty-state"><div class="modal-loading"><div class="spinner"></div><p>Loading...</p></div></div>';
-
-  waFetch('/api/audit-log?limit=50')
-    .then(function(data) {
-      var logs = data.logs || [];
-      if (logs.length === 0) {
-        section.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:20px;"><p style="color:#888;margin:0;">No audit entries yet</p></div>';
-        return;
-      }
-
-      var actionColors = {
-        agent_created: '#2ecc71', agent_updated: '#3498db', agent_deleted: '#e74c3c',
-        agent_activated: '#2ecc71', agent_deactivated: '#f39c12', agent_restored: '#2ecc71',
-        password_changed: '#9b59b6',
-      };
-
-      section.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:16px;max-height:400px;overflow:auto;">' +
-        '<h3 style="margin:0 0 12px;font-size:14px;color:#222;font-weight:600;">Audit Log</h3>' +
-        '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
-        '<tr style="border-bottom:2px solid #eee;text-align:left;">' +
-          '<th style="padding:6px 8px;color:#888;font-weight:600;">Time</th>' +
-          '<th style="padding:6px 8px;color:#888;font-weight:600;">Action</th>' +
-          '<th style="padding:6px 8px;color:#888;font-weight:600;">Target</th>' +
-          '<th style="padding:6px 8px;color:#888;font-weight:600;">Details</th>' +
-          '<th style="padding:6px 8px;color:#888;font-weight:600;">By</th>' +
-        '</tr>' +
-        logs.map(function(l) {
-          var color = actionColors[l.action] || '#555';
-          var time = new Date(l.created_at).toLocaleString();
-          var actionLabel = l.action.replace(/_/g, ' ');
-          return '<tr style="border-bottom:1px solid #f5f5f5;">' +
-            '<td style="padding:6px 8px;color:#999;white-space:nowrap;">' + time + '</td>' +
-            '<td style="padding:6px 8px;"><span style="color:' + color + ';font-weight:600;">' + escapeHtml(actionLabel) + '</span></td>' +
-            '<td style="padding:6px 8px;font-weight:500;color:#222;">' + escapeHtml(l.target || '-') + '</td>' +
-            '<td style="padding:6px 8px;color:#888;">' + escapeHtml(l.details || '-') + '</td>' +
-            '<td style="padding:6px 8px;color:#888;">' + escapeHtml(l.performed_by) + '</td>' +
-          '</tr>';
-        }).join('') +
-        '</table></div>';
-    })
-    .catch(function() { section.innerHTML = '<p style="color:#e74c3c;">Failed to load audit log</p>'; });
+  var s = document.getElementById('agentExtraSection');
+  s.innerHTML = '<div class="empty-state"><div class="modal-loading"><div class="spinner"></div><p>Loading...</p></div></div>';
+  waFetch('/api/audit-log?limit=50').then(function(d) {
+    var logs = d.logs || [];
+    if (!logs.length) { s.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:20px;color:#888;">No audit entries</div>'; return; }
+    var colors = { agent_created: '#2ecc71', agent_updated: '#3498db', agent_deleted: '#e74c3c', agent_activated: '#2ecc71', agent_deactivated: '#f39c12', agent_restored: '#2ecc71', password_changed: '#9b59b6' };
+    s.innerHTML = '<div style="background:#fff;border:1px solid #eee;border-radius:10px;padding:16px;max-height:400px;overflow:auto;"><h3 style="margin:0 0 12px;font-size:14px;color:#222;">Audit Log</h3><table style="width:100%;border-collapse:collapse;font-size:12px;"><tr style="border-bottom:2px solid #eee;text-align:left;"><th style="padding:6px 8px;color:#888;">Time</th><th style="padding:6px 8px;color:#888;">Action</th><th style="padding:6px 8px;color:#888;">Target</th><th style="padding:6px 8px;color:#888;">Details</th><th style="padding:6px 8px;color:#888;">By</th></tr>' +
+      logs.map(function(l) { return '<tr style="border-bottom:1px solid #f5f5f5;"><td style="padding:6px 8px;color:#999;white-space:nowrap;">' + new Date(l.created_at).toLocaleString() + '</td><td style="padding:6px 8px;color:' + (colors[l.action] || '#555') + ';font-weight:600;">' + escapeHtml(l.action.replace(/_/g, ' ')) + '</td><td style="padding:6px 8px;color:#222;">' + escapeHtml(l.target || '-') + '</td><td style="padding:6px 8px;color:#888;">' + escapeHtml(l.details || '-') + '</td><td style="padding:6px 8px;color:#888;">' + escapeHtml(l.performed_by) + '</td></tr>'; }).join('') +
+    '</table></div>';
+  }).catch(function() { s.innerHTML = '<p style="color:#e74c3c;">Failed to load</p>'; });
 }

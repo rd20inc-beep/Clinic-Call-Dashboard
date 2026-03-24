@@ -47,6 +47,14 @@ const stmtSetActive = db.prepare(
   "UPDATE users SET active = ?, updated_at = datetime('now') WHERE id = ?"
 );
 
+const stmtUpdateLastLogin = db.prepare(
+  "UPDATE users SET last_login = datetime('now'), last_seen = datetime('now') WHERE username = ?"
+);
+
+const stmtUpdateLastSeen = db.prepare(
+  "UPDATE users SET last_seen = datetime('now') WHERE username = ?"
+);
+
 const stmtCountAdmins = db.prepare(
   "SELECT COUNT(*) as count FROM users WHERE role = 'admin' AND active = 1 AND deleted_at IS NULL"
 );
@@ -110,6 +118,16 @@ module.exports = {
   /** Get all users including soft-deleted ones. */
   getAllIncludeDeleted() {
     return stmtGetAllIncludeDeleted.all();
+  },
+
+  /** Record login timestamp for a user. */
+  recordLogin(username) {
+    stmtUpdateLastLogin.run(username);
+  },
+
+  /** Update last seen timestamp for a user. */
+  updateLastSeen(username) {
+    stmtUpdateLastSeen.run(username);
   },
 
   /** Count active admin users in DB. */

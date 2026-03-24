@@ -114,6 +114,14 @@ db.exec(`
   )
 `);
 
+// User presence columns
+try { db.exec('ALTER TABLE users ADD COLUMN last_login DATETIME'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE users ADD COLUMN last_seen DATETIME'); } catch (e) { /* exists */ }
+
+// Call timing columns
+try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN call_ended_at DATETIME'); } catch (e) { /* exists */ }
+
 // --- Audit log table ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS audit_log (
