@@ -721,7 +721,7 @@
     function renderOverviewTable(stats) {
       if (!stats.length) { document.getElementById('overviewAgentTable').innerHTML = '<div class="empty">No agents</div>'; return; }
       var html = '<table><thead><tr><th>Agent</th><th style="text-align:center;">Status</th><th style="text-align:right;">Calls</th><th style="text-align:right;">Ans</th><th style="text-align:right;">Miss</th><th style="text-align:right;">Ans%</th><th style="text-align:right;">Talk Time</th><th style="text-align:right;">Avg</th><th style="text-align:right;">Appts</th><th style="text-align:right;">Active</th><th></th></tr></thead><tbody>';
-      stats.filter(function(a) { return a.status === 'active'; }).forEach(function(a) {
+      stats.filter(function(a) { return a.status !== 'disabled'; }).forEach(function(a) {
         html += '<tr>';
         html += '<td><strong>' + esc(a.full_name || a.username) + '</strong></td>';
         html += '<td style="text-align:center;">' + statusDot(a.portal_online) + statusDot(a.mobile_online) + statusDot(a.monitor_online) + '</td>';

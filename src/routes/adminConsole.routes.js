@@ -124,9 +124,9 @@ router.get('/admin/analytics/overview', async (req, res) => {
         id: dbId,
         username,
         full_name: user.displayName || username,
-        status: status === 'offline' ? 'offline' : 'active',
-        portal_online: p.online,
-        mobile_online: !!(hb && hb.alive),
+        status: status,
+        portal_online: p.portalOnline || false,
+        mobile_online: p.mobileOnline || false,
         monitor_online: !!(hb && hb.alive),
         today: todayCalls,
         answered_today: todayAnswered,
@@ -367,7 +367,7 @@ router.get('/admin/agents/:id/performance', (req, res) => {
     res.json({
       agent: {
         username: u.username, full_name: u.display_name, role: u.role,
-        portal_online: pres.online, mobile_online: !!(hb && hb.alive), monitor_online: !!(hb && hb.alive),
+        portal_online: pres.portalOnline || false, mobile_online: pres.mobileOnline || false, monitor_online: !!(hb && hb.alive),
         last_activity: pres.lastActivity, last_seen: u.last_seen,
       },
       stats: {
