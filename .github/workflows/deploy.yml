@@ -16,6 +16,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            sudo timedatectl set-timezone Asia/Karachi 2>/dev/null || true
             if [ ! -d ~/Clinic-Call-Dashboard ]; then
               git clone https://github.com/rd20inc-beep/Clinic-Call-Dashboard.git ~/Clinic-Call-Dashboard
             fi
@@ -25,4 +26,4 @@ jobs:
             git reset --hard origin/main
             npm install --omit=dev
             pm2 delete clinicea-call 2>/dev/null || true
-            pm2 start src/server.js --name clinicea-call
+            TZ=Asia/Karachi pm2 start src/server.js --name clinicea-call
