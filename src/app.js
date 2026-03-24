@@ -119,6 +119,10 @@ app.use(requireAuth, express.static(path.join(__dirname, '..', 'public')));
 app.use(setupAdminRoutes(io));
 app.use(cliniceaRoutes);
 
+// 7. Legacy admin console adapter routes (/admin/*)
+const adminConsoleRoutes = require('./routes/adminConsole.routes');
+app.use(adminConsoleRoutes);
+
 // ---------------------------------------------------------------------------
 // Start the periodic stale-heartbeat checker
 // ---------------------------------------------------------------------------
