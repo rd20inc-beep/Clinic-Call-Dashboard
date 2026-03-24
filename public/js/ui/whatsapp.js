@@ -10,15 +10,17 @@ function waFetch(url, opts) {
   opts.headers['Accept'] = 'application/json';
   if (opts.body) opts.headers['Content-Type'] = 'application/json';
   return fetch(url, opts).then(function(r) {
-    // Detect session expiry: redirect to login page or 401
-    if (r.redirected || r.status === 401) {
-      window.location.href = '/login';
-      return Promise.reject(new Error('Session expired'));
-    }
-    // Check if response is actually JSON (not an HTML error page)
     var ct = r.headers.get('content-type') || '';
+    // If response is not JSON, the session likely expired or route failed
     if (!ct.includes('application/json')) {
-      return Promise.reject(new Error('Session expired'));
+      console.error('[waFetch] Non-JSON response from', url, '- status:', r.status, 'type:', ct, 'redirected:', r.redirected);
+      if (r.status === 401 || r.redirected) {
+        window.location.href = '/login';
+      }
+      return r.text().then(function(body) {
+        console.error('[waFetch] Response body preview:', body.substring(0, 200));
+        return Promise.reject(new Error('Server returned non-JSON response (status ' + r.status + '). Check console for details.'));
+      });
     }
     return r.json();
   });
@@ -270,7 +272,7 @@ function waToggleBot() {
         alert('Error: ' + (data.error || 'Unknown error'));
       }
     })
-    .catch(function(err) { if (err.message !== 'Session expired') alert('Error: ' + err.message); });
+    .catch(function(err) { alert('Error: ' + err.message); });
 }
 
 // ===== FAILED MESSAGES =====
