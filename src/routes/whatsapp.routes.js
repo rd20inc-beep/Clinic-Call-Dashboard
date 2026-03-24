@@ -308,6 +308,21 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
+  // POST /api/whatsapp/reset-appointments - clear and re-queue appointment messages (admin)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/reset-appointments', requireAuth, (req, res) => {
+    if (req.session.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    const { db } = require('../db/index');
+    const del = db.prepare("DELETE FROM wa_messages WHERE status = 'pending' AND message_type IN ('confirmation', 'reminder')").run();
+    const r1 = db.prepare("UPDATE wa_appointment_tracking SET confirmation_sent = 0, confirmation_sent_at = NULL WHERE confirmation_sent = 1").run();
+    const r2 = db.prepare("UPDATE wa_appointment_tracking SET reminder_sent = 0, reminder_sent_at = NULL WHERE reminder_sent = 1").run();
+    logEvent('info', 'Appointment messages reset by ' + req.session.username + ': deleted ' + del.changes + ', reset ' + (r1.changes + r2.changes) + ' flags');
+    return res.json({ ok: true, deleted: del.changes, resetFlags: r1.changes + r2.changes });
+  });
+
+  // -----------------------------------------------------------------------
   // GET /api/whatsapp/connection-status - WhatsApp client connection status
   // -----------------------------------------------------------------------
   router.get('/api/whatsapp/connection-status', requireAuth, (req, res) => {
