@@ -221,6 +221,7 @@ async function loadCallHistory(page) {
           '<th>Direction</th>' +
           '<th>Caller</th>' +
           '<th>Patient</th>' +
+          '<th>Agent</th>' +
           '<th>Status</th>' +
           '<th>Duration</th>' +
           '<th>Time</th>' +
@@ -266,6 +267,7 @@ async function loadCallHistory(page) {
           '</span>' +
         '</td>' +
         '<td>' + nameDisplay + '</td>' +
+        '<td><strong style="color:#334155;font-size:12px;">' + escapeHtml(call.agent || '-') + '</strong></td>' +
         '<td><span id="status-' + call.id + '">' + stBadge + '</span></td>' +
         '<td><span id="duration-' + call.id + '">' + durDisplay + '</span></td>' +
         '<td>' + escapeHtml(time) + '</td>' +
