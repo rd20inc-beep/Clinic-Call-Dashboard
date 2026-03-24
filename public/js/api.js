@@ -768,6 +768,8 @@ async function loadCalendar() {
       if (trackInfo) {
         if (trackInfo.confirmationSent) msgBadges += '<span style="background:#2ecc71;color:white;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;">Confirmed</span>';
         if (trackInfo.reminderSent) msgBadges += '<span style="background:#3498db;color:white;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;">Reminded</span>';
+        if (trackInfo.reviewSent) msgBadges += '<span style="background:#8b5cf6;color:white;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;">Review Sent</span>';
+        if (trackInfo.aftercareSent) msgBadges += '<span style="background:#059669;color:white;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;">Aftercare Sent</span>';
       }
 
       html += '<div class="calendar-card ' + statusClass + '" data-name="' + escapeHtml(apt.patientName) + '" data-status="' + aptStatusBadge + '" data-doctor="' + escapeHtml(apt.doctor || '') + '" data-service="' + escapeHtml(apt.service || '') + '" onclick="openProfileById(\'' + escapeHtml(String(apt.patientID)) + '\', \'' + escapeHtml(apt.patientName) + '\')">';

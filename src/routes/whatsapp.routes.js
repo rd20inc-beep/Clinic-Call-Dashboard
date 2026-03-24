@@ -111,7 +111,7 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/send - manual message from dashboard (auth-protected)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/send', requireAuth, (req, res) => {
-    const { phone, message } = req.body;
+    const { phone, message, type } = req.body;
     if (!phone || !message) {
       return res.json({ error: 'phone and message required' });
     }
@@ -122,8 +122,12 @@ function setupWhatsAppRoutes(io) {
       return res.json({ error: 'WhatsApp messages can only be sent between 9 AM and 7 PM Pakistan time. Message saved for later.' });
     }
 
+    // Validate message type
+    const validTypes = ['chat', 'confirmation', 'reminder', 'review', 'aftercare'];
+    const msgType = validTypes.includes(type) ? type : 'chat';
+
     waRepo.insertMessage(
-      phone, null, 'out', message, 'chat', 'pending',
+      phone, null, 'out', message, msgType, 'pending',
       req.session.username || null
     );
     logEvent(
@@ -299,6 +303,24 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   router.get('/api/whatsapp/tracking-status', requireAuth, (req, res) => {
     const tracking = waRepo.getTrackingByPhone();
+
+    // Also get sent message types per phone from wa_messages
+    try {
+      const { db } = require('../db/index');
+      const rows = db.prepare(
+        "SELECT phone, GROUP_CONCAT(DISTINCT message_type) as types FROM wa_messages WHERE direction = 'out' AND status IN ('sent','pending','approved','sending') GROUP BY phone"
+      ).all();
+      for (const row of rows) {
+        const phone = row.phone;
+        if (!tracking[phone]) tracking[phone] = { confirmationSent: false, reminderSent: false };
+        const types = (row.types || '').split(',');
+        if (types.includes('confirmation')) tracking[phone].confirmationSent = true;
+        if (types.includes('reminder')) tracking[phone].reminderSent = true;
+        if (types.includes('review')) tracking[phone].reviewSent = true;
+        if (types.includes('aftercare')) tracking[phone].aftercareSent = true;
+      }
+    } catch (e) { /* ignore */ }
+
     return res.json({ tracking });
   });
 

@@ -168,7 +168,7 @@ function calSendReview(phone, name, service, doctor) {
 
   waShowPreview('Send Review Request', phone, name, msg).then(function(ok) {
     if (!ok) return;
-    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
+    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: 'review' }) })
       .then(function(data) { if (data.ok) alert('Review request queued for approval.'); else alert('Error: ' + (data.error || 'Unknown')); })
       .catch(function(err) { alert('Error: ' + err.message); });
   });
@@ -228,7 +228,7 @@ function calSendAftercare(phone, name, service, doctor) {
 
   waShowPreview('Send Aftercare Instructions', phone, name, msg).then(function(ok) {
     if (!ok) return;
-    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
+    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: 'aftercare' }) })
       .then(function(data) { if (data.ok) alert('Aftercare message queued for approval.'); else alert('Error: ' + (data.error || 'Unknown')); })
       .catch(function(err) { alert('Error: ' + err.message); });
   });
@@ -294,7 +294,7 @@ function calSendConfirmation(phone, name, date, time, service, doctor) {
 
   waShowPreview('Send Confirmation', phone, name, msg).then(function(ok) {
     if (!ok) return;
-    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
+    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: 'confirmation' }) })
       .then(function(data) {
         if (data.ok) alert('Confirmation queued for approval.');
         else alert('Error: ' + (data.error || 'Unknown'));
@@ -311,7 +311,7 @@ function calSendReminder(phone, name, date, time, service, doctor) {
 
   waShowPreview('Send Reminder', phone, name, msg).then(function(ok) {
     if (!ok) return;
-    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
+    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: 'reminder' }) })
       .then(function(data) {
         if (data.ok) alert('Reminder queued for approval.');
         else alert('Error: ' + (data.error || 'Unknown'));
