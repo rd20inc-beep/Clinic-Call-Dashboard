@@ -4,10 +4,23 @@ const { db } = require('./index');
 
 // --- Prepared statements ---
 
+// Ensure direction/call_status/duration columns exist
+try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* exists */ }
+try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* exists */ }
+
 const stmtInsertCall = db.prepare(`
-  INSERT INTO calls (caller_number, call_sid, clinicea_url, agent, routing_method, source_ip)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO calls (caller_number, call_sid, clinicea_url, agent, routing_method, source_ip, direction, call_status)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
+
+const stmtUpdateCallStatus = db.prepare(
+  'UPDATE calls SET call_status = ? WHERE id = ?'
+);
+
+const stmtUpdateCallDuration = db.prepare(
+  'UPDATE calls SET duration = ?, call_status = ? WHERE id = ?'
+);
 
 const stmtUpdatePatientName = db.prepare(
   'UPDATE calls SET patient_name = ? WHERE id = ?'
@@ -38,16 +51,32 @@ module.exports = {
    * Insert a new call record.
    * @returns {{ callId: number }}
    */
-  insertCall(callerNumber, callSid, cliniceaUrl, agent, routingMethod, sourceIp) {
+  insertCall(callerNumber, callSid, cliniceaUrl, agent, routingMethod, sourceIp, direction, callStatus) {
     const result = stmtInsertCall.run(
       callerNumber,
       callSid || null,
       cliniceaUrl || null,
       agent || null,
       routingMethod || null,
-      sourceIp || null
+      sourceIp || null,
+      direction || 'inbound',
+      callStatus || 'unknown'
     );
     return { callId: result.lastInsertRowid };
+  },
+
+  /**
+   * Update call status.
+   */
+  updateCallStatus(callId, status) {
+    stmtUpdateCallStatus.run(status, callId);
+  },
+
+  /**
+   * Update call duration and mark as answered.
+   */
+  updateCallDuration(callId, duration) {
+    stmtUpdateCallDuration.run(duration, 'answered', callId);
   },
 
   /**

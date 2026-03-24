@@ -102,11 +102,6 @@ module.exports = function setupAdminRoutes(io) {
       const isAdmin = req.session.role === 'admin';
       const agent = req.session.username;
 
-      // Ensure columns exist (VPS DB may not have them yet)
-      try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* exists */ }
-      try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* exists */ }
-      try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* exists */ }
-
       function q(sql, ...params) {
         return db.prepare(sql).get(...params);
       }
@@ -171,23 +166,51 @@ module.exports = function setupAdminRoutes(io) {
     const agents = [];
     for (const [username, user] of Object.entries(users)) {
       const hb = heartbeats[username];
-      let todayCalls = 0;
-      let totalCalls = 0;
+      let todayCalls = 0, totalCalls = 0, answeredCalls = 0, missedCalls = 0, weekCalls = 0, avgDuration = 0;
       try {
         todayCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now')").get(username).c;
         totalCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ?").get(username).c;
+        answeredCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered'").get(username).c;
+        missedCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'missed'").get(username).c;
+        weekCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days')").get(username).c;
+        avgDuration = db.prepare("SELECT AVG(duration) as a FROM calls WHERE agent = ? AND duration IS NOT NULL").get(username).a || 0;
       } catch (e) { /* ignore */ }
+
+      // Determine status: active (heartbeat <30s), idle (<5min), offline
+      let status = 'offline';
+      if (onlineAgents[username]) {
+        if (hb && hb.alive) {
+          const secAgo = (Date.now() - hb.lastHeartbeat) / 1000;
+          status = secAgo < 30 ? 'active' : 'idle';
+        } else {
+          status = 'idle';
+        }
+      }
 
       agents.push({
         username,
         role: user.role,
+        status,
         online: !!onlineAgents[username],
         monitorAlive: hb ? hb.alive : false,
         lastHeartbeat: hb ? hb.lastHeartbeat : null,
         todayCalls,
+        weekCalls,
         totalCalls,
+        answeredCalls,
+        missedCalls,
+        answerRate: totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0,
+        avgDuration: Math.round(avgDuration),
       });
     }
+
+    // Sort: agents first (by status: active > idle > offline), admin last
+    agents.sort(function(a, b) {
+      if (a.role === 'admin' && b.role !== 'admin') return 1;
+      if (a.role !== 'admin' && b.role === 'admin') return -1;
+      var order = { active: 0, idle: 1, offline: 2 };
+      return (order[a.status] || 2) - (order[b.status] || 2);
+    });
 
     res.json({ agents });
   });
