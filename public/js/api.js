@@ -17,6 +17,17 @@ function formatCallDuration(seconds) {
   return m + ':' + String(s).padStart(2, '0');
 }
 
+// ===== ALERT DISMISS =====
+function dismissAlert(btn, text) {
+  var dismissed = JSON.parse(sessionStorage.getItem('dismissedAlerts') || '[]');
+  if (dismissed.indexOf(text) === -1) dismissed.push(text);
+  sessionStorage.setItem('dismissedAlerts', JSON.stringify(dismissed));
+  var alertDiv = btn.parentNode;
+  alertDiv.style.transition = 'opacity 0.3s';
+  alertDiv.style.opacity = '0';
+  setTimeout(function() { alertDiv.remove(); }, 300);
+}
+
 // ===== SAFE FETCH HELPER (for non-waFetch callers) =====
 async function safeFetch(url, opts) {
   var res = await fetch(url, opts);
@@ -85,14 +96,23 @@ async function loadCallStats() {
       // Alerts
       var alertsEl = document.getElementById('dashAlerts');
       if (alertsEl && data.alerts && data.alerts.length > 0) {
-        alertsEl.innerHTML = data.alerts.map(function(a) {
-          var bg = a.type === 'error' ? 'rgba(231,76,60,0.12)' : 'rgba(243,156,18,0.12)';
-          var border = a.type === 'error' ? 'rgba(231,76,60,0.3)' : 'rgba(243,156,18,0.3)';
-          var color = a.type === 'error' ? '#e74c3c' : '#f39c12';
-          return '<div style="padding:10px 14px;background:' + bg + ';border:1px solid ' + border + ';border-radius:8px;margin-bottom:6px;font-size:13px;color:' + color + ';font-weight:600;">' +
-            '\u26A0 ' + escapeHtml(a.text) +
-          '</div>';
-        }).join('');
+        // Filter out dismissed alerts
+        var dismissed = JSON.parse(sessionStorage.getItem('dismissedAlerts') || '[]');
+        var visible = data.alerts.filter(function(a) { return dismissed.indexOf(a.text) === -1; });
+        if (visible.length > 0) {
+          alertsEl.innerHTML = visible.map(function(a) {
+            var bg = a.type === 'error' ? 'rgba(231,76,60,0.12)' : 'rgba(243,156,18,0.12)';
+            var border = a.type === 'error' ? 'rgba(231,76,60,0.3)' : 'rgba(243,156,18,0.3)';
+            var color = a.type === 'error' ? '#e74c3c' : '#f39c12';
+            var filterParam = a.text.indexOf('missed') !== -1 ? 'status=missed' : '';
+            return '<div style="padding:10px 14px;background:' + bg + ';border:1px solid ' + border + ';border-radius:8px;margin-bottom:6px;font-size:13px;color:' + color + ';font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:10px;">' +
+              '<span style="cursor:' + (filterParam ? 'pointer' : 'default') + ';" ' + (filterParam ? 'onclick="applyCallFilter(\'' + filterParam + '\')"' : '') + '>\u26A0 ' + escapeHtml(a.text) + '</span>' +
+              '<button onclick="dismissAlert(this,\'' + escapeHtml(a.text).replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:' + color + ';font-size:18px;cursor:pointer;padding:0 4px;opacity:0.6;" title="Dismiss">&times;</button>' +
+            '</div>';
+          }).join('');
+        } else {
+          alertsEl.innerHTML = '';
+        }
       } else if (alertsEl) {
         alertsEl.innerHTML = '';
       }
