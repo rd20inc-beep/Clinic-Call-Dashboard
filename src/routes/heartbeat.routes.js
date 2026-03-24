@@ -56,10 +56,13 @@ router.post(
       }
     } else {
       if (wasDown) {
+        // Unidentified monitor — log with body details for debugging
+        const bodyAgent = (req.body && req.body.Agent) || '';
+        const hasToken = !!req.headers['x-monitor-token'];
         logEvent(
           'warn',
-          'Call monitor connected (no valid agent)',
-          'IP: ' + ip + ' | Method: ' + method
+          'Unidentified heartbeat (no agent resolved)',
+          'IP: ' + ip + ' | Method: ' + method + ' | Agent field: ' + (bodyAgent || 'empty') + ' | Token: ' + (hasToken ? 'yes' : 'no')
         );
       }
     }
