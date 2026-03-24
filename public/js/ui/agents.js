@@ -1,5 +1,9 @@
 // ===== AGENT MANAGEMENT UI =====
 
+var agentData = [];
+var agentSortBy = 'status';
+var agentFilterStatus = 'all';
+
 function loadAgents() {
   var container = document.getElementById('agentCards');
   container.innerHTML = '<div class="empty-state"><div class="modal-loading"><div class="spinner"></div><p>Loading agents...</p></div></div>';
@@ -12,34 +16,103 @@ function loadAgents() {
         return;
       }
 
-      // Summary bar
-      var active = 0, idle = 0, offline = 0, totalAgents = 0;
-      data.agents.forEach(function(a) {
-        if (a.role === 'admin') return;
-        totalAgents++;
-        if (a.status === 'active') active++;
-        else if (a.status === 'idle') idle++;
-        else offline++;
-      });
-      document.getElementById('agentSummary').innerHTML =
-        agentSummaryCard('Total Agents', totalAgents, '#222') +
-        agentSummaryCard('Active', active, '#2ecc71') +
-        agentSummaryCard('Idle', idle, '#f39c12') +
-        agentSummaryCard('Offline', offline, '#e74c3c');
-
-      // Agent cards
-      container.innerHTML = data.agents.map(function(a) { return renderAgentCard(a); }).join('');
+      agentData = data.agents;
+      renderAgentSummary();
+      renderAgentCards();
     })
     .catch(function() {
       container.innerHTML = '<div class="empty-state"><p>Failed to load agents</p></div>';
     });
 }
 
-function agentSummaryCard(label, value, color) {
-  return '<div style="flex:1;min-width:90px;text-align:center;padding:10px;background:#fff;border-radius:8px;border:1px solid #eee;">' +
+function renderAgentSummary() {
+  var active = 0, idle = 0, offline = 0, totalAgents = 0;
+  agentData.forEach(function(a) {
+    if (a.role === 'admin') return;
+    totalAgents++;
+    if (a.status === 'active') active++;
+    else if (a.status === 'idle') idle++;
+    else offline++;
+  });
+  document.getElementById('agentSummary').innerHTML =
+    agentSummaryCard('Total', totalAgents, '#222', "agentFilterBy('all')") +
+    agentSummaryCard('Active', active, '#2ecc71', "agentFilterBy('active')") +
+    agentSummaryCard('Idle', idle, '#f39c12', "agentFilterBy('idle')") +
+    agentSummaryCard('Offline', offline, '#e74c3c', "agentFilterBy('offline')");
+}
+
+function agentSummaryCard(label, value, color, onclick) {
+  var selected = (agentFilterStatus === label.toLowerCase() || (label === 'Total' && agentFilterStatus === 'all'));
+  var border = selected ? '2px solid ' + color : '1px solid #eee';
+  return '<div onclick="' + onclick + '" style="flex:1;min-width:90px;text-align:center;padding:10px;background:#fff;border-radius:8px;border:' + border + ';cursor:pointer;">' +
     '<div style="font-weight:700;font-size:20px;color:' + color + ';">' + value + '</div>' +
     '<div style="font-size:11px;color:#999;">' + label + '</div>' +
   '</div>';
+}
+
+function agentFilterBy(status) {
+  agentFilterStatus = status;
+  renderAgentSummary();
+  renderAgentCards();
+}
+
+function agentSortByField(field) {
+  agentSortBy = field;
+  renderAgentCards();
+}
+
+function renderAgentCards() {
+  var container = document.getElementById('agentCards');
+
+  // Filter
+  var filtered = agentData.filter(function(a) {
+    if (agentFilterStatus === 'all') return true;
+    return a.status === agentFilterStatus;
+  });
+
+  // Sort
+  filtered.sort(function(a, b) {
+    // Admin always last
+    if (a.role === 'admin' && b.role !== 'admin') return 1;
+    if (a.role !== 'admin' && b.role === 'admin') return -1;
+
+    switch (agentSortBy) {
+      case 'calls': return b.todayCalls - a.todayCalls;
+      case 'talktime': return b.todayTalkTime - a.todayTalkTime;
+      case 'rate': return b.answerRate - a.answerRate;
+      case 'score': return b.score - a.score;
+      case 'lastseen': return (b.lastActivity || 0) - (a.lastActivity || 0);
+      default: // status
+        var order = { active: 0, idle: 1, offline: 2 };
+        return (order[a.status] || 2) - (order[b.status] || 2);
+    }
+  });
+
+  // Sort controls
+  var sortHtml = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap;">' +
+    '<span style="font-size:12px;color:#888;">Sort by:</span>' +
+    sortBtn('Status', 'status') +
+    sortBtn('Calls', 'calls') +
+    sortBtn('Talk Time', 'talktime') +
+    sortBtn('Answer Rate', 'rate') +
+    sortBtn('Score', 'score') +
+    sortBtn('Last Seen', 'lastseen') +
+  '</div>';
+
+  if (filtered.length === 0) {
+    container.innerHTML = sortHtml + '<div class="empty-state"><p>No agents match this filter</p></div>';
+    return;
+  }
+
+  container.innerHTML = sortHtml + filtered.map(function(a) { return renderAgentCard(a); }).join('');
+}
+
+function sortBtn(label, field) {
+  var active = agentSortBy === field;
+  var bg = active ? '#1a1a2e' : '#fff';
+  var color = active ? '#fff' : '#555';
+  var border = active ? 'none' : '1px solid #ddd';
+  return '<button onclick="agentSortByField(\'' + field + '\')" style="padding:3px 10px;border:' + border + ';border-radius:4px;background:' + bg + ';color:' + color + ';font-size:11px;font-weight:600;cursor:pointer;">' + label + '</button>';
 }
 
 function agentStatCell(label, value, color) {
@@ -57,8 +130,7 @@ function renderAgentCard(a) {
     ? '<span style="background:#7b1fa2;color:white;font-size:10px;padding:2px 8px;border-radius:4px;">ADMIN</span>'
     : '<span style="background:#1565c0;color:white;font-size:10px;padding:2px 8px;border-radius:4px;">AGENT</span>';
 
-  var inactiveBadge = '';
-  if (!a.active) inactiveBadge = ' <span style="background:#e74c3c;color:white;font-size:9px;padding:1px 6px;border-radius:3px;">INACTIVE</span>';
+  var inactiveBadge = !a.active ? ' <span style="background:#e74c3c;color:white;font-size:9px;padding:1px 6px;border-radius:3px;">INACTIVE</span>' : '';
 
   var monitorBadge = '';
   if (a.role !== 'admin') {
@@ -72,10 +144,13 @@ function renderAgentCard(a) {
   var avgDur = a.avgDuration > 0 ? formatCallDuration(a.avgDuration) : '--';
   var displayName = a.displayName && a.displayName !== a.username ? ' (' + escapeHtml(a.displayName) + ')' : '';
   var isDbAgent = a.source === 'db';
+  var lastCall = a.lastCallAt ? agentLastSeen(new Date(a.lastCallAt).getTime()) : 'Never';
 
-  // Action buttons
-  var actions = '<button onclick="agentChangePassword(\'' + a.username + '\')" style="padding:3px 8px;border:1px solid #ddd;border-radius:4px;background:#fff;color:#555;font-size:11px;cursor:pointer;">Reset Password</button>';
+  // Score badge
+  var scoreColor = a.score >= 20 ? '#2ecc71' : a.score >= 5 ? '#f39c12' : '#e74c3c';
 
+  // Actions
+  var actions = '<button onclick="agentChangePassword(\'' + a.username + '\')" style="padding:3px 8px;border:1px solid #ddd;border-radius:4px;background:#fff;color:#555;font-size:11px;cursor:pointer;">Reset PW</button>';
   if (isDbAgent) {
     if (a.active) {
       actions += ' <button onclick="agentToggleActive(\'' + a.username + '\',false)" style="padding:3px 8px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:11px;cursor:pointer;">Deactivate</button>';
@@ -86,28 +161,39 @@ function renderAgentCard(a) {
   }
 
   return '<div style="background:#fff;border-radius:10px;border:1px solid #eee;box-shadow:0 1px 4px rgba(0,0,0,0.06);overflow:hidden;' + (!a.active ? 'opacity:0.6;' : '') + '">' +
-    '<div style="padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #f0f0f0;">' +
-      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+    // Header
+    '<div style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #f0f0f0;">' +
+      '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
         '<span style="width:10px;height:10px;border-radius:50%;background:' + statusColor + ';display:inline-block;flex-shrink:0;"></span>' +
         '<span style="font-weight:700;font-size:15px;color:#222;">' + escapeHtml(a.username) + '</span>' +
         '<span style="font-size:12px;color:#888;">' + displayName + '</span>' +
         roleBadge + inactiveBadge + monitorBadge +
       '</div>' +
-      '<span style="font-size:12px;color:' + statusColor + ';font-weight:600;">' + statusLabel + '</span>' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="font-size:12px;font-weight:700;color:' + scoreColor + ';" title="Performance score">' + a.score + ' pts</span>' +
+        '<span style="font-size:12px;color:' + statusColor + ';font-weight:600;">' + statusLabel + '</span>' +
+      '</div>' +
     '</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#f0f0f0;">' +
+    // Stats row 1: Call counts
+    '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:#f0f0f0;">' +
       agentStatCell('Today', a.todayCalls) +
       agentStatCell('Week', a.weekCalls) +
       agentStatCell('Total', a.totalCalls) +
-      agentStatCell('Rate', a.answerRate + '%', rateColor) +
-    '</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#f0f0f0;">' +
       agentStatCell('Answered', a.answeredCalls, '#2ecc71') +
       agentStatCell('Missed', a.missedCalls, '#e74c3c') +
+    '</div>' +
+    // Stats row 2: Performance
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#f0f0f0;">' +
+      agentStatCell('Rate', a.answerRate + '%', rateColor) +
+      agentStatCell('Today Talk', formatCallDuration(a.todayTalkTime)) +
+      agentStatCell('Week Talk', formatCallDuration(a.weekTalkTime)) +
       agentStatCell('Avg Time', avgDur) +
     '</div>' +
-    '<div style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #f0f0f0;flex-wrap:wrap;gap:6px;">' +
-      '<span style="font-size:11px;color:#999;">Last seen: ' + lastSeen + '</span>' +
+    // Footer
+    '<div style="padding:8px 16px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #f0f0f0;flex-wrap:wrap;gap:4px;">' +
+      '<div style="font-size:11px;color:#999;">' +
+        'Last seen: ' + lastSeen + ' &middot; Last call: ' + lastCall +
+      '</div>' +
       '<div style="display:flex;gap:4px;flex-wrap:wrap;">' + actions + '</div>' +
     '</div>' +
   '</div>';

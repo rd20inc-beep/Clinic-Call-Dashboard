@@ -195,15 +195,27 @@ module.exports = function setupAdminRoutes(io) {
     const agents = [];
     for (const [username, user] of Object.entries(users)) {
       const hb = heartbeats[username];
-      let todayCalls = 0, totalCalls = 0, answeredCalls = 0, missedCalls = 0, weekCalls = 0, avgDuration = 0;
+      let todayCalls = 0, totalCalls = 0, answeredCalls = 0, missedCalls = 0;
+      let weekCalls = 0, weekAnswered = 0;
+      let avgDuration = 0, todayTalkTime = 0, weekTalkTime = 0, totalTalkTime = 0;
+      let lastCallAt = null;
       try {
         todayCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now')").get(username).c;
         totalCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ?").get(username).c;
         answeredCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered'").get(username).c;
         missedCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'missed'").get(username).c;
         weekCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days')").get(username).c;
+        weekAnswered = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered' AND timestamp >= datetime('now', '-7 days')").get(username).c;
         avgDuration = db.prepare("SELECT AVG(duration) as a FROM calls WHERE agent = ? AND duration IS NOT NULL").get(username).a || 0;
+        todayTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL").get(username).s;
+        weekTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days') AND duration IS NOT NULL").get(username).s;
+        totalTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND duration IS NOT NULL").get(username).s;
+        const lastRow = db.prepare("SELECT timestamp FROM calls WHERE agent = ? ORDER BY timestamp DESC LIMIT 1").get(username);
+        lastCallAt = lastRow ? lastRow.timestamp : null;
       } catch (e) { /* ignore */ }
+
+      // Performance score: answered +2, missed -3, talk time bonus
+      const score = Math.max(0, (answeredCalls * 2) - (missedCalls * 3) + Math.floor(totalTalkTime / 300));
 
       // Determine status using presence + heartbeat
       const pres = presence[username] || { online: false, lastActivity: null };
@@ -235,11 +247,17 @@ module.exports = function setupAdminRoutes(io) {
         lastActivity: pres.lastActivity || (hb ? hb.lastHeartbeat : null),
         todayCalls,
         weekCalls,
+        weekAnswered,
         totalCalls,
         answeredCalls,
         missedCalls,
         answerRate: totalCalls > 0 ? Math.round((answeredCalls / totalCalls) * 100) : 0,
         avgDuration: Math.round(avgDuration),
+        todayTalkTime,
+        weekTalkTime,
+        totalTalkTime,
+        lastCallAt,
+        score,
       });
     }
 
