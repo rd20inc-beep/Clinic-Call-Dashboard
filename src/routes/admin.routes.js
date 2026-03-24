@@ -9,6 +9,7 @@ const { getUsers } = require('../config/env');
 const { getAllHeartbeats } = require('../services/agentRegistry.service');
 const { getAllPresence, getPresence } = require('../sockets/index');
 const usersRepo = require('../db/users.repo');
+const callsRepo = require('../db/calls.repo');
 const auditRepo = require('../db/audit.repo');
 const bcrypt = require('bcryptjs');
 
@@ -502,6 +503,79 @@ module.exports = function setupAdminRoutes(io) {
     const target = decodeURIComponent(req.params.target);
     const logs = auditRepo.getByTarget(target, 20);
     res.json({ logs });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/agents/performance - per-agent performance analytics (admin only)
+  //   ?period=today|week|all (default: today)
+  //   ?agent=username (optional, for single agent)
+  //   ?from=YYYY-MM-DD&to=YYYY-MM-DD (custom range, requires agent)
+  // -------------------------------------------------------------------------
+  router.get('/api/agents/performance', requireAuth, requireAdmin, (req, res) => {
+    try {
+      // Auto-finalize stale unknown calls before computing metrics
+      const finalized = callsRepo.finalizeStale();
+      if (finalized > 0) logEvent('info', 'Auto-finalized ' + finalized + ' stale calls as missed');
+
+      const period = req.query.period || 'today';
+      const agentFilter = req.query.agent;
+
+      // Custom date range for single agent
+      if (agentFilter && req.query.from && req.query.to) {
+        const perf = callsRepo.getAgentPerformanceRange(agentFilter, req.query.from, req.query.to + ' 23:59:59');
+        const hourly = callsRepo.getAgentHourlyToday(agentFilter);
+        return res.json({
+          period: 'custom',
+          from: req.query.from,
+          to: req.query.to,
+          agent: agentFilter,
+          performance: perf || { total_calls: 0, answered_calls: 0, missed_calls: 0, total_talk_time: 0, avg_duration: 0, longest_call: 0, last_call_at: null },
+          hourly,
+        });
+      }
+
+      // Period-based aggregation for all agents
+      let rows;
+      if (period === 'week') rows = callsRepo.getPerformanceWeek();
+      else if (period === 'all') rows = callsRepo.getPerformanceAll();
+      else rows = callsRepo.getPerformanceToday();
+
+      // If filtering for single agent, return just their row
+      if (agentFilter) {
+        const row = rows.find(r => r.agent === agentFilter);
+        const hourly = callsRepo.getAgentHourlyToday(agentFilter);
+        return res.json({
+          period,
+          agent: agentFilter,
+          performance: row || { agent: agentFilter, total_calls: 0, answered_calls: 0, missed_calls: 0, total_talk_time: 0, avg_duration: 0, longest_call: 0, last_call_at: null },
+          hourly,
+        });
+      }
+
+      // All agents — also compute totals
+      let totalCalls = 0, totalAnswered = 0, totalMissed = 0, totalTalkTime = 0;
+      rows.forEach(r => {
+        totalCalls += r.total_calls;
+        totalAnswered += r.answered_calls;
+        totalMissed += r.missed_calls;
+        totalTalkTime += r.total_talk_time;
+      });
+
+      return res.json({
+        period,
+        agents: rows,
+        totals: {
+          total_calls: totalCalls,
+          answered_calls: totalAnswered,
+          missed_calls: totalMissed,
+          total_talk_time: totalTalkTime,
+          avg_duration: totalCalls > 0 ? Math.round(totalTalkTime / totalAnswered) || 0 : 0,
+          answer_rate: totalCalls > 0 ? Math.round((totalAnswered / totalCalls) * 100) : 0,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // -------------------------------------------------------------------------
