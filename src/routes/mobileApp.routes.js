@@ -191,7 +191,12 @@ router.post('/api/incoming-call', (req, res) => {
       source || 'phone'
     );
 
-    // Save caller as patient
+    // Save contact name as patient name on the call record
+    if (caller_name) {
+      callsRepo.updatePatientName(callId, caller_name);
+    }
+
+    // Save caller as patient in local DB
     try {
       const patientsRepo = require('../db/patients.repo');
       patientsRepo.upsertFromCall(caller_name, caller, null);
@@ -210,6 +215,7 @@ router.post('/api/incoming-call', (req, res) => {
       agent,
       direction,
       source: source || 'phone',
+      patientName: caller_name || null,
       timestamp: timestamp || new Date().toISOString(),
     });
 
@@ -254,6 +260,8 @@ router.post('/api/incoming-call', (req, res) => {
         if (call_type && ((call_type === 'outgoing' && recent.direction !== 'outbound') || (call_type === 'incoming' && recent.direction !== 'inbound'))) {
           db.prepare('UPDATE calls SET direction = ? WHERE id = ?').run(direction, recent.id);
         }
+        // Update patient name from contact if available
+        if (caller_name) callsRepo.updatePatientName(recent.id, caller_name);
         logEvent('info', 'Mobile call ended: ' + caller + ' (' + agent + ') — ' + finalStatus + ' ' + direction + ', ' + dur + 's');
       } else {
         // No matching ringing event — create new record (outgoing calls don't send ringing)
@@ -263,6 +271,7 @@ router.post('/api/incoming-call', (req, res) => {
           sourceIp, direction, finalStatus, source || 'phone'
         );
         if (dur > 0) callsRepo.updateCallDuration(callId, dur);
+        if (caller_name) callsRepo.updatePatientName(callId, caller_name);
         logEvent('info', 'Mobile call (new): ' + caller + ' (' + agent + ') — ' + finalStatus + ' ' + direction + ', ' + dur + 's');
 
         // Route to dashboard for outgoing calls too
