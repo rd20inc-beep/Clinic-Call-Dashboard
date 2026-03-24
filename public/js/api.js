@@ -109,6 +109,13 @@ function sendQuickMessage(agent) {
     .catch(function(err) { alert('Error: ' + err.message); });
 }
 
+// ===== TOGGLE CALL DIRECTION =====
+function toggleCallDirection(callId, newDirection) {
+  fetch('/api/calls/' + callId + '/direction', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ direction: newDirection }) })
+    .then(function() { loadCallHistory(); })
+    .catch(function() {});
+}
+
 // ===== CALL DISPOSITION =====
 function setCallDisposition(callId, disposition) {
   if (!disposition) return;
@@ -390,11 +397,11 @@ async function loadCallHistory(page) {
         ? '<span class="meeting-badge upcoming" id="name-' + call.id + '">' + escapeHtml(call.patient_name) + '</span>'
         : '<span class="meeting-badge loading" id="name-' + call.id + '">--</span>';
 
-      // Direction badge
+      // Direction badge (clickable to toggle)
       var dir = call.direction || 'inbound';
       var dirBadge = dir === 'outbound'
-        ? '<span class="call-dir outbound">&#8599; Out</span>'
-        : '<span class="call-dir inbound">&#8601; In</span>';
+        ? '<span class="call-dir outbound" style="cursor:pointer;" onclick="toggleCallDirection(' + call.id + ',\'inbound\')" title="Click to change to Inbound">&#8599; Out</span>'
+        : '<span class="call-dir inbound" style="cursor:pointer;" onclick="toggleCallDirection(' + call.id + ',\'outbound\')" title="Click to change to Outbound">&#8601; In</span>';
 
       // Status badge
       var st = call.call_status || 'unknown';

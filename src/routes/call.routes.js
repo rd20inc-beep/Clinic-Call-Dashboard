@@ -293,6 +293,19 @@ router.get('/api/calls', requireAuth, apiLimiter, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/calls/:id/direction — fix call direction (admin)
+// ---------------------------------------------------------------------------
+router.post('/api/calls/:id/direction', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { direction } = req.body;
+  if (!id || !direction) return res.json({ error: 'id and direction required' });
+  if (direction !== 'inbound' && direction !== 'outbound') return res.json({ error: 'Invalid direction' });
+  const { db } = require('../db/index');
+  db.prepare('UPDATE calls SET direction = ? WHERE id = ?').run(direction, id);
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/calls/:id/disposition — set call outcome
 // ---------------------------------------------------------------------------
 router.post('/api/calls/:id/disposition', requireAuth, (req, res) => {
