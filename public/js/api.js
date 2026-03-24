@@ -387,8 +387,9 @@ async function loadCalendar() {
       html += '<span class="apt-status ' + aptStatusBadge + '">' + escapeHtml(apt.status) + '</span>';
       var aptPhone = escapeHtml(apt.phone || apt.patientPhone || apt.mobile || '');
       if (aptPhone && aptStatusBadge !== 'cancelled') {
-        html += '<div style="display:flex;gap:4px;margin-top:6px;">';
-        html += '<button onclick="event.stopPropagation();calSendReminder(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\',\'' + escapeHtml(date) + '\',\'' + escapeHtml(timeStr) + '\',\'' + escapeHtml(apt.service || '') + '\',\'' + escapeHtml(apt.doctor || '') + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:11px;font-weight:600;cursor:pointer;">Send Reminder</button>';
+        html += '<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;">';
+        html += '<button onclick="event.stopPropagation();calSendConfirmation(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\',\'' + escapeHtml(date) + '\',\'' + escapeHtml(timeStr) + '\',\'' + escapeHtml(apt.service || '') + '\',\'' + escapeHtml(apt.doctor || '') + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:11px;font-weight:600;cursor:pointer;">Confirm</button>';
+        html += '<button onclick="event.stopPropagation();calSendReminder(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\',\'' + escapeHtml(date) + '\',\'' + escapeHtml(timeStr) + '\',\'' + escapeHtml(apt.service || '') + '\',\'' + escapeHtml(apt.doctor || '') + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:11px;font-weight:600;cursor:pointer;">Remind</button>';
         html += '<button onclick="event.stopPropagation();calSendMessage(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#3498db;color:white;font-size:11px;font-weight:600;cursor:pointer;">Message</button>';
         html += '</div>';
       }

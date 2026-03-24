@@ -156,6 +156,28 @@ function waApproveAllMessages() {
 
 // ===== CALENDAR SEND ACTIONS =====
 
+function calSendConfirmation(phone, name, date, time, service, doctor) {
+  var dateObj = new Date(date + 'T00:00:00');
+  var dateStr = dateObj.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  var msg = 'Assalam o Alaikum ' + name + '! Your appointment at Dr. Nakhoda\'s Skin Institute has been scheduled.\n\n';
+  msg += 'Date: ' + dateStr + '\n';
+  msg += 'Time: ' + time + '\n';
+  if (service) msg += 'Treatment: ' + service + '\n';
+  if (doctor) msg += 'Doctor: ' + doctor + '\n';
+  msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9\n';
+  msg += '\nPlease reply "CONFIRM" to confirm or call +92-300-2105374 to reschedule. We look forward to seeing you!';
+
+  if (!confirm('Send confirmation to ' + name + ' (' + phone + ')?\n\n' + msg)) return;
+
+  waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
+    .then(function(data) {
+      if (data.ok) alert('Confirmation queued for approval.');
+      else alert('Error: ' + (data.error || 'Unknown'));
+    })
+    .catch(function(err) { alert('Error: ' + err.message); });
+}
+
 function calSendReminder(phone, name, date, time, service, doctor) {
   var dateObj = new Date(date + 'T00:00:00');
   var dateStr = dateObj.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
