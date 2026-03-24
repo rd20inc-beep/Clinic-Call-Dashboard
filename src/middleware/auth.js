@@ -4,7 +4,12 @@ const bcrypt = require('bcryptjs');
 // requireAuth - checks session.loggedIn, redirects to /login or returns 401 for JSON
 function requireAuth(req, res, next) {
   if (req.session && req.session.loggedIn) return next();
-  if (req.headers.accept && req.headers.accept.includes('application/json')) {
+  // Return JSON 401 for API calls (detected by Accept header, Content-Type, or /api/ path)
+  if (
+    (req.headers.accept && req.headers.accept.includes('application/json')) ||
+    (req.headers['content-type'] && req.headers['content-type'].includes('application/json')) ||
+    req.path.startsWith('/api/')
+  ) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   return res.redirect('/login');
