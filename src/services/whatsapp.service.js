@@ -350,6 +350,41 @@ async function getGPTReply(phone, incomingText, chatName) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Parse a date string as local time (no timezone shift).
+ * Clinicea returns dates already in Pakistan local time (e.g. "2026-03-25T10:30:00").
+ * new Date() would treat this as UTC — we need to keep it as-is.
+ */
+function parseLocalDate(str) {
+  if (!str) return new Date();
+  // If the string has no timezone indicator, parse components directly
+  const m = String(str).match(/(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) {
+    return new Date(
+      parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]),
+      parseInt(m[4] || 0), parseInt(m[5] || 0), parseInt(m[6] || 0)
+    );
+  }
+  return new Date(str);
+}
+
+/** Format date as "Monday, 25 March 2026" */
+function formatDatePK(d) {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+/** Format time as "10:30 AM" */
+function formatTimePK(d) {
+  let h = d.getHours();
+  const min = String(d.getMinutes()).padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  if (h === 0) h = 12;
+  else if (h > 12) h -= 12;
+  return String(h).padStart(2, '0') + ':' + min + ' ' + ampm;
+}
+
+/**
  * Fetch appointments for the next 7 days from Clinicea, upsert tracking
  * records, and queue confirmation + reminder messages for unsent items.
  *
@@ -414,20 +449,11 @@ async function syncAppointmentsAndScheduleMessages() {
     // --- Send Confirmation Messages ---
     const unsent = waRepo.getUnsentConfirmations();
     for (const apt of unsent) {
-      const aptDate = new Date(apt.appointment_date);
-      const dateStr = aptDate.toLocaleDateString('en-PK', {
-        weekday: 'long',
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        timeZone: 'Asia/Karachi',
-      });
-      const timeStr = aptDate.toLocaleTimeString('en-PK', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: 'Asia/Karachi',
-      });
+      // Clinicea returns times already in Pakistan local time — parse without timezone shift
+      const rawDate = apt.appointment_date;
+      const aptDate = parseLocalDate(rawDate);
+      const dateStr = formatDatePK(aptDate);
+      const timeStr = formatTimePK(aptDate);
 
       let msg = `Assalam o Alaikum ${apt.patient_name}! Your appointment at Dr. Nakhoda's Skin Institute has been scheduled.\n\n`;
       msg += `Date: ${dateStr}\n`;
@@ -447,23 +473,15 @@ async function syncAppointmentsAndScheduleMessages() {
     const reminderCandidates = waRepo.getUnsentReminders();
 
     for (const apt of reminderCandidates) {
-      const aptDateStr = apt.appointment_date.split('T')[0];
-      const aptDate = new Date(aptDateStr);
-      const daysUntil = Math.ceil((aptDate - today) / (24 * 60 * 60 * 1000));
+      const aptParsed = parseLocalDate(apt.appointment_date);
+      const aptDateOnly = new Date(aptParsed.getFullYear(), aptParsed.getMonth(), aptParsed.getDate());
+      const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const daysUntil = Math.round((aptDateOnly - todayOnly) / (24 * 60 * 60 * 1000));
 
       if (daysUntil <= 2 && daysUntil >= 0) {
-        const dateDisplay = aptDate.toLocaleDateString('en-PK', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-          timeZone: 'Asia/Karachi',
-        });
-        const timeStr = new Date(apt.appointment_date).toLocaleTimeString('en-PK', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-          timeZone: 'Asia/Karachi',
-        });
+        const reminderDate = parseLocalDate(apt.appointment_date);
+        const dateDisplay = formatDatePK(reminderDate);
+        const timeStr = formatTimePK(reminderDate);
 
         let dayWord = 'soon';
         if (daysUntil === 0) dayWord = 'today';
