@@ -135,6 +135,12 @@ function setupWhatsAppRoutes(io) {
       return res.json({ error: 'phone and message required' });
     }
 
+    // Business hours check (9 AM - 7 PM PKT)
+    const pkHour = (new Date().getUTCHours() + 5) % 24;
+    if (pkHour < 9 || pkHour >= 19) {
+      return res.json({ error: 'WhatsApp messages can only be sent between 9 AM and 7 PM Pakistan time. Message saved for later.' });
+    }
+
     waRepo.insertMessage(
       phone, null, 'out', message, 'chat', 'pending',
       req.session.username || null

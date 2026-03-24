@@ -396,6 +396,12 @@ async function syncAppointmentsAndScheduleMessages() {
     logEvent('info', 'Appointment sync skipped — WA bot globally disabled');
     return;
   }
+  // Business hours check (9 AM - 7 PM PKT)
+  const pkHour = (new Date().getUTCHours() + 5) % 24;
+  if (pkHour < 9 || pkHour >= 19) {
+    logEvent('info', 'Appointment sync skipped — outside business hours (9 AM - 7 PM PKT)');
+    return;
+  }
 
   try {
     // Fetch appointments for the next 7 days
