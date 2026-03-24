@@ -6,6 +6,7 @@ const { config } = require('../config/env');
 const { logEvent } = require('../services/logging.service');
 const waRepo = require('../db/whatsapp.repo');
 const waService = require('../services/whatsapp.service');
+const waClient = require('../services/whatsappClient.service');
 
 // ---------------------------------------------------------------------------
 // Setup function — returns router, accepts io for socket emissions
@@ -302,7 +303,46 @@ function setupWhatsAppRoutes(io) {
     const agent = req.session.username;
     const stats = waRepo.getStats(isAdmin, agent);
     stats.botEnabled = waService.isBotEnabled();
+    stats.waConnectionStatus = waClient.getStatus();
     return res.json(stats);
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/whatsapp/connection-status - WhatsApp client connection status
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/connection-status', requireAuth, (req, res) => {
+    return res.json({ status: waClient.getStatus() });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/wa-logout - disconnect WhatsApp (admin only)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/wa-logout', requireAuth, async (req, res) => {
+    if (req.session.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    try {
+      await waClient.logout();
+      logEvent('info', 'WA client logged out by ' + req.session.username);
+      return res.json({ ok: true });
+    } catch (err) {
+      return res.json({ error: err.message });
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/wa-reconnect - reinitialize WhatsApp client (admin only)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/wa-reconnect', requireAuth, async (req, res) => {
+    if (req.session.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin only' });
+    }
+    try {
+      await waClient.initialize();
+      return res.json({ ok: true });
+    } catch (err) {
+      return res.json({ error: err.message });
+    }
   });
 
   return router;

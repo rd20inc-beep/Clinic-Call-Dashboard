@@ -93,22 +93,27 @@ socket.on('incoming_call', function(data) {
   }
   lastHandledCallId = data.callId;
 
+  var isOutbound = data.direction === 'outbound';
+
   patientNameBanner.textContent = '';
   patientNameBanner.style.display = 'none';
   // Strip "contact:" prefix for display — show name cleanly
   var displayCaller = data.caller && data.caller.indexOf('contact:') === 0
     ? data.caller.slice(8)
     : data.caller;
-  callerNumberText.textContent = displayCaller;
+  callerNumberText.textContent = (isOutbound ? '\u2197 Out: ' : '\u2199 In: ') + displayCaller;
   callerWhatsapp.href = getWhatsappUrl(data.caller);
-  callTime.textContent = 'Received at ' + new Date(data.timestamp).toLocaleTimeString();
+  callTime.textContent = (isOutbound ? 'Outbound at ' : 'Received at ') + new Date(data.timestamp).toLocaleTimeString();
   cliniceaLink.href = data.cliniceaUrl;
   notification.classList.add('active');
 
-  playBeep();
+  // Only beep for inbound calls
+  if (!isOutbound) {
+    playBeep();
+  }
 
-  // Auto-open Clinicea profile for any call that passes isEventForMe()
-  var shouldAutoOpen = true;
+  // Auto-open Clinicea profile — only for inbound calls
+  var shouldAutoOpen = !isOutbound;
   var lockKey = 'call_opened_' + data.callId;
   console.log('[dashboard] auto-open check', { shouldAutoOpen: shouldAutoOpen, lockKey: lockKey, lockExists: !!localStorage.getItem(lockKey), cliniceaUrl: data.cliniceaUrl });
   if (shouldAutoOpen && !localStorage.getItem(lockKey)) {
@@ -130,10 +135,33 @@ socket.on('incoming_call', function(data) {
   }
 
   loadCallHistory(1);
+  loadCallStats();
 
   setTimeout(function() {
     notification.classList.remove('active');
-  }, 30000);
+  }, isOutbound ? 10000 : 30000);
+});
+
+// Call updated (duration/status arrived after call ended)
+socket.on('call_updated', function(data) {
+  if (!isEventForMe(data)) return;
+  // Update status badge in-place
+  if (data.callStatus) {
+    var stEl = document.getElementById('status-' + data.callId);
+    if (stEl) {
+      var cls = data.callStatus === 'answered' ? 'answered' : data.callStatus === 'missed' ? 'missed' : 'unknown';
+      var label = data.callStatus === 'answered' ? 'Answered' : data.callStatus === 'missed' ? 'Missed' : data.callStatus === 'rejected' ? 'Rejected' : '--';
+      stEl.innerHTML = '<span class="call-st ' + cls + '">' + label + '</span>';
+    }
+  }
+  // Update duration in-place
+  if (data.duration !== null && data.duration !== undefined) {
+    var durEl = document.getElementById('duration-' + data.callId);
+    if (durEl) {
+      durEl.textContent = formatCallDuration(data.duration);
+    }
+  }
+  loadCallStats();
 });
 
 // Only show errors/warnings as toasts, ignore info logs
@@ -153,8 +181,16 @@ socket.on('wa_message', function(data) {
   }
 });
 
+// Live WA connection status updates via socket
+socket.on('wa_connection', function(data) {
+  if (typeof waUpdateConnectionUI === 'function') {
+    waUpdateConnectionUI(data.status, data.qrDataUrl);
+  }
+});
+
 // ===== INITIALIZATION =====
 checkMonitorStatus();
 setInterval(checkMonitorStatus, 15000);
 loadCallHistory();
+loadCallStats();
 handleRoute();

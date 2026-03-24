@@ -154,6 +154,70 @@ function waApproveAllMessages() {
     .catch(function() {});
 }
 
+// ===== WHATSAPP CONNECTION =====
+
+function waUpdateConnectionUI(status, qrDataUrl) {
+  var dot = document.getElementById('waConnDot');
+  var statusText = document.getElementById('waConnectionStatusText');
+  var bar = document.getElementById('waConnectionBar');
+  var logoutBtn = document.getElementById('waLogoutBtn');
+  var reconnectBtn = document.getElementById('waReconnectBtn');
+  var qrSection = document.getElementById('waQRSection');
+  var qrImage = document.getElementById('waQRImage');
+
+  if (status === 'ready') {
+    dot.style.background = '#2ecc71';
+    bar.style.background = 'rgba(46,204,113,0.15)';
+    bar.style.borderColor = 'rgba(46,204,113,0.3)';
+    statusText.textContent = 'CONNECTED';
+    statusText.style.color = '#2ecc71';
+    logoutBtn.style.display = '';
+    reconnectBtn.style.display = 'none';
+    qrSection.style.display = 'none';
+  } else if (status === 'qr') {
+    dot.style.background = '#f39c12';
+    bar.style.background = 'rgba(243,156,18,0.15)';
+    bar.style.borderColor = 'rgba(243,156,18,0.3)';
+    statusText.textContent = 'SCAN QR CODE';
+    statusText.style.color = '#f39c12';
+    logoutBtn.style.display = 'none';
+    reconnectBtn.style.display = 'none';
+    qrSection.style.display = '';
+    if (qrDataUrl) qrImage.src = qrDataUrl;
+  } else if (status === 'authenticated') {
+    dot.style.background = '#3498db';
+    bar.style.background = 'rgba(52,152,219,0.15)';
+    bar.style.borderColor = 'rgba(52,152,219,0.3)';
+    statusText.textContent = 'AUTHENTICATING...';
+    statusText.style.color = '#3498db';
+    logoutBtn.style.display = 'none';
+    reconnectBtn.style.display = 'none';
+    qrSection.style.display = 'none';
+  } else {
+    dot.style.background = '#e74c3c';
+    bar.style.background = 'rgba(231,76,60,0.15)';
+    bar.style.borderColor = 'rgba(231,76,60,0.3)';
+    statusText.textContent = 'DISCONNECTED';
+    statusText.style.color = '#e74c3c';
+    logoutBtn.style.display = 'none';
+    reconnectBtn.style.display = '';
+    qrSection.style.display = 'none';
+  }
+}
+
+function waLogout() {
+  if (!confirm('Disconnect WhatsApp? You will need to scan QR code again.')) return;
+  waFetch('/api/whatsapp/wa-logout', { method: 'POST' })
+    .then(function(data) { if (data.ok) waUpdateConnectionUI('disconnected'); })
+    .catch(function() {});
+}
+
+function waReconnect() {
+  waFetch('/api/whatsapp/wa-reconnect', { method: 'POST' })
+    .then(function() {})
+    .catch(function() {});
+}
+
 // ===== GLOBAL BOT TOGGLE =====
 
 function waUpdateBotToggle(enabled) {

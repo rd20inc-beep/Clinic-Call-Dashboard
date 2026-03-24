@@ -498,6 +498,11 @@ function loadWaStats() {
       // Global bot toggle state
       waUpdateBotToggle(data.botEnabled !== false);
 
+      // WhatsApp connection status
+      if (data.waConnectionStatus && typeof waUpdateConnectionUI === 'function') {
+        waUpdateConnectionUI(data.waConnectionStatus);
+      }
+
       // Load approval queue
       loadWaApprovalQueue();
     })

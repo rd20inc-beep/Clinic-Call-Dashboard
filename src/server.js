@@ -10,6 +10,7 @@ const {
   syncAppointmentsAndScheduleMessages,
   setClinicaService,
 } = require('./services/whatsapp.service');
+const { initialize: initWhatsAppClient, destroy: destroyWAClient } = require('./services/whatsappClient.service');
 
 // ---------------------------------------------------------------------------
 // Wire Clinicea service into WhatsApp service (avoids circular dependency)
@@ -41,8 +42,9 @@ process.on('unhandledRejection', (reason) => {
   try { logEvent('error', 'Unhandled rejection: ' + msg); } catch (e) { /* noop */ }
 });
 
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
   logEvent('info', 'Server shutting down (SIGTERM)');
+  await destroyWAClient().catch(() => {});
   process.exit(0);
 });
 
@@ -72,4 +74,9 @@ server.listen(PORT, () => {
   setInterval(() => {
     syncAppointmentsAndScheduleMessages().catch(() => { /* swallow */ });
   }, 30 * 60 * 1000);
+
+  // Initialize WhatsApp Web client (QR code auth)
+  initWhatsAppClient().catch((err) => {
+    logEvent('error', 'WhatsApp client init failed: ' + err.message);
+  });
 });

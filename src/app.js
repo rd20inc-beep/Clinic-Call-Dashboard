@@ -15,6 +15,7 @@ const { requireAuth } = require('./middleware/auth');
 const { setIO: setLogIO } = require('./services/logging.service');
 const { setIO: setAgentIO, startStaleChecker } = require('./services/agentRegistry.service');
 const { setIO: setCallRouterIO } = require('./services/callRouter.service');
+const { setIO: setWAClientIO } = require('./services/whatsappClient.service');
 const { setupSockets } = require('./sockets');
 
 // Import route modules
@@ -38,6 +39,7 @@ const io = new Server(server);
 setLogIO(io);
 setAgentIO(io);
 setCallRouterIO(io);
+setWAClientIO(io);
 
 // ---------------------------------------------------------------------------
 // Global middleware
