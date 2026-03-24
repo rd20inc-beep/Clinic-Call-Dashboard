@@ -18,27 +18,37 @@ router.get('/login', (req, res) => {
   res.send(`<!DOCTYPE html>
 <html lang="en"><head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Login - Clinic Call Dashboard</title>
+  <title>Dr. Nakhoda's Skin Institute — Dashboard Login</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f2f5;display:flex;align-items:center;justify-content:center;min-height:100vh}
-    .login-box{background:#fff;padding:40px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.1);width:100%;max-width:380px}
-    .login-box h1{font-size:22px;color:#1a1a2e;margin-bottom:24px;text-align:center}
-    label{display:block;font-size:14px;font-weight:600;color:#333;margin-bottom:6px}
-    input{width:100%;padding:10px 14px;border:1px solid #dee2e6;border-radius:6px;font-size:15px;margin-bottom:16px}
-    input:focus{outline:none;border-color:#1a1a2e;box-shadow:0 0 0 2px rgba(26,26,46,0.15)}
-    button{width:100%;padding:12px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:15px;font-weight:600;cursor:pointer}
-    button:hover{background:#2d2d5e}
+    body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh}
+    .login-box{background:#fff;padding:40px;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);width:100%;max-width:400px}
+    .login-logo{text-align:center;margin-bottom:24px;}
+    .login-logo .icon{font-size:36px;margin-bottom:8px;}
+    .login-logo h1{font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-0.02em;line-height:1.3;}
+    .login-logo p{font-size:12px;color:#94a3b8;margin-top:4px;font-weight:500;}
+    label{display:block;font-size:13px;font-weight:600;color:#475569;margin-bottom:6px}
+    input{width:100%;padding:11px 14px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;margin-bottom:16px;font-family:inherit;transition:border-color 0.15s;}
+    input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,0.1)}
+    button{width:100%;padding:12px;background:#0f172a;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;transition:background 0.15s;}
+    button:hover{background:#1e293b}
+    .error{color:#ef4444;font-size:13px;margin-bottom:16px;text-align:center;}
   </style>
 </head><body>
   <div class="login-box">
-    <h1>Clinic Call Dashboard</h1>
-    ${error}
+    <div class="login-logo">
+      <div class="icon">🏥</div>
+      <h1>Dr. Nakhoda's Skin Institute</h1>
+      <p>Call Management Dashboard</p>
+    </div>
+    ${error ? '<div class="error">' + error + '</div>' : ''}
     <form method="POST" action="/login">
       <label for="username">Username</label>
-      <input type="text" id="username" name="username" required autofocus>
+      <input type="text" id="username" name="username" required autofocus placeholder="Enter your username">
       <label for="password">Password</label>
-      <input type="password" id="password" name="password" required>
+      <input type="password" id="password" name="password" required placeholder="Enter your password">
       <button type="submit">Sign In</button>
     </form>
   </div>
