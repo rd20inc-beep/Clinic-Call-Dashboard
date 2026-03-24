@@ -24,4 +24,5 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             npm install --omit=dev
-            pm2 restart clinicea-call || pm2 start src/server.js --name clinicea-call
+            pm2 delete clinicea-call 2>/dev/null || true
+            pm2 start src/server.js --name clinicea-call
