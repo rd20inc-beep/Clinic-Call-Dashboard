@@ -163,6 +163,8 @@ function calSendConfirmation(phone, name, date, time, service, doctor) {
   var msg = 'Assalam o Alaikum ' + name + '! Your appointment at Dr. Nakhoda\'s Skin Institute has been confirmed.\n\n';
   msg += 'Date: ' + dateStr + '\n';
   msg += 'Time: ' + time + '\n';
+  if (service) msg += 'Treatment: ' + service + '\n';
+  if (doctor) msg += 'Doctor: ' + doctor + '\n';
   msg += '\nIf you need to reschedule, call +92-300-2105374. We look forward to seeing you!';
 
   if (!confirm('Send confirmation to ' + name + ' (' + phone + ')?\n\n' + msg)) return;

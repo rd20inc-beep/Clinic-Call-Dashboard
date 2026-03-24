@@ -462,6 +462,8 @@ async function syncAppointmentsAndScheduleMessages() {
       for (const apt of apts) {
         const aptDate = parseLocalDate(apt.appointment_date);
         msg += `\n${formatDatePK(aptDate)} at ${formatTimePK(aptDate)}`;
+        if (apt.service) msg += ` — ${apt.service}`;
+        if (apt.doctor_name) msg += ` (${apt.doctor_name})`;
       }
 
       msg += '\n\nIf you need to reschedule, call +92-300-2105374. We look forward to seeing you!';
