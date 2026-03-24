@@ -2,6 +2,77 @@
 
 var waBotEnabled = true;
 
+// ===== MESSAGE TEMPLATE EDITOR =====
+var templateLabels = {
+  confirmation: 'Appointment Confirmation',
+  reminder: 'Appointment Reminder',
+  review: 'Review Request (Post-Visit)',
+  aftercare_general: 'Aftercare — General',
+  aftercare_laser: 'Aftercare — Laser/Hair Removal',
+  aftercare_facial: 'Aftercare — HydraFacial',
+  aftercare_botox: 'Aftercare — Botox/Fillers',
+  aftercare_peel: 'Aftercare — Chemical Peel',
+  aftercare_microneedling: 'Aftercare — Microneedling/PRP',
+};
+
+function loadWaTemplates() {
+  var section = document.getElementById('waTemplatesSection');
+  if (section.style.display !== 'none') { section.style.display = 'none'; return; }
+  section.style.display = '';
+  section.innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">Loading templates...</div>';
+
+  waFetch('/api/whatsapp/templates').then(function(data) {
+    var templates = data.templates || {};
+    var html = '<div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">Variables: <code>{name}</code> <code>{date}</code> <code>{time}</code> <code>{service}</code> <code>{doctor}</code> <code>{day_word}</code> <code>{appointments}</code> <code>{service_text}</code> <code>{doctor_text}</code> <code>{location}</code> <code>{phone}</code></div>';
+
+    for (var key in templates) {
+      var t = templates[key];
+      var label = templateLabels[key] || key;
+      var customBadge = t.isCustom ? '<span style="background:#3b82f6;color:white;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Custom</span>' : '';
+
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:10px;">';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">';
+      html += '<span style="font-weight:600;font-size:13px;color:#0f172a;">' + escapeHtml(label) + customBadge + '</span>';
+      html += '<div style="display:flex;gap:4px;">';
+      html += '<button onclick="previewTemplate(\'' + key + '\')" style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:10px;cursor:pointer;">Preview</button>';
+      if (t.isCustom) html += '<button onclick="resetTemplate(\'' + key + '\')" style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#f59e0b;font-size:10px;cursor:pointer;">Reset</button>';
+      html += '<button onclick="saveTemplate(\'' + key + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#3b82f6;color:white;font-size:10px;cursor:pointer;">Save</button>';
+      html += '</div></div>';
+      html += '<textarea id="tpl_' + key + '" rows="5" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;">' + escapeHtml(t.text) + '</textarea>';
+      html += '</div>';
+    }
+
+    section.innerHTML = html;
+  }).catch(function() { section.innerHTML = '<p style="color:#ef4444;">Failed to load templates</p>'; });
+}
+
+function saveTemplate(key) {
+  var text = document.getElementById('tpl_' + key).value;
+  if (!text.trim()) return alert('Template cannot be empty');
+  waFetch('/api/whatsapp/templates', { method: 'POST', body: JSON.stringify({ key: key, text: text }) })
+    .then(function(d) {
+      if (d.ok) { alert('Template saved!'); loadWaTemplates(); }
+      else alert('Error: ' + (d.error || 'Unknown'));
+    }).catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function resetTemplate(key) {
+  if (!confirm('Reset this template to default?')) return;
+  waFetch('/api/whatsapp/templates/reset', { method: 'POST', body: JSON.stringify({ key: key }) })
+    .then(function(d) {
+      if (d.ok) { alert('Template reset to default'); loadWaTemplates(); }
+    }).catch(function() {});
+}
+
+function previewTemplate(key) {
+  waFetch('/api/whatsapp/templates/preview', { method: 'POST', body: JSON.stringify({ key: key }) })
+    .then(function(d) {
+      if (d.preview) {
+        waShowPreview('Template Preview: ' + (templateLabels[key] || key), '+923001234567', 'Ahmed Khan', d.preview);
+      }
+    }).catch(function() {});
+}
+
 // Helper: fetch JSON API with proper headers and session-expiry handling
 function waFetch(url, opts) {
   opts = opts || {};

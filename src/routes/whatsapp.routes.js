@@ -377,6 +377,62 @@ function setupWhatsAppRoutes(io) {
     }
   });
 
+  // -----------------------------------------------------------------------
+  // GET /api/whatsapp/templates — get all message templates
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/templates', requireAuth, (req, res) => {
+    const templates = require('../services/messageTemplates');
+    res.json({ templates: templates.getAllTemplates() });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/templates — save a template (admin only)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/templates', requireAuth, (req, res) => {
+    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { key, text } = req.body;
+    if (!key || !text) return res.json({ error: 'key and text required' });
+    const templates = require('../services/messageTemplates');
+    templates.setTemplate(key, text);
+    const { logEvent } = require('../services/logging.service');
+    logEvent('info', 'WA template updated: ' + key + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/templates/reset — reset template to default (admin)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/templates/reset', requireAuth, (req, res) => {
+    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { key } = req.body;
+    if (!key) return res.json({ error: 'key required' });
+    const templates = require('../services/messageTemplates');
+    templates.resetTemplate(key);
+    res.json({ ok: true });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/templates/preview — preview a template with sample data
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/templates/preview', requireAuth, (req, res) => {
+    const { key } = req.body;
+    const templates = require('../services/messageTemplates');
+    const preview = templates.applyTemplate(key, {
+      name: 'Ahmed Khan',
+      date: 'Monday, 25 March 2026',
+      time: '10:30 AM',
+      service: 'Laser Hair Removal',
+      doctor: 'Dr. Nakhoda',
+      location: 'GPC 11, Rojhan Street, Block 5, Clifton, Karachi',
+      phone: '+92-300-2105374',
+      day_word: 'tomorrow',
+      appointments: 'Monday, 25 March 2026 at 10:30 AM — Laser Hair Removal (Dr. Nakhoda)',
+      service_text: ' with your Laser Hair Removal treatment',
+      doctor_text: ' by Dr. Nakhoda',
+    });
+    res.json({ preview });
+  });
+
   return router;
 }
 
