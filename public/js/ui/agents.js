@@ -356,51 +356,167 @@ function agentShowAuditLog() {
   }).catch(function() { s.innerHTML = '<p style="color:#ef4444;">Failed to load</p>'; });
 }
 
-// ===== AGENT DETAIL MODAL =====
+// ===== AGENT DETAIL MODAL (full performance view from original admin console) =====
+
+var _perfCharts = {};
+var _perfFilter = 'all';
+var _perfData = null;
+
 function openAgentDetail(username) {
   var modal = document.getElementById('agentDetailModal');
-  var title = document.getElementById('agentDetailTitle');
   var body = document.getElementById('agentDetailBody');
-  title.textContent = username;
-  body.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner" style="margin:0 auto 12px;"></div>Loading...</div>';
-  modal.style.display = 'flex';
+  body.innerHTML = '<div style="text-align:center;padding:60px;color:#94a3b8;"><div class="spinner" style="margin:0 auto 12px;"></div>Loading performance...</div>';
+  modal.classList.add('active');
+  _perfFilter = 'all';
 
-  Promise.all([
-    waFetch('/api/agents/performance?agent=' + encodeURIComponent(username)),
-    waFetch('/api/agents/performance?agent=' + encodeURIComponent(username) + '&period=week'),
-    safeFetch('/api/calls?agent=' + encodeURIComponent(username) + '&limit=20'),
-  ]).then(function(r) {
-    var today = r[0].performance || {}, week = r[1].performance || {}, calls = r[2].calls || [], hourly = r[0].hourly || [];
-    var html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">' +
-      dCard('Today Calls', today.total_calls || 0) + dCard('Today Talk', formatTalkTime(today.total_talk_time || 0)) +
-      dCard('Week Calls', week.total_calls || 0) + dCard('Week Talk', formatTalkTime(week.total_talk_time || 0)) +
-    '</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">' +
-      dCard('Answered', today.answered_calls || 0, '#059669') + dCard('Missed', today.missed_calls || 0, '#dc2626') +
-      dCard('Avg Duration', formatTalkTime(Math.round(today.avg_duration || 0))) + dCard('Longest', formatTalkTime(today.longest_call || 0)) +
-    '</div>';
+  // Find agent dbId
+  var agent = agentData.find(function(a) { return a.username === username; });
+  var agentId = agent ? agent.dbId : null;
+  if (!agentId) {
+    // Fallback: fetch by username via our API
+    waFetch('/api/agents/performance?agent=' + encodeURIComponent(username)).then(function(data) {
+      _perfData = { agent: { username: username, full_name: (agent && agent.displayName) || username, portal_online: agent && agent.portalOnline, mobile_online: agent && agent.mobileOnline, monitor_online: agent && agent.monitorAlive, last_activity: agent && agent.lastSeen }, stats: data.performance || {}, hourly: data.hourly || [], recentCalls: [], daily: [] };
+      // Also get calls
+      safeFetch('/api/calls?agent=' + encodeURIComponent(username) + '&limit=20').then(function(d) { _perfData.recentCalls = d.calls || []; renderPerfDetail(); }).catch(function() { renderPerfDetail(); });
+    }).catch(function() { body.innerHTML = '<p style="color:#ef4444;text-align:center;padding:40px;">Failed to load</p>'; });
+    return;
+  }
 
-    if (hourly.length > 0) {
-      html += '<h4 style="margin:0 0 8px;font-size:13px;color:#0f172a;font-weight:700;">Today by Hour</h4>';
-      html += '<div style="display:flex;align-items:flex-end;gap:2px;height:60px;margin-bottom:20px;">';
-      var maxH = 1, hm = {}; hourly.forEach(function(h) { hm[h.hour] = h; if (h.calls > maxH) maxH = h.calls; });
-      for (var i = 0; i < 24; i++) { var hv = hm[i] || { calls: 0 }; html += '<div title="' + i + ':00 — ' + hv.calls + ' calls" style="flex:1;height:' + Math.max(2, Math.round((hv.calls / maxH) * 100)) + '%;background:#3b82f6;border-radius:2px;min-width:0;"></div>'; }
-      html += '</div>';
-    }
-
-    html += '<h4 style="margin:0 0 8px;font-size:13px;color:#0f172a;font-weight:700;">Recent Calls</h4>';
-    if (!calls.length) { html += '<p style="color:#94a3b8;font-size:13px;">No calls</p>'; }
-    else {
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr><th style="padding:6px 8px;text-align:left;color:#64748b;font-size:10px;text-transform:uppercase;border-bottom:2px solid #e2e8f0;">Caller</th><th style="padding:6px 8px;color:#64748b;font-size:10px;text-transform:uppercase;border-bottom:2px solid #e2e8f0;">Dir</th><th style="padding:6px 8px;color:#64748b;font-size:10px;text-transform:uppercase;border-bottom:2px solid #e2e8f0;">Status</th><th style="padding:6px 8px;color:#64748b;font-size:10px;text-transform:uppercase;border-bottom:2px solid #e2e8f0;">Duration</th><th style="padding:6px 8px;color:#64748b;font-size:10px;text-transform:uppercase;border-bottom:2px solid #e2e8f0;">Time</th></tr></thead><tbody>';
-      calls.forEach(function(c) { var sc = c.call_status === 'answered' ? '#059669' : c.call_status === 'missed' ? '#dc2626' : '#94a3b8'; html += '<tr><td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;">' + escapeHtml(c.caller_number) + '</td><td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;text-align:center;">' + (c.direction === 'outbound' ? '\u2197' : '\u2199') + '</td><td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;text-align:center;color:' + sc + ';font-weight:600;">' + (c.call_status || '--') + '</td><td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;text-align:center;">' + formatTalkTime(c.duration) + '</td><td style="padding:6px 8px;border-bottom:1px solid #f1f5f9;color:#94a3b8;">' + new Date(c.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</td></tr>'; });
-      html += '</tbody></table>';
-    }
-    html += '<div style="margin-top:16px;text-align:center;"><button onclick="closeAgentDetail();document.getElementById(\'filterAgent\').value=\'' + username + '\';loadFilteredCalls();" style="padding:8px 20px;border:none;border-radius:6px;background:#3b82f6;color:white;font-size:13px;font-weight:600;cursor:pointer;">View All Calls</button></div>';
-    body.innerHTML = html;
+  // Use the admin console adapter for full data
+  waFetch('/admin/agents/' + agentId + '/performance').then(function(data) {
+    _perfData = data;
+    renderPerfDetail();
   }).catch(function() { body.innerHTML = '<p style="color:#ef4444;text-align:center;padding:40px;">Failed to load</p>'; });
 }
 
-function closeAgentDetail() { document.getElementById('agentDetailModal').style.display = 'none'; }
+function setPerfDetailFilter(f) {
+  _perfFilter = f;
+  if (_perfData) renderPerfDetail();
+}
 
-function dCard(label, value, color) {
-  return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center;"><div style="font-weight:800;font-size:18px;color:' + (color || '#0f172a') + ';">' + value + '</div><div style="font-size:10px;color:#94a3b8;margin-top:2px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">' + label + '</div></div>';
+function renderPerfDetail() {
+  var body = document.getElementById('agentDetailBody');
+  var a = _perfData.agent || {};
+  var s = _perfData.stats || {};
+  var html = '';
+
+  // Status dot helper
+  function sDot(on) { return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + (on ? '#10b981' : '#e2e8f0') + ';margin-right:2px;"></span>'; }
+
+  // Header
+  html += '<div class="perf-header"><div>';
+  html += '<h3>' + escapeHtml(a.full_name || a.username || '?') + '</h3>';
+  html += '<div class="perf-status">' + sDot(a.portal_online) + 'Portal ' + sDot(a.mobile_online) + 'Mobile ' + sDot(a.monitor_online) + 'Monitor';
+  html += ' <span style="color:#94a3b8;">&middot;</span> Last active: ' + formatLastSeen(a.last_activity || a.last_seen) + '</div>';
+  html += '</div><div><button onclick="closeAgentDetail()" style="padding:6px 14px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;">Close</button></div></div>';
+
+  // KPI Row 1
+  html += '<div class="perf-kpi-grid">';
+  html += '<div class="perf-kpi"><div class="pk-val">' + (s.today || 0) + '</div><div class="pk-label">Today</div></div>';
+  html += '<div class="perf-kpi pk-green"><div class="pk-val">' + (s.answered_today || 0) + '</div><div class="pk-label">Answered</div></div>';
+  html += '<div class="perf-kpi pk-red"><div class="pk-val">' + (s.missed_today || 0) + '</div><div class="pk-label">Missed</div></div>';
+  html += '<div class="perf-kpi pk-blue"><div class="pk-val">' + (s.answer_rate || 0) + '%</div><div class="pk-label">Answer Rate</div></div>';
+  html += '</div>';
+
+  // KPI Row 2
+  html += '<div class="perf-kpi-grid">';
+  html += '<div class="perf-kpi pk-purple"><div class="pk-val">' + formatTalkTime(s.talk_time_today || 0) + '</div><div class="pk-label">Talk Today</div></div>';
+  html += '<div class="perf-kpi"><div class="pk-val">' + formatTalkTime(s.talk_time_week || 0) + '</div><div class="pk-label">Talk Week</div></div>';
+  html += '<div class="perf-kpi"><div class="pk-val">' + (s.avg_duration || 0) + 's</div><div class="pk-label">Avg Duration</div></div>';
+  html += '<div class="perf-kpi pk-amber"><div class="pk-val">' + (s.peak_hour != null ? s.peak_hour + ':00' : '-') + '</div><div class="pk-label">Peak Hour</div></div>';
+  html += '</div>';
+
+  // KPI Row 3
+  html += '<div class="perf-kpi-grid" style="grid-template-columns:repeat(5,1fr);">';
+  html += '<div class="perf-kpi"><div class="pk-val">' + (s.week || 0) + '</div><div class="pk-label">Week</div></div>';
+  html += '<div class="perf-kpi"><div class="pk-val">' + (s.month || 0) + '</div><div class="pk-label">Month</div></div>';
+  html += '<div class="perf-kpi"><div class="pk-val">' + (s.total || 0) + '</div><div class="pk-label">All Time</div></div>';
+  html += '<div class="perf-kpi"><div class="pk-val">' + (s.longest_call || 0) + 's</div><div class="pk-label">Longest</div></div>';
+  html += '<div class="perf-kpi"><div class="pk-val">' + formatTalkTime(s.logged_in_today || 0) + '</div><div class="pk-label">Online Today</div></div>';
+  html += '</div>';
+
+  // Charts
+  html += '<div class="perf-charts">';
+  html += '<div class="perf-chart-box"><h4>Daily Calls (14d)</h4><div style="height:160px;position:relative;"><canvas id="chartPerfDaily"></canvas></div></div>';
+  html += '<div class="perf-chart-box"><h4>Hourly Distribution</h4><div style="height:160px;position:relative;"><canvas id="chartPerfHourly"></canvas></div></div>';
+  html += '</div>';
+
+  // Recent calls with filter
+  var calls = _perfData.recentCalls || [];
+  if (calls.length > 0) {
+    html += '<div class="perf-section-title">Recent Calls</div>';
+    html += '<div class="perf-filter-bar">';
+    ['all','answered','missed','outgoing'].forEach(function(f) {
+      html += '<button class="perf-filter-btn' + (_perfFilter === f ? ' pf-active' : '') + '" onclick="setPerfDetailFilter(\'' + f + '\')">' + f.charAt(0).toUpperCase() + f.slice(1) + '</button>';
+    });
+    html += '</div>';
+
+    var filtered = calls.filter(function(c) {
+      if (_perfFilter === 'all') return true;
+      if (_perfFilter === 'answered') return c.call_status === 'answered';
+      if (_perfFilter === 'missed') return c.call_status === 'missed' || c.call_status === 'rejected';
+      if (_perfFilter === 'outgoing') return c.direction === 'outbound';
+      return true;
+    });
+
+    html += '<div class="perf-table-wrap"><table><thead><tr><th>Time</th><th>Number</th><th>Name</th><th>Status</th><th>Duration</th></tr></thead><tbody>';
+    if (!filtered.length) html += '<tr><td colspan="5" style="text-align:center;color:#94a3b8;padding:20px;">No calls match filter</td></tr>';
+    filtered.forEach(function(c) {
+      var sc = c.call_status === 'answered' ? '#10b981' : c.call_status === 'missed' ? '#ef4444' : c.call_status === 'rejected' ? '#f59e0b' : '#64748b';
+      var t = c.timestamp ? new Date(c.timestamp).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
+      html += '<tr><td style="white-space:nowrap;color:#94a3b8;font-size:11px;">' + t + '</td>';
+      html += '<td style="font-family:monospace;font-size:11px;">' + escapeHtml(c.caller_number || '-') + '</td>';
+      html += '<td>' + escapeHtml(c.patient_name || '-') + '</td>';
+      html += '<td style="color:' + sc + ';font-weight:600;">' + escapeHtml(c.call_status || '-') + '</td>';
+      html += '<td style="text-align:right;">' + (c.duration ? c.duration + 's' : '-') + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // Footer
+  html += '<div class="perf-footer"><div></div><button onclick="closeAgentDetail()" style="padding:6px 14px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;">Close</button></div>';
+
+  body.innerHTML = html;
+
+  // Render Chart.js charts after DOM update
+  setTimeout(function() {
+    if (typeof Chart === 'undefined') return;
+    // Destroy old charts
+    if (_perfCharts.daily) { _perfCharts.daily.destroy(); delete _perfCharts.daily; }
+    if (_perfCharts.hourly) { _perfCharts.hourly.destroy(); delete _perfCharts.hourly; }
+
+    // Daily chart
+    var dailyCtx = document.getElementById('chartPerfDaily');
+    var daily = _perfData.daily || [];
+    if (dailyCtx && daily.length) {
+      _perfCharts.daily = new Chart(dailyCtx.getContext('2d'), {
+        type: 'bar',
+        data: { labels: daily.map(function(d) { return d.day.slice(5); }), datasets: [
+          { label: 'Answered', data: daily.map(function(d) { return d.answered || 0; }), backgroundColor: '#10b981', borderRadius: 2 },
+          { label: 'Missed', data: daily.map(function(d) { return d.missed || 0; }), backgroundColor: '#ef4444', borderRadius: 2 }
+        ] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 10 }, padding: 8 } } }, scales: { x: { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0, font: { size: 10 } }, grid: { color: '#f1f5f9' } } } }
+      });
+    }
+
+    // Hourly chart
+    var hourlyCtx = document.getElementById('chartPerfHourly');
+    var hourly = _perfData.hourly || [];
+    if (hourlyCtx && hourly.length) {
+      var hL = [], hD = [];
+      for (var h = 0; h < 24; h++) { hL.push(h + ':00'); var f = hourly.find(function(x) { return x.hour === h; }); hD.push(f ? (f.calls || f.count || 0) : 0); }
+      _perfCharts.hourly = new Chart(hourlyCtx.getContext('2d'), {
+        type: 'line',
+        data: { labels: hL, datasets: [{ label: 'Calls', data: hD, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.06)', fill: true, tension: 0.4, pointRadius: 1.5, borderWidth: 2 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } }, grid: { color: '#f1f5f9' } }, x: { grid: { display: false }, ticks: { font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } } } }
+      });
+    }
+  }, 80);
+}
+
+function closeAgentDetail() {
+  _perfFilter = 'all';
+  document.getElementById('agentDetailModal').classList.remove('active');
+  if (_perfCharts.daily) { _perfCharts.daily.destroy(); delete _perfCharts.daily; }
+  if (_perfCharts.hourly) { _perfCharts.hourly.destroy(); delete _perfCharts.hourly; }
 }
