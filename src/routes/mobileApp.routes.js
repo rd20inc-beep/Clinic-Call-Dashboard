@@ -223,25 +223,48 @@ router.post('/api/incoming-call', (req, res) => {
     return res.json({ status: 'ok', callId });
 
   } else if (event === 'call_ended') {
-    // Call ended — update existing call with status and duration
+    // Call ended — update existing call or create new one (outgoing calls skip ringing)
     clearOnCall(agent);
     updateActivity(agent);
 
-    // Find the most recent call for this agent and caller
+    const finalStatus = call_status || 'answered';
+    const dur = duration ? parseInt(duration) : 0;
+
     try {
       const { db } = require('../db/index');
+      // Find matching recent call (within last 10 minutes for this agent + caller)
       const recent = db.prepare(
-        "SELECT id FROM calls WHERE agent = ? AND caller_number = ? ORDER BY timestamp DESC LIMIT 1"
+        "SELECT id, direction FROM calls WHERE agent = ? AND caller_number = ? AND timestamp >= datetime('now', '-10 minutes') ORDER BY timestamp DESC LIMIT 1"
       ).get(agent, caller);
 
       if (recent) {
-        const finalStatus = call_status || 'answered';
-        if (duration && parseInt(duration) > 0) {
-          callsRepo.updateCallDuration(recent.id, parseInt(duration));
+        // Update existing call
+        if (dur > 0) {
+          callsRepo.updateCallDuration(recent.id, dur);
         } else {
           callsRepo.updateCallStatus(recent.id, finalStatus);
         }
-        logEvent('info', 'Mobile call ended: ' + caller + ' (' + agent + ') — ' + finalStatus + ', ' + (duration || 0) + 's');
+        // Fix direction if call_ended has it but original didn't
+        if (call_type && ((call_type === 'outgoing' && recent.direction !== 'outbound') || (call_type === 'incoming' && recent.direction !== 'inbound'))) {
+          db.prepare('UPDATE calls SET direction = ? WHERE id = ?').run(direction, recent.id);
+        }
+        logEvent('info', 'Mobile call ended: ' + caller + ' (' + agent + ') — ' + finalStatus + ' ' + direction + ', ' + dur + 's');
+      } else {
+        // No matching ringing event — create new record (outgoing calls don't send ringing)
+        const cliniceaUrl = config.CLINICEA_BASE_URL + '?tp=pat&m=' + encodeURIComponent(caller);
+        const { callId } = callsRepo.insertCall(
+          caller, 'mobile-' + Date.now(), cliniceaUrl, agent, 'mobile_app',
+          sourceIp, direction, finalStatus, source || 'phone'
+        );
+        if (dur > 0) callsRepo.updateCallDuration(callId, dur);
+        logEvent('info', 'Mobile call (new): ' + caller + ' (' + agent + ') — ' + finalStatus + ' ' + direction + ', ' + dur + 's');
+
+        // Route to dashboard for outgoing calls too
+        routeCallEvent('incoming_call', {
+          caller, callSid: 'mobile-' + callId, cliniceaUrl, callId, agent,
+          direction, source: source || 'phone',
+          timestamp: timestamp || new Date().toISOString(),
+        });
       }
     } catch (e) {
       logEvent('error', 'Failed to update call end: ' + e.message);
