@@ -1227,12 +1227,26 @@
       if (data.recentCalls.length > 0) {
         html += '<div class="perf-section-title">Recent Calls</div>';
 
+        // Build set of appointment phone numbers (last 10 digits) for matching
+        var apptPhones = {};
+        (data.appointments || []).forEach(function(ap) {
+          if (ap.patient_phone) {
+            var clean = ap.patient_phone.replace(/[\s\-()]/g, '').slice(-10);
+            if (clean) apptPhones[clean] = true;
+          }
+        });
+        var apptCallCount = data.recentCalls.filter(function(c) {
+          var num = (c.caller_number || '').replace(/[\s\-()]/g, '').slice(-10);
+          return num && apptPhones[num];
+        }).length;
+
         // Filter bar
         html += '<div class="perf-filter-bar">';
         html += '<button class="perf-filter-btn' + (_perfFilter==='all'?' pf-active':'') + '" onclick="setPerfFilter(\'all\')">All</button>';
         html += '<button class="perf-filter-btn' + (_perfFilter==='answered'?' pf-active':'') + '" onclick="setPerfFilter(\'answered\')">Answered</button>';
         html += '<button class="perf-filter-btn' + (_perfFilter==='missed'?' pf-active':'') + '" onclick="setPerfFilter(\'missed\')">Missed</button>';
         html += '<button class="perf-filter-btn' + (_perfFilter==='outgoing'?' pf-active':'') + '" onclick="setPerfFilter(\'outgoing\')">Outgoing</button>';
+        html += '<button class="perf-filter-btn' + (_perfFilter==='appointments'?' pf-active':'') + '" onclick="setPerfFilter(\'appointments\')" style="' + (apptCallCount > 0 ? 'border-color:#10b981;' : '') + '">Appointments (' + apptCallCount + ')</button>';
         html += '</div>';
 
         var filtered = data.recentCalls.filter(function(c) {
@@ -1240,6 +1254,10 @@
           if (_perfFilter === 'answered') return c.call_status === 'answered';
           if (_perfFilter === 'missed') return c.call_status === 'missed' || c.call_status === 'rejected';
           if (_perfFilter === 'outgoing') return c.call_type === 'outgoing';
+          if (_perfFilter === 'appointments') {
+            var num = (c.caller_number || '').replace(/[\s\-()]/g, '').slice(-10);
+            return num && apptPhones[num];
+          }
           return true;
         });
 
