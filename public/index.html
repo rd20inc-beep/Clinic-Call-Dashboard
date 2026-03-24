@@ -192,6 +192,15 @@
               <option value="inbound">Inbound</option>
               <option value="outbound">Outbound</option>
             </select>
+            <select id="filterDisposition" onchange="loadFilteredCalls()" style="padding:4px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;">
+              <option value="">All Outcomes</option>
+              <option value="appointment_booked">Appt Booked</option>
+              <option value="follow_up_needed">Follow Up</option>
+              <option value="inquiry_only">Inquiry</option>
+              <option value="wrong_number">Wrong #</option>
+              <option value="existing_patient">Existing</option>
+              <option value="no_disposition">No Outcome Set</option>
+            </select>
             <select id="filterAgent" onchange="loadFilteredCalls()" style="padding:4px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;display:none;">
               <option value="">All Agents</option>
             </select>

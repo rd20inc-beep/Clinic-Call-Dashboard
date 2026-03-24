@@ -286,6 +286,7 @@ function loadFilteredCalls() {
   activeCallFilters.from = document.getElementById('filterFrom').value || '';
   activeCallFilters.to = document.getElementById('filterTo').value || '';
   activeCallFilters.search = (document.getElementById('filterSearch') || {}).value || '';
+  activeCallFilters.disposition = (document.getElementById('filterDisposition') || {}).value || '';
   currentPage = 1;
   loadCallHistory();
 }
@@ -298,6 +299,7 @@ function clearCallFilters() {
   document.getElementById('filterFrom').value = '';
   document.getElementById('filterTo').value = '';
   var searchEl = document.getElementById('filterSearch'); if (searchEl) searchEl.value = '';
+  var dispEl = document.getElementById('filterDisposition'); if (dispEl) dispEl.value = '';
   document.getElementById('filterActiveLabel').style.display = 'none';
   currentPage = 1;
   loadCallHistory();
@@ -311,6 +313,7 @@ function buildCallQueryString() {
   if (activeCallFilters.from) qs += '&from=' + activeCallFilters.from;
   if (activeCallFilters.to) qs += '&to=' + activeCallFilters.to;
   if (activeCallFilters.search) qs += '&search=' + encodeURIComponent(activeCallFilters.search);
+  if (activeCallFilters.disposition) qs += '&disposition=' + activeCallFilters.disposition;
   return qs;
 }
 

@@ -258,6 +258,16 @@ router.get('/api/calls', requireAuth, apiLimiter, (req, res) => {
     params.push(req.query.to + ' 23:59:59');
   }
 
+  // Disposition filter
+  if (req.query.disposition) {
+    if (req.query.disposition === 'no_disposition') {
+      conditions.push('(disposition IS NULL OR disposition = "")');
+    } else {
+      conditions.push('disposition = ?');
+      params.push(req.query.disposition);
+    }
+  }
+
   // Search by patient name or caller number
   if (req.query.search) {
     conditions.push('(patient_name LIKE ? OR caller_number LIKE ?)');
