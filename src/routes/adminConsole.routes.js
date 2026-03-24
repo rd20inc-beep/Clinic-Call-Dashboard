@@ -99,8 +99,10 @@ router.get('/admin/analytics/overview', async (req, res) => {
       const hb = heartbeats[username];
 
       let status = 'offline';
-      if (p.online) { portalOnline++; status = p.onCall ? 'busy' : ((Date.now() - (p.lastActivity || 0)) < 120000 ? 'online' : 'idle'); }
-      if (hb && hb.alive) { mobileOnline++; if (status === 'offline') status = 'online'; }
+      if (p.portalOnline) portalOnline++;
+      if (p.mobileOnline) mobileOnline++;
+      if (p.online) { status = p.onCall ? 'busy' : ((Date.now() - (p.lastActivity || 0)) < 120000 ? 'online' : 'idle'); }
+      else if (hb && hb.alive) { status = 'online'; }
       if (status !== 'offline') activeAgents++;
 
       let todayCalls = 0, todayAnswered = 0, todayMissed = 0, todayTalkTime = 0, weekCalls = 0;
