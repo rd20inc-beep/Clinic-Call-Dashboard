@@ -376,10 +376,11 @@ async function loadCalendar() {
 
       html += '<div class="calendar-card ' + statusClass + '" onclick="openProfileById(\'' + escapeHtml(String(apt.patientID)) + '\', \'' + escapeHtml(apt.patientName) + '\')">';
       html += '<div class="calendar-card-left">';
-      html += '<h4>' + escapeHtml(apt.patientName) + msgBadges + '</h4>';
+      html += '<h4>' + escapeHtml(apt.patientName) + '</h4>';
       html += '<p>' + escapeHtml(apt.service || 'Appointment');
       if (apt.doctor) html += ' &middot; ' + escapeHtml(apt.doctor);
       html += '</p>';
+      if (msgBadges) html += '<div style="margin-top:4px;">' + msgBadges + '</div>';
       html += '</div>';
       html += '<div class="calendar-card-right">';
       html += '<span class="calendar-time">' + escapeHtml(timeStr + endTimeStr + durationStr) + '</span>';
