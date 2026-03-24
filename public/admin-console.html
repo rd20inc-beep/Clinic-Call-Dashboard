@@ -649,6 +649,9 @@
     async function loadOverview() {
       try {
         var res = await fetch('/admin/analytics/overview');
+        if (!res.ok) { console.warn('Overview HTTP', res.status); return; }
+        var ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) { console.warn('Overview not JSON'); return; }
         var data = await res.json();
         overviewData = data;
         // KPI cards
@@ -681,10 +684,11 @@
         renderAnsweredMissedChart(data.agentStats);
         renderOverviewTable(data.agentStats);
         populateAgentFilter(data.agentStats);
-      } catch(e) { showToast('Failed to load overview', 'error'); }
+      } catch(e) { console.error('Overview error:', e); showToast('Failed to load overview: ' + e.message, 'error'); }
     }
 
     function renderAgentCallsChart(stats) {
+      if (typeof Chart === 'undefined') return; // Chart.js not loaded yet
       destroyChart('agentCalls');
       var active = stats.filter(function(a) { return a.status !== 'disabled'; });
       var ctx = document.getElementById('chartAgentCalls').getContext('2d');
@@ -702,6 +706,7 @@
     }
 
     function renderAnsweredMissedChart(stats) {
+      if (typeof Chart === 'undefined') return;
       destroyChart('answeredMissed');
       var active = stats.filter(function(a) { return a.status !== 'disabled'; });
       var ctx = document.getElementById('chartAnsweredMissed').getContext('2d');
@@ -806,6 +811,7 @@
     }
 
     function renderTrendChart(trends) {
+      if (typeof Chart === 'undefined' || !trends || !trends.length) return;
       destroyChart('trend');
       var ctx = document.getElementById('chartTrend').getContext('2d');
       chartInstances.trend = new Chart(ctx, {
@@ -834,6 +840,7 @@
     }
 
     function renderTodayVsWeek(stats) {
+      if (typeof Chart === 'undefined') return;
       destroyChart('todayVsWeek');
       var active = stats.filter(function(a) { return a.status !== 'disabled'; });
       var ctx = document.getElementById('chartTodayVsWeek').getContext('2d');
