@@ -25,17 +25,25 @@ function loadWaTemplates() {
     var templates = data.templates || {};
     var html = '<div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">Variables: <code>{name}</code> <code>{date}</code> <code>{time}</code> <code>{service}</code> <code>{doctor}</code> <code>{day_word}</code> <code>{appointments}</code> <code>{service_text}</code> <code>{doctor_text}</code> <code>{location}</code> <code>{phone}</code></div>';
 
+    // Add New Template button
+    html += '<div style="background:#f0f9ff;border:1px dashed #3b82f6;border-radius:8px;padding:14px;margin-bottom:14px;">';
+    html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">';
+    html += '<input id="newTplName" type="text" placeholder="Template name (e.g. Skin Rejuvenation Aftercare)" style="flex:1;min-width:200px;padding:6px 10px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">';
+    html += '<button onclick="createNewTemplate()" style="padding:6px 14px;border:none;border-radius:4px;background:#3b82f6;color:white;font-size:12px;font-weight:600;cursor:pointer;">+ Add Template</button>';
+    html += '</div></div>';
+
     for (var key in templates) {
       var t = templates[key];
-      var label = templateLabels[key] || key;
-      var customBadge = t.isCustom ? '<span style="background:#3b82f6;color:white;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Custom</span>' : '';
+      var label = templateLabels[key] || (function() { try { return t.displayName; } catch(e) { return null; } })() || key.replace(/^custom_/, '').replace(/_/g, ' ');
+      var customBadge = t.isUserCreated ? '<span style="background:#8b5cf6;color:white;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Service Template</span>' : t.isCustom ? '<span style="background:#3b82f6;color:white;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Modified</span>' : '';
 
       html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:10px;">';
       html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">';
       html += '<span style="font-weight:600;font-size:13px;color:#0f172a;">' + escapeHtml(label) + customBadge + '</span>';
       html += '<div style="display:flex;gap:4px;">';
       html += '<button onclick="previewTemplate(\'' + key + '\')" style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:10px;cursor:pointer;">Preview</button>';
-      if (t.isCustom) html += '<button onclick="resetTemplate(\'' + key + '\')" style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#f59e0b;font-size:10px;cursor:pointer;">Reset</button>';
+      if (t.isCustom && !t.isUserCreated) html += '<button onclick="resetTemplate(\'' + key + '\')" style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#f59e0b;font-size:10px;cursor:pointer;">Reset</button>';
+      if (t.isUserCreated) html += '<button onclick="deleteCustomTemplate(\'' + key + '\')" style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#ef4444;font-size:10px;cursor:pointer;">Delete</button>';
       html += '<button onclick="saveTemplate(\'' + key + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#3b82f6;color:white;font-size:10px;cursor:pointer;">Save</button>';
       html += '</div></div>';
       html += '<textarea id="tpl_' + key + '" rows="5" style="width:100%;padding:8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;">' + escapeHtml(t.text) + '</textarea>';
@@ -62,6 +70,26 @@ function resetTemplate(key) {
     .then(function(d) {
       if (d.ok) { alert('Template reset to default'); loadWaTemplates(); }
     }).catch(function() {});
+}
+
+function createNewTemplate() {
+  var name = document.getElementById('newTplName').value.trim();
+  if (!name) return alert('Enter a template name');
+  var defaultText = 'Assalam o Alaikum {name}!\n\n[Your message here]\n\nIf you have any questions, call us at +92-300-2105374.';
+  waFetch('/api/whatsapp/templates/create', { method: 'POST', body: JSON.stringify({ name: name, text: defaultText }) })
+    .then(function(d) {
+      if (d.ok) { document.getElementById('newTplName').value = ''; loadWaTemplates(); }
+      else alert('Error: ' + (d.error || 'Unknown'));
+    }).catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function deleteCustomTemplate(key) {
+  if (!confirm('Delete this custom template? This cannot be undone.')) return;
+  waFetch('/api/whatsapp/templates/delete', { method: 'POST', body: JSON.stringify({ key: key }) })
+    .then(function(d) {
+      if (d.ok) loadWaTemplates();
+      else alert('Error: ' + (d.error || 'Cannot delete default templates'));
+    }).catch(function(e) { alert('Error: ' + e.message); });
 }
 
 function previewTemplate(key) {

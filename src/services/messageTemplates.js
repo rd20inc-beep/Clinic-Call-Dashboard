@@ -105,20 +105,76 @@ function setTemplate(key, text) {
 }
 
 /**
- * Get all templates (saved + defaults merged).
+ * Get all templates (defaults + custom-added from DB).
  */
 function getAllTemplates() {
   const result = {};
+  // 1. Load defaults
   for (const key of Object.keys(DEFAULT_TEMPLATES)) {
     const saved = waRepo.getSetting('template_' + key);
     result[key] = {
       key,
       text: saved || DEFAULT_TEMPLATES[key],
       isCustom: !!saved,
+      isUserCreated: false,
       default: DEFAULT_TEMPLATES[key],
     };
   }
+  // 2. Load user-created templates from DB (template_custom_*)
+  try {
+    const { db } = require('../db/index');
+    const rows = db.prepare("SELECT key, value FROM wa_settings WHERE key LIKE 'template_custom_%'").all();
+    for (const row of rows) {
+      const key = row.key.replace('template_', '');
+      if (!result[key]) {
+        const displayName = waRepo.getSetting('template_name_' + key);
+        result[key] = {
+          key,
+          text: row.value,
+          isCustom: true,
+          isUserCreated: true,
+          displayName: displayName || key.replace(/^custom_/, '').replace(/_/g, ' '),
+          default: '',
+        };
+      }
+    }
+  } catch (e) { /* ignore */ }
   return result;
+}
+
+/**
+ * Create a new custom template.
+ */
+function createTemplate(name, text) {
+  const key = 'custom_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  waRepo.setSetting('template_' + key, text);
+  // Also save the display name
+  waRepo.setSetting('template_name_' + key, name);
+  return key;
+}
+
+/**
+ * Delete a user-created template.
+ */
+function deleteTemplate(key) {
+  if (DEFAULT_TEMPLATES[key]) return false; // Can't delete defaults
+  try {
+    const { db } = require('../db/index');
+    db.prepare("DELETE FROM wa_settings WHERE key = ?").run('template_' + key);
+    db.prepare("DELETE FROM wa_settings WHERE key = ?").run('template_name_' + key);
+    return true;
+  } catch (e) { return false; }
+}
+
+/**
+ * Get the display name for a template key.
+ */
+function getTemplateName(key) {
+  if (key.startsWith('custom_')) {
+    const saved = waRepo.getSetting('template_name_' + key);
+    if (saved) return saved;
+  }
+  return null;
 }
 
 /**
@@ -150,5 +206,8 @@ module.exports = {
   getAllTemplates,
   resetTemplate,
   applyTemplate,
+  createTemplate,
+  deleteTemplate,
+  getTemplateName,
   DEFAULT_TEMPLATES,
 };

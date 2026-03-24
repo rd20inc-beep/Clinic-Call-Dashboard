@@ -412,6 +412,35 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
+  // POST /api/whatsapp/templates/create — create a new custom template (admin)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/templates/create', requireAuth, (req, res) => {
+    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { name, text } = req.body;
+    if (!name || !text) return res.json({ error: 'name and text required' });
+    const templates = require('../services/messageTemplates');
+    const key = templates.createTemplate(name, text);
+    const { logEvent } = require('../services/logging.service');
+    logEvent('info', 'WA custom template created: ' + name + ' by ' + req.session.username);
+    res.json({ ok: true, key });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/templates/delete — delete a custom template (admin)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/templates/delete', requireAuth, (req, res) => {
+    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    const { key } = req.body;
+    if (!key) return res.json({ error: 'key required' });
+    const templates = require('../services/messageTemplates');
+    const ok = templates.deleteTemplate(key);
+    if (!ok) return res.json({ error: 'Cannot delete default templates' });
+    const { logEvent } = require('../services/logging.service');
+    logEvent('info', 'WA custom template deleted: ' + key + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -----------------------------------------------------------------------
   // POST /api/whatsapp/templates/preview — preview a template with sample data
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/templates/preview', requireAuth, (req, res) => {
