@@ -160,13 +160,10 @@ function calSendConfirmation(phone, name, date, time, service, doctor) {
   var dateObj = new Date(date + 'T00:00:00');
   var dateStr = dateObj.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-  var msg = 'Assalam o Alaikum ' + name + '! Your appointment at Dr. Nakhoda\'s Skin Institute has been scheduled.\n\n';
+  var msg = 'Assalam o Alaikum ' + name + '! Your appointment at Dr. Nakhoda\'s Skin Institute has been confirmed.\n\n';
   msg += 'Date: ' + dateStr + '\n';
   msg += 'Time: ' + time + '\n';
-  if (service) msg += 'Treatment: ' + service + '\n';
-  if (doctor) msg += 'Doctor: ' + doctor + '\n';
-  msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9\n';
-  msg += '\nPlease reply "CONFIRM" to confirm or call +92-300-2105374 to reschedule. We look forward to seeing you!';
+  msg += '\nIf you need to reschedule, call +92-300-2105374. We look forward to seeing you!';
 
   if (!confirm('Send confirmation to ' + name + ' (' + phone + ')?\n\n' + msg)) return;
 
@@ -183,12 +180,9 @@ function calSendReminder(phone, name, date, time, service, doctor) {
   var dateStr = dateObj.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
   var msg = 'Assalam o Alaikum ' + name + '! This is a friendly reminder about your appointment at Dr. Nakhoda\'s Skin Institute.\n\n';
-  msg += 'Date: ' + dateStr + '\n';
   msg += 'Time: ' + time + '\n';
-  if (service) msg += 'Treatment: ' + service + '\n';
-  if (doctor) msg += 'Doctor: ' + doctor + '\n';
   msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9\n';
-  msg += '\nPlease arrive 10 minutes early. If you need to reschedule, call +92-300-2105374. See you soon!';
+  msg += '\nPlease arrive 10 minutes early. See you soon!';
 
   if (!confirm('Send reminder to ' + name + ' (' + phone + ')?\n\n' + msg)) return;
 

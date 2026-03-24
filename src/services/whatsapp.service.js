@@ -457,17 +457,14 @@ async function syncAppointmentsAndScheduleMessages() {
 
     for (const [phone, apts] of Object.entries(confirmByPhone)) {
       const name = apts[0].patient_name;
-      let msg = `Assalam o Alaikum ${name}! Your appointment${apts.length > 1 ? 's' : ''} at Dr. Nakhoda's Skin Institute ${apts.length > 1 ? 'have' : 'has'} been scheduled.\n`;
+      let msg = `Assalam o Alaikum ${name}! Your appointment${apts.length > 1 ? 's' : ''} at Dr. Nakhoda's Skin Institute ${apts.length > 1 ? 'have' : 'has'} been confirmed.\n`;
 
       for (const apt of apts) {
         const aptDate = parseLocalDate(apt.appointment_date);
         msg += `\n${formatDatePK(aptDate)} at ${formatTimePK(aptDate)}`;
-        if (apt.service) msg += ` — ${apt.service}`;
-        if (apt.doctor_name) msg += ` (${apt.doctor_name})`;
       }
 
-      msg += '\n\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9';
-      msg += '\n\nPlease reply "CONFIRM" to confirm or call +92-300-2105374 to reschedule. We look forward to seeing you!';
+      msg += '\n\nIf you need to reschedule, call +92-300-2105374. We look forward to seeing you!';
 
       waRepo.insertMessage(phone, null, 'out', msg, 'confirmation', 'pending', null);
       for (const apt of apts) {
@@ -506,15 +503,15 @@ async function syncAppointmentsAndScheduleMessages() {
       else if (daysUntil === 1) dayWord = 'tomorrow';
       else if (daysUntil === 2) dayWord = 'in 2 days';
 
-      let msg = `Reminder: Assalam o Alaikum ${name}! This is a friendly reminder that your appointment${apts.length > 1 ? 's' : ''} at Dr. Nakhoda's Skin Institute ${apts.length > 1 ? 'are' : 'is'} ${dayWord}.\n`;
+      let msg = `Assalam o Alaikum ${name}! This is a friendly reminder that your appointment${apts.length > 1 ? 's' : ''} at Dr. Nakhoda's Skin Institute ${apts.length > 1 ? 'are' : 'is'} ${dayWord}.\n`;
 
       for (const apt of apts) {
         const aptDate = parseLocalDate(apt.appointment_date);
-        msg += `\n${formatDatePK(aptDate)} at ${formatTimePK(aptDate)}`;
-        if (apt.service) msg += ` — ${apt.service}`;
+        msg += `\n${formatTimePK(aptDate)}`;
       }
 
-      msg += '\n\nPlease arrive 10 minutes early. If you need to reschedule, call +92-300-2105374. See you soon!';
+      msg += '\n\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9';
+      msg += '\n\nPlease arrive 10 minutes early. See you soon!';
 
       waRepo.insertMessage(phone, null, 'out', msg, 'reminder', 'pending', null);
       for (const apt of apts) {
