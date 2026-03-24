@@ -228,6 +228,25 @@
           <span class="calendar-count" id="calendarCount"></span>
           <span style="margin-left:auto;cursor:help;font-size:11px;color:#94a3b8;" title="Scheduled = Booked, not arrived yet&#10;Confirmed = Patient confirmed attendance&#10;Engaged = Patient is with the doctor&#10;Check Out = Visit complete, patient left&#10;Cancelled = Appointment cancelled&#10;No Show = Patient didn't show up">&#9432; Status Guide</span>
         </div>
+        <div id="calendarFilters" style="display:none;padding:8px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          <input id="calSearchInput" type="text" placeholder="Search patient..." oninput="filterCalendar()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;width:150px;">
+          <select id="calStatusFilter" onchange="filterCalendar()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+            <option value="">All Status</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="engaged">Engaged</option>
+            <option value="checkout">Check Out</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <select id="calDoctorFilter" onchange="filterCalendar()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+            <option value="">All Doctors</option>
+          </select>
+          <select id="calServiceFilter" onchange="filterCalendar()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;">
+            <option value="">All Services</option>
+          </select>
+          <button onclick="clearCalendarFilters()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#888;font-size:11px;cursor:pointer;">Clear</button>
+          <span id="calFilterCount" style="font-size:11px;color:#3b82f6;font-weight:600;"></span>
+        </div>
         <div id="calendarList" class="calendar-list">
           <div class="empty-state"><p>Select a date to view appointments</p></div>
         </div>

@@ -595,6 +595,51 @@ function isEventForMe(data) {
 }
 
 // ===== CALENDAR =====
+// ===== CALENDAR FILTERS =====
+function filterCalendar() {
+  if (!window._calAppointments) return;
+  var search = (document.getElementById('calSearchInput').value || '').toLowerCase().trim();
+  var statusFilter = document.getElementById('calStatusFilter').value;
+  var doctorFilter = document.getElementById('calDoctorFilter').value;
+  var serviceFilter = document.getElementById('calServiceFilter').value;
+
+  var cards = document.querySelectorAll('#calendarList .calendar-card');
+  var shown = 0, total = cards.length;
+
+  cards.forEach(function(card) {
+    var name = (card.getAttribute('data-name') || '').toLowerCase();
+    var status = card.getAttribute('data-status') || '';
+    var doctor = card.getAttribute('data-doctor') || '';
+    var service = card.getAttribute('data-service') || '';
+
+    var match = true;
+    if (search && !name.includes(search)) match = false;
+    if (statusFilter && status !== statusFilter) match = false;
+    if (doctorFilter && doctor !== doctorFilter) match = false;
+    if (serviceFilter && service !== serviceFilter) match = false;
+
+    card.style.display = match ? '' : 'none';
+    if (match) shown++;
+  });
+
+  var countLabel = document.getElementById('calFilterCount');
+  if (search || statusFilter || doctorFilter || serviceFilter) {
+    countLabel.textContent = shown + ' of ' + total;
+  } else {
+    countLabel.textContent = '';
+  }
+}
+
+function clearCalendarFilters() {
+  document.getElementById('calSearchInput').value = '';
+  document.getElementById('calStatusFilter').value = '';
+  document.getElementById('calDoctorFilter').value = '';
+  document.getElementById('calServiceFilter').value = '';
+  document.getElementById('calFilterCount').textContent = '';
+  var cards = document.querySelectorAll('#calendarList .calendar-card');
+  cards.forEach(function(card) { card.style.display = ''; });
+}
+
 function calendarToday() {
   var today = new Date();
   document.getElementById('calendarDate').value = today.toISOString().split('T')[0];
@@ -640,12 +685,33 @@ async function loadCalendar() {
     }
 
     var appointments = data.appointments || [];
+    // Store for filtering
+    window._calAppointments = appointments;
+    window._calDate = date;
+
     countEl.textContent = appointments.length + ' appointment' + (appointments.length !== 1 ? 's' : '');
 
     if (appointments.length === 0) {
       listEl.innerHTML = '<div class="empty-state"><p>No appointments for this date</p></div>';
+      document.getElementById('calendarFilters').style.display = 'none';
       return;
     }
+
+    // Show filters and populate doctor/service dropdowns
+    document.getElementById('calendarFilters').style.display = 'flex';
+    var doctors = {}, services = {};
+    appointments.forEach(function(a) {
+      if (a.doctor) doctors[a.doctor] = true;
+      if (a.service) services[a.service] = true;
+    });
+    var docSel = document.getElementById('calDoctorFilter');
+    var curDoc = docSel.value;
+    docSel.innerHTML = '<option value="">All Doctors</option>' + Object.keys(doctors).map(function(d) { return '<option value="' + escapeHtml(d) + '">' + escapeHtml(d) + '</option>'; }).join('');
+    docSel.value = curDoc;
+    var svcSel = document.getElementById('calServiceFilter');
+    var curSvc = svcSel.value;
+    svcSel.innerHTML = '<option value="">All Services</option>' + Object.keys(services).map(function(s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>'; }).join('');
+    svcSel.value = curSvc;
 
     // Fetch message tracking status
     var tracking = {};
@@ -685,7 +751,7 @@ async function loadCalendar() {
         if (trackInfo.reminderSent) msgBadges += '<span style="background:#3498db;color:white;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;">Reminded</span>';
       }
 
-      html += '<div class="calendar-card ' + statusClass + '" onclick="openProfileById(\'' + escapeHtml(String(apt.patientID)) + '\', \'' + escapeHtml(apt.patientName) + '\')">';
+      html += '<div class="calendar-card ' + statusClass + '" data-name="' + escapeHtml(apt.patientName) + '" data-status="' + aptStatusBadge + '" data-doctor="' + escapeHtml(apt.doctor || '') + '" data-service="' + escapeHtml(apt.service || '') + '" onclick="openProfileById(\'' + escapeHtml(String(apt.patientID)) + '\', \'' + escapeHtml(apt.patientName) + '\')">';
       html += '<div class="calendar-card-left">';
       html += '<h4>' + escapeHtml(apt.patientName) + '</h4>';
       html += '<p>' + escapeHtml(apt.service || 'Appointment');
