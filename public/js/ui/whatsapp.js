@@ -154,6 +154,87 @@ function waApproveAllMessages() {
     .catch(function() {});
 }
 
+// ===== POST-VISIT: REVIEW REQUEST =====
+
+function calSendReview(phone, name, service, doctor) {
+  var msg = 'Assalam o Alaikum ' + name + '! Thank you for visiting Dr. Nakhoda\'s Skin Institute today.\n\n';
+  msg += 'We hope you had a great experience';
+  if (service) msg += ' with your ' + service + ' treatment';
+  if (doctor) msg += ' by ' + doctor;
+  msg += '.\n\n';
+  msg += 'We would really appreciate if you could leave us a quick review:\n';
+  msg += 'https://g.page/r/drnakhoda/review\n\n';
+  msg += 'Your feedback helps us serve you better. Thank you!';
+
+  waShowPreview('Send Review Request', phone, name, msg).then(function(ok) {
+    if (!ok) return;
+    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
+      .then(function(data) { if (data.ok) alert('Review request queued for approval.'); else alert('Error: ' + (data.error || 'Unknown')); })
+      .catch(function(err) { alert('Error: ' + err.message); });
+  });
+}
+
+// ===== POST-VISIT: AFTERCARE MESSAGE =====
+
+function calSendAftercare(phone, name, service, doctor) {
+  var msg = 'Assalam o Alaikum ' + name + '! Here are your aftercare instructions following your visit at Dr. Nakhoda\'s Skin Institute.\n\n';
+
+  // Service-specific aftercare
+  var svc = (service || '').toLowerCase();
+  if (svc.includes('laser') || svc.includes('hair removal')) {
+    msg += 'Aftercare for Laser Treatment:\n';
+    msg += '- Avoid sun exposure for 48 hours\n';
+    msg += '- Apply SPF 50+ sunscreen daily\n';
+    msg += '- Avoid hot showers/saunas for 24 hours\n';
+    msg += '- Do not scratch or pick the treated area\n';
+    msg += '- Apply aloe vera gel if you feel any irritation\n';
+  } else if (svc.includes('hydra') || svc.includes('facial')) {
+    msg += 'Aftercare for HydraFacial:\n';
+    msg += '- Avoid makeup for 6-12 hours\n';
+    msg += '- Use gentle cleanser and moisturizer\n';
+    msg += '- Apply SPF 30+ sunscreen daily\n';
+    msg += '- Avoid exfoliating for 48 hours\n';
+    msg += '- Stay hydrated and avoid alcohol for 24 hours\n';
+  } else if (svc.includes('botox') || svc.includes('filler')) {
+    msg += 'Aftercare for Injectable Treatment:\n';
+    msg += '- Do not touch or massage the treated area for 4 hours\n';
+    msg += '- Avoid lying down for 4 hours after treatment\n';
+    msg += '- Avoid strenuous exercise for 24 hours\n';
+    msg += '- Avoid alcohol and blood thinners for 24 hours\n';
+    msg += '- Mild swelling/bruising is normal and will resolve in a few days\n';
+  } else if (svc.includes('peel') || svc.includes('chemical')) {
+    msg += 'Aftercare for Chemical Peel:\n';
+    msg += '- Do not pick or peel flaking skin\n';
+    msg += '- Apply prescribed moisturizer frequently\n';
+    msg += '- Avoid sun exposure — use SPF 50+ daily\n';
+    msg += '- Avoid retinol/AHA products for 1 week\n';
+    msg += '- Keep the area clean and hydrated\n';
+  } else if (svc.includes('microneedling') || svc.includes('prp') || svc.includes('rf')) {
+    msg += 'Aftercare for Microneedling/PRP:\n';
+    msg += '- Avoid touching the face for 6 hours\n';
+    msg += '- No makeup for 24 hours\n';
+    msg += '- Use gentle cleanser and prescribed serum only\n';
+    msg += '- Avoid sun and apply SPF 50+ daily\n';
+    msg += '- Redness is normal and will subside in 24-48 hours\n';
+  } else {
+    msg += 'General Aftercare:\n';
+    msg += '- Follow the instructions given by your doctor\n';
+    msg += '- Apply prescribed medications as directed\n';
+    msg += '- Avoid direct sun exposure and use sunscreen\n';
+    msg += '- Stay hydrated and rest well\n';
+  }
+
+  msg += '\nIf you have any questions or concerns, please call us at +92-300-2105374.\n';
+  msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9';
+
+  waShowPreview('Send Aftercare Instructions', phone, name, msg).then(function(ok) {
+    if (!ok) return;
+    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg }) })
+      .then(function(data) { if (data.ok) alert('Aftercare message queued for approval.'); else alert('Error: ' + (data.error || 'Unknown')); })
+      .catch(function(err) { alert('Error: ' + err.message); });
+  });
+}
+
 // ===== MESSAGE PREVIEW MODAL =====
 
 function waShowPreview(title, phone, name, msg) {
