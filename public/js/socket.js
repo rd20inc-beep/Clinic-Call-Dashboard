@@ -97,21 +97,25 @@ socket.on('incoming_call', function(data) {
 
   var isOutbound = data.direction === 'outbound';
 
-  patientNameBanner.textContent = '';
-  patientNameBanner.style.display = 'none';
-  // Strip "contact:" prefix for display — show name cleanly
-  var displayCaller = data.caller && data.caller.indexOf('contact:') === 0
-    ? data.caller.slice(8)
-    : data.caller;
-  callerNumberText.textContent = (isOutbound ? '\u2197 Out: ' : '\u2199 In: ') + displayCaller;
-  callerWhatsapp.href = getWhatsappUrl(data.caller);
-  callTime.textContent = (isOutbound ? 'Outbound at ' : 'Received at ') + new Date(data.timestamp).toLocaleTimeString();
-  cliniceaLink.href = data.cliniceaUrl;
-  notification.classList.add('active');
+  // Admin sees call data but NOT the popup notification/beep
+  // Only the assigned agent gets the alert
+  var isMyCall = data.agent && data.agent === myUsername;
 
-  // Only beep for inbound calls
-  if (!isOutbound) {
-    playBeep();
+  if (isMyCall || myRole !== 'admin') {
+    patientNameBanner.textContent = '';
+    patientNameBanner.style.display = 'none';
+    var displayCaller = data.caller && data.caller.indexOf('contact:') === 0
+      ? data.caller.slice(8)
+      : data.caller;
+    callerNumberText.textContent = (isOutbound ? '\u2197 Out: ' : '\u2199 In: ') + displayCaller;
+    callerWhatsapp.href = getWhatsappUrl(data.caller);
+    callTime.textContent = (isOutbound ? 'Outbound at ' : 'Received at ') + new Date(data.timestamp).toLocaleTimeString();
+    cliniceaLink.href = data.cliniceaUrl;
+    notification.classList.add('active');
+
+    if (!isOutbound) {
+      playBeep();
+    }
   }
 
   // Auto-open Clinicea profile — only for inbound calls
