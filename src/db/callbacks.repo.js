@@ -58,6 +58,8 @@ const stmtSummary = db.prepare(`
 module.exports = {
   /** Create a callback from a missed call. Skips if already exists for this call or number. */
   createFromMissedCall(callId, callerNumber, patientName, agent, callTime) {
+    // Skip invalid numbers (WhatsApp contacts, Unknown, Anonymous)
+    if (!this.isValidCallbackNumber(callerNumber)) return null;
     // Don't create duplicate
     if (callId && stmtExistsForCall.get(callId)) return null;
     if (callerNumber && stmtExistsForNumber.get(callerNumber)) return null;
@@ -111,5 +113,28 @@ module.exports = {
   /** Assign a callback to an agent. */
   assign(id, agent) {
     stmtAssign.run(agent, id);
+  },
+
+  /** Update callback notes. */
+  updateNotes(id, notes) {
+    db.prepare("UPDATE callbacks SET callback_notes = ? WHERE id = ?").run(notes, id);
+  },
+
+  /** Bulk dismiss all pending/overdue callbacks. */
+  dismissAllPending() {
+    return db.prepare("UPDATE callbacks SET callback_status = 'no_callback_needed', resolved_at = datetime('now') WHERE callback_status IN ('pending', 'assigned')").run().changes;
+  },
+
+  /** Bulk dismiss callbacks older than X days. */
+  dismissOlderThan(days) {
+    return db.prepare("UPDATE callbacks SET callback_status = 'no_callback_needed', resolved_at = datetime('now') WHERE callback_status IN ('pending', 'assigned') AND created_at < datetime('now', '-' || ? || ' days')").run(days).changes;
+  },
+
+  /** Don't create callbacks for WhatsApp contact names (not real phone numbers). */
+  isValidCallbackNumber(number) {
+    if (!number) return false;
+    if (number.startsWith('whatsapp:')) return false;
+    if (number === 'Unknown' || number === 'Anonymous') return false;
+    return true;
   },
 };

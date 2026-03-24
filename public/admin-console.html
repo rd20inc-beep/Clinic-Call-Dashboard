@@ -487,7 +487,12 @@
         </div>
       </div>
       <div class="card">
-        <h2>Callback Queue <span class="card-muted" id="cbCount"></span></h2>
+        <h2>Callback Queue <span class="card-muted" id="cbCount"></span>
+          <div class="btn-group">
+            <button class="btn btn-outline btn-sm" onclick="dismissOldCallbacks()">Dismiss Old (7d+)</button>
+            <button class="btn btn-danger btn-sm" onclick="dismissAllCallbacks()">Dismiss All Pending</button>
+          </div>
+        </h2>
         <div class="filter-bar" style="margin-bottom:12px;">
           <button class="filter-btn active" onclick="setCbFilter('pending')" data-cb="pending">Pending</button>
           <button class="filter-btn" onclick="setCbFilter('assigned')" data-cb="assigned">Assigned</button>
@@ -1631,18 +1636,37 @@
           document.getElementById('callbackPager').innerHTML = '';
           return;
         }
-        var html = '<table><thead><tr><th>Time</th><th>Number</th><th>Patient</th><th>Agent</th><th>Status</th><th>Assigned</th><th>Attempts</th><th>Actions</th></tr></thead><tbody>';
+        var html = '<table><thead><tr><th>Age</th><th>Number</th><th>Patient</th><th>Missed By</th><th>Status</th><th>Assigned</th><th>Notes</th><th>Actions</th></tr></thead><tbody>';
         data.callbacks.forEach(function(cb) {
-          var statusBadge = { pending: 'badge-danger', assigned: 'badge-warning', in_progress: 'badge-info', called_back: 'badge-success', resolved: 'badge-active', unreachable: 'badge-disabled' }[cb.callback_status] || '';
+          var statusBadge = { pending: 'badge-danger', assigned: 'badge-warning', in_progress: 'badge-info', called_back: 'badge-success', resolved: 'badge-active', unreachable: 'badge-disabled', no_callback_needed: 'badge-disabled' }[cb.callback_status] || '';
+          // Age indicator
+          var callTime = new Date(cb.call_time || cb.created_at);
+          var ageHours = Math.round((Date.now() - callTime.getTime()) / 3600000);
+          var ageText = ageHours < 1 ? 'Just now' : ageHours < 24 ? ageHours + 'h ago' : Math.floor(ageHours / 24) + 'd ago';
+          var ageColor = ageHours < 2 ? '#10b981' : ageHours < 24 ? '#f59e0b' : '#ef4444';
           html += '<tr>';
-          html += '<td class="meta">' + fmtDate(cb.call_time || cb.created_at) + '</td>';
+          html += '<td><span style="color:' + ageColor + ';font-weight:600;font-size:12px;">' + ageText + '</span><br><span class="meta">' + fmtDate(cb.call_time || cb.created_at) + '</span></td>';
           html += '<td style="font-family:monospace;font-size:12px;">' + esc(cb.caller_number) + '</td>';
           html += '<td>' + esc(cb.patient_name || '-') + '</td>';
           html += '<td>' + esc(cb.original_agent || '-') + '</td>';
-          html += '<td><span class="badge ' + statusBadge + '">' + esc(cb.callback_status) + '</span></td>';
-          html += '<td>' + esc(cb.assigned_agent || '-') + '</td>';
-          html += '<td style="text-align:center;">' + (cb.callback_attempts || 0) + '</td>';
-          html += '<td><div class="btn-group">';
+          html += '<td><span class="badge ' + statusBadge + '">' + esc(cb.callback_status.replace(/_/g, ' ')) + '</span></td>';
+          // Assign dropdown
+          html += '<td>';
+          if (cb.callback_status === 'pending' || cb.callback_status === 'assigned') {
+            html += '<select class="filter-select" style="font-size:11px;padding:3px 6px;" onchange="cbAssign(' + cb.id + ',this.value)">';
+            html += '<option value="">Assign...</option>';
+            if (overviewData && overviewData.agentStats) {
+              overviewData.agentStats.forEach(function(a) { html += '<option value="' + esc(a.username) + '"' + (cb.assigned_agent === a.username ? ' selected' : '') + '>' + esc(a.full_name || a.username) + '</option>'; });
+            }
+            html += '</select>';
+          } else {
+            html += esc(cb.assigned_agent || '-');
+          }
+          html += '</td>';
+          // Notes
+          html += '<td><button class="btn btn-outline btn-xs" onclick="cbAddNote(' + cb.id + ')" title="' + esc(cb.callback_notes || 'Add note') + '">' + (cb.callback_notes ? '📝' : '✏️') + '</button></td>';
+          // Actions
+          html += '<td><div class="btn-group" style="flex-wrap:wrap;">';
           if (cb.callback_status === 'pending' || cb.callback_status === 'assigned') {
             html += '<button class="btn btn-primary btn-xs" onclick="cbAction(' + cb.id + ',\'called_back\')">Called Back</button>';
             html += '<button class="btn btn-warning btn-xs" onclick="cbAction(' + cb.id + ',\'unreachable\')">Unreachable</button>';
@@ -1654,7 +1678,7 @@
           html += '</div></td>';
           html += '</tr>';
           if (cb.callback_notes) {
-            html += '<tr style="background:#f8fafc;"><td colspan="8" class="meta" style="padding:4px 12px;font-style:italic;">' + esc(cb.callback_notes) + '</td></tr>';
+            html += '<tr style="background:#f8fafc;"><td colspan="8" class="meta" style="padding:4px 12px;font-style:italic;">📝 ' + esc(cb.callback_notes) + '</td></tr>';
           }
         });
         html += '</tbody></table>';
@@ -1674,6 +1698,47 @@
         var res = await fetch('/admin/callbacks/' + id + '/status', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ status: status }) });
         var data = await res.json();
         if (data.success) { showToast('Callback updated', 'success'); loadCallbacks(cbPage); }
+        else showToast(data.error, 'error');
+      } catch(e) { showToast('Error', 'error'); }
+    }
+
+    async function cbAssign(id, agent) {
+      if (!agent) return;
+      try {
+        var res = await fetch('/admin/callbacks/' + id + '/assign', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ agent: agent }) });
+        var data = await res.json();
+        if (data.success) { showToast('Assigned to ' + agent, 'success'); loadCallbacks(cbPage); }
+        else showToast(data.error, 'error');
+      } catch(e) { showToast('Error', 'error'); }
+    }
+
+    async function cbAddNote(id) {
+      var note = prompt('Add note for this callback:');
+      if (note === null) return;
+      try {
+        var res = await fetch('/admin/callbacks/' + id + '/notes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ notes: note }) });
+        var data = await res.json();
+        if (data.success) { showToast('Note saved', 'success'); loadCallbacks(cbPage); }
+        else showToast(data.error, 'error');
+      } catch(e) { showToast('Error', 'error'); }
+    }
+
+    async function dismissAllCallbacks() {
+      if (!confirm('Dismiss ALL pending callbacks? This will mark ' + (document.getElementById('cbPending').textContent || '0') + ' callbacks as resolved.')) return;
+      try {
+        var res = await fetch('/admin/callbacks/dismiss-all', { method: 'POST' });
+        var data = await res.json();
+        if (data.success) { showToast(data.dismissed + ' callbacks dismissed', 'success'); loadCallbacks(cbPage); }
+        else showToast(data.error, 'error');
+      } catch(e) { showToast('Error', 'error'); }
+    }
+
+    async function dismissOldCallbacks() {
+      if (!confirm('Dismiss all callbacks older than 7 days?')) return;
+      try {
+        var res = await fetch('/admin/callbacks/dismiss-old', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ days: 7 }) });
+        var data = await res.json();
+        if (data.success) { showToast(data.dismissed + ' old callbacks dismissed', 'success'); loadCallbacks(cbPage); }
         else showToast(data.error, 'error');
       } catch(e) { showToast('Error', 'error'); }
     }

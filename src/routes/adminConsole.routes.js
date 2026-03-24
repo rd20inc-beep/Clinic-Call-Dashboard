@@ -578,8 +578,46 @@ router.put('/admin/callbacks/:id/status', (req, res) => {
 });
 
 // -------------------------------------------------------------------------
-// Update overview pending callbacks count
+// POST /admin/callbacks/:id/assign — assign callback to agent
 // -------------------------------------------------------------------------
+router.post('/admin/callbacks/:id/assign', (req, res) => {
+  const id = parseInt(req.params.id);
+  const { agent } = req.body;
+  if (!id || !agent) return res.json({ error: 'id and agent required' });
+  callbacksRepo.assign(id, agent);
+  auditRepo.log('callback_assigned', 'callback:' + id, 'Assigned to ' + agent, req.session.username);
+  res.json({ success: true });
+});
+
+// -------------------------------------------------------------------------
+// POST /admin/callbacks/:id/notes — update callback notes
+// -------------------------------------------------------------------------
+router.post('/admin/callbacks/:id/notes', (req, res) => {
+  const id = parseInt(req.params.id);
+  const { notes } = req.body;
+  if (!id) return res.json({ error: 'id required' });
+  callbacksRepo.updateNotes(id, (notes || '').substring(0, 500));
+  res.json({ success: true });
+});
+
+// -------------------------------------------------------------------------
+// POST /admin/callbacks/dismiss-all — dismiss all pending callbacks
+// -------------------------------------------------------------------------
+router.post('/admin/callbacks/dismiss-all', (req, res) => {
+  const count = callbacksRepo.dismissAllPending();
+  auditRepo.log('callbacks_dismissed_all', null, count + ' callbacks', req.session.username);
+  res.json({ success: true, dismissed: count });
+});
+
+// -------------------------------------------------------------------------
+// POST /admin/callbacks/dismiss-old — dismiss callbacks older than X days
+// -------------------------------------------------------------------------
+router.post('/admin/callbacks/dismiss-old', (req, res) => {
+  const days = parseInt(req.body.days) || 7;
+  const count = callbacksRepo.dismissOlderThan(days);
+  auditRepo.log('callbacks_dismissed_old', null, count + ' callbacks older than ' + days + ' days', req.session.username);
+  res.json({ success: true, dismissed: count, days });
+});
 
 // -------------------------------------------------------------------------
 // Admin → Agent Direct Messaging (via Socket.IO)
