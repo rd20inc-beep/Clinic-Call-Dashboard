@@ -127,6 +127,45 @@ try { db.exec('ALTER TABLE users ADD COLUMN device_info TEXT'); } catch (e) { /*
 try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN call_ended_at DATETIME'); } catch (e) { /* exists */ }
 
+// --- Callbacks table (missed calls that need follow-up) ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS callbacks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    call_id INTEGER,
+    caller_number TEXT NOT NULL,
+    patient_name TEXT,
+    original_agent TEXT,
+    assigned_agent TEXT,
+    callback_status TEXT DEFAULT 'pending',
+    callback_attempts INTEGER DEFAULT 0,
+    callback_notes TEXT,
+    call_time DATETIME,
+    last_attempt_at DATETIME,
+    resolved_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// Seed callbacks from existing missed calls (one-time migration)
+try {
+  const missedWithoutCb = db.prepare(
+    "SELECT c.id, c.caller_number, c.patient_name, c.agent, c.timestamp FROM calls c " +
+    "LEFT JOIN callbacks cb ON cb.call_id = c.id " +
+    "WHERE c.call_status IN ('missed','rejected','no_answer') AND cb.id IS NULL"
+  ).all();
+  if (missedWithoutCb.length > 0) {
+    const cbInsert = db.prepare("INSERT INTO callbacks (call_id, caller_number, patient_name, original_agent, callback_status, call_time) VALUES (?, ?, ?, ?, 'pending', ?)");
+    const cbExistNum = db.prepare("SELECT id FROM callbacks WHERE caller_number = ? AND callback_status IN ('pending','assigned') LIMIT 1");
+    let seeded = 0;
+    for (const c of missedWithoutCb) {
+      if (cbExistNum.get(c.caller_number)) continue;
+      cbInsert.run(c.id, c.caller_number, c.patient_name, c.agent, c.timestamp);
+      seeded++;
+    }
+    if (seeded > 0) console.log('[MIGRATION] Seeded ' + seeded + ' callbacks from missed calls');
+  }
+} catch (e) { /* table may not exist yet on very first run */ }
+
 // --- Audit log table ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS audit_log (

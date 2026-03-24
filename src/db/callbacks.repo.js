@@ -1,0 +1,115 @@
+'use strict';
+
+const { db } = require('./index');
+
+// --- Prepared statements ---
+
+const stmtInsert = db.prepare(`
+  INSERT INTO callbacks (call_id, caller_number, patient_name, original_agent, callback_status, call_time)
+  VALUES (?, ?, ?, ?, 'pending', ?)
+`);
+
+const stmtExistsForCall = db.prepare(
+  'SELECT id FROM callbacks WHERE call_id = ? LIMIT 1'
+);
+
+const stmtExistsForNumber = db.prepare(
+  "SELECT id FROM callbacks WHERE caller_number = ? AND callback_status IN ('pending', 'assigned') LIMIT 1"
+);
+
+const stmtGetAll = db.prepare(
+  'SELECT * FROM callbacks ORDER BY created_at DESC LIMIT ? OFFSET ?'
+);
+
+const stmtGetByStatus = db.prepare(
+  'SELECT * FROM callbacks WHERE callback_status = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
+);
+
+const stmtGetOverdue = db.prepare(
+  "SELECT * FROM callbacks WHERE callback_status IN ('pending', 'assigned') AND created_at < datetime('now', '-2 hours') ORDER BY created_at ASC LIMIT ? OFFSET ?"
+);
+
+const stmtCountAll = db.prepare('SELECT COUNT(*) as c FROM callbacks');
+const stmtCountByStatus = db.prepare('SELECT COUNT(*) as c FROM callbacks WHERE callback_status = ?');
+const stmtCountOverdue = db.prepare("SELECT COUNT(*) as c FROM callbacks WHERE callback_status IN ('pending', 'assigned') AND created_at < datetime('now', '-2 hours')");
+
+const stmtUpdateStatus = db.prepare(
+  "UPDATE callbacks SET callback_status = ?, callback_attempts = callback_attempts + 1, last_attempt_at = datetime('now') WHERE id = ?"
+);
+
+const stmtResolve = db.prepare(
+  "UPDATE callbacks SET callback_status = ?, resolved_at = datetime('now'), last_attempt_at = datetime('now') WHERE id = ?"
+);
+
+const stmtAssign = db.prepare(
+  "UPDATE callbacks SET assigned_agent = ?, callback_status = 'assigned' WHERE id = ?"
+);
+
+const stmtSummary = db.prepare(`
+  SELECT
+    SUM(CASE WHEN callback_status = 'pending' THEN 1 ELSE 0 END) as pending,
+    SUM(CASE WHEN callback_status = 'assigned' THEN 1 ELSE 0 END) as assigned,
+    SUM(CASE WHEN callback_status IN ('pending','assigned') AND created_at < datetime('now','-2 hours') THEN 1 ELSE 0 END) as overdue,
+    SUM(CASE WHEN callback_status IN ('called_back','resolved') THEN 1 ELSE 0 END) as resolved,
+    COUNT(*) as total
+  FROM callbacks
+`);
+
+module.exports = {
+  /** Create a callback from a missed call. Skips if already exists for this call or number. */
+  createFromMissedCall(callId, callerNumber, patientName, agent, callTime) {
+    // Don't create duplicate
+    if (callId && stmtExistsForCall.get(callId)) return null;
+    if (callerNumber && stmtExistsForNumber.get(callerNumber)) return null;
+    const result = stmtInsert.run(callId || null, callerNumber, patientName || null, agent || null, callTime || new Date().toISOString());
+    return result.lastInsertRowid;
+  },
+
+  /** Get callbacks with optional status filter and pagination. */
+  getCallbacks({ status, overdue, page = 1, limit = 25 } = {}) {
+    const offset = (page - 1) * limit;
+    let rows, total;
+
+    if (overdue) {
+      rows = stmtGetOverdue.all(limit, offset);
+      total = stmtCountOverdue.get().c;
+    } else if (status) {
+      rows = stmtGetByStatus.all(status, limit, offset);
+      total = stmtCountByStatus.get(status).c;
+    } else {
+      rows = stmtGetAll.all(limit, offset);
+      total = stmtCountAll.get().c;
+    }
+
+    return { callbacks: rows, total, page, totalPages: Math.ceil(total / limit) || 1 };
+  },
+
+  /** Get summary counts. */
+  getSummary() {
+    const row = stmtSummary.get();
+    const total = row.total || 0;
+    const resolved = row.resolved || 0;
+    return {
+      pending: row.pending || 0,
+      assigned: row.assigned || 0,
+      overdue: row.overdue || 0,
+      resolved,
+      total,
+      recovery_rate: total > 0 ? Math.round((resolved / total) * 100) : 0,
+    };
+  },
+
+  /** Update callback status. */
+  updateStatus(id, status) {
+    if (status === 'resolved' || status === 'no_callback_needed' || status === 'called_back') {
+      stmtResolve.run(status, id);
+    } else {
+      stmtUpdateStatus.run(status, id);
+    }
+  },
+
+  /** Assign a callback to an agent. */
+  assign(id, agent) {
+    stmtAssign.run(agent, id);
+  },
+};

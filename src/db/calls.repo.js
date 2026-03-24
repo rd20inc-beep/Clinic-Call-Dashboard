@@ -130,10 +130,20 @@ module.exports = {
   },
 
   /**
-   * Update call status.
+   * Update call status. Auto-creates callback if missed.
    */
   updateCallStatus(callId, status) {
     stmtUpdateCallStatus.run(status, callId);
+    // Auto-create callback for missed calls
+    if (status === 'missed' || status === 'rejected' || status === 'no_answer') {
+      try {
+        const call = db.prepare('SELECT caller_number, patient_name, agent, timestamp FROM calls WHERE id = ?').get(callId);
+        if (call) {
+          const cbRepo = require('./callbacks.repo');
+          cbRepo.createFromMissedCall(callId, call.caller_number, call.patient_name, call.agent, call.timestamp);
+        }
+      } catch (e) { /* ignore */ }
+    }
   },
 
   /**
@@ -189,9 +199,24 @@ module.exports = {
   // Performance analytics (SQL-driven, not frontend guesses)
   // ---------------------------------------------------------------------------
 
-  /** Auto-finalize stale unknown calls as missed. Returns count finalized. */
+  /** Auto-finalize stale unknown calls as missed. Creates callbacks for them. Returns count finalized. */
   finalizeStale() {
-    return stmtFinalizeStale.run().changes;
+    // Get the calls that will be finalized (before updating them)
+    const stale = db.prepare("SELECT id, caller_number, patient_name, agent, timestamp FROM calls WHERE call_status = 'unknown' AND timestamp < datetime('now', '-5 minutes')").all();
+
+    const changes = stmtFinalizeStale.run().changes;
+
+    // Auto-create callbacks for newly missed calls
+    if (stale.length > 0) {
+      try {
+        const cbRepo = require('./callbacks.repo');
+        for (const call of stale) {
+          cbRepo.createFromMissedCall(call.id, call.caller_number, call.patient_name, call.agent, call.timestamp);
+        }
+      } catch (e) { /* callbacks repo may not be ready */ }
+    }
+
+    return changes;
   },
 
   /** Get per-agent performance for today. */

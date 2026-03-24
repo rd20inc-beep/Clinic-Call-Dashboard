@@ -164,7 +164,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
       activeAgents: activeAgents,
       portalOnline: portalOnline,
       mobileOnline: mobileOnline,
-      pendingCallbacks: 0,
+      pendingCallbacks: (() => { try { return require('../db/callbacks.repo').getSummary().pending; } catch(e) { return 0; } })(),
       appointmentsMatched: appointmentsMatched,
       appointmentsScheduledToday: appointmentsToday,
       appointmentsTotal: appointmentsTotal,
@@ -506,11 +506,48 @@ router.get('/admin/analytics/trends', (req, res) => {
 });
 
 // -------------------------------------------------------------------------
-// Stubs for unimplemented features (prevent 404s)
+// Callbacks — real implementation backed by callbacks table
 // -------------------------------------------------------------------------
-router.get('/admin/callbacks/summary', (req, res) => res.json({ pending: 0, overdue: 0, resolved: 0, recovery_rate: 0 }));
-router.get('/admin/callbacks', (req, res) => res.json({ callbacks: [], total: 0, page: 1, totalPages: 1 }));
-router.put('/admin/callbacks/:id/status', (req, res) => res.json({ success: true }));
+const callbacksRepo = require('../db/callbacks.repo');
+
+router.get('/admin/callbacks/summary', (req, res) => {
+  res.json(callbacksRepo.getSummary());
+});
+
+router.get('/admin/callbacks', (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const status = req.query.status || '';
+  const overdue = req.query.overdue === '1';
+  res.json(callbacksRepo.getCallbacks({ status: status || undefined, overdue, page }));
+});
+
+// The old HTML uses POST for status updates
+router.post('/admin/callbacks/:id/status', (req, res) => {
+  const id = parseInt(req.params.id);
+  const { status } = req.body;
+  if (!id || !status) return res.json({ error: 'id and status required' });
+  callbacksRepo.updateStatus(id, status);
+  auditRepo.log('callback_' + status, 'callback:' + id, null, req.session.username);
+  res.json({ success: true });
+});
+
+// Also support PUT (the old HTML uses both)
+router.put('/admin/callbacks/:id/status', (req, res) => {
+  const id = parseInt(req.params.id);
+  const { status } = req.body;
+  if (!id || !status) return res.json({ error: 'id and status required' });
+  callbacksRepo.updateStatus(id, status);
+  auditRepo.log('callback_' + status, 'callback:' + id, null, req.session.username);
+  res.json({ success: true });
+});
+
+// -------------------------------------------------------------------------
+// Update overview pending callbacks count
+// -------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------
+// Stubs for features not yet implemented
+// -------------------------------------------------------------------------
 router.get('/admin/wa-sessions', (req, res) => res.json({ sessions: [] }));
 router.post('/admin/broadcast', (req, res) => res.json({ success: true, sent: 0 }));
 router.get('/admin/appointments', (req, res) => res.json({ appointments: [] }));
