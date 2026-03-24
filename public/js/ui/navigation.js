@@ -46,6 +46,9 @@ function showPage(page) {
     if (frame && !frame.src.includes('admin-console.html')) {
       frame.src = '/admin-console.html';
     }
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.body.style.overflow = '';
   }
 }
 
