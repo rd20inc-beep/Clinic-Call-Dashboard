@@ -7,6 +7,7 @@ const { getEventLog, logEvent } = require('../services/logging.service');
 const { requireWebhookSecret } = require('../middleware/webhookAuth');
 const { getUsers } = require('../config/env');
 const { getAllHeartbeats } = require('../services/agentRegistry.service');
+const { getAllPresence } = require('../sockets/index');
 const usersRepo = require('../db/users.repo');
 const bcrypt = require('bcryptjs');
 
@@ -152,17 +153,8 @@ module.exports = function setupAdminRoutes(io) {
   router.get('/api/agents', requireAuth, requireAdmin, (req, res) => {
     const users = getUsers();
     const heartbeats = getAllHeartbeats();
+    const presence = getAllPresence();
     const { db } = require('../db/index');
-
-    // Get connected sockets per agent
-    const onlineAgents = {};
-    if (io) {
-      for (const [, socket] of io.sockets.sockets) {
-        if (socket.agentUsername) {
-          onlineAgents[socket.agentUsername] = true;
-        }
-      }
-    }
 
     const agents = [];
     for (const [username, user] of Object.entries(users)) {
@@ -177,15 +169,20 @@ module.exports = function setupAdminRoutes(io) {
         avgDuration = db.prepare("SELECT AVG(duration) as a FROM calls WHERE agent = ? AND duration IS NOT NULL").get(username).a || 0;
       } catch (e) { /* ignore */ }
 
-      // Determine status: active (heartbeat <30s), idle (<5min), offline
+      // Determine status using presence + heartbeat
+      const pres = presence[username] || { online: false, lastActivity: null };
       let status = 'offline';
-      if (onlineAgents[username]) {
-        if (hb && hb.alive) {
-          const secAgo = (Date.now() - hb.lastHeartbeat) / 1000;
-          status = secAgo < 30 ? 'active' : 'idle';
-        } else {
-          status = 'idle';
-        }
+      if (pres.online) {
+        // Socket connected — check activity recency
+        const lastAct = pres.lastActivity || 0;
+        const actAgo = (Date.now() - lastAct) / 1000;
+        if (actAgo < 300) status = 'active';  // activity within 5 min
+        else status = 'idle';
+      }
+      // Override with heartbeat if monitor is alive (agent has call monitor running)
+      if (hb && hb.alive) {
+        const hbAgo = (Date.now() - hb.lastHeartbeat) / 1000;
+        if (hbAgo < 30) status = 'active';
       }
 
       agents.push({
@@ -196,9 +193,10 @@ module.exports = function setupAdminRoutes(io) {
         active: user.source === 'db' ? (user.active !== false) : true,
         source: user.source || 'env',
         dbId: user.dbId || null,
-        online: !!onlineAgents[username],
+        online: pres.online,
         monitorAlive: hb ? hb.alive : false,
         lastHeartbeat: hb ? hb.lastHeartbeat : null,
+        lastActivity: pres.lastActivity || (hb ? hb.lastHeartbeat : null),
         todayCalls,
         weekCalls,
         totalCalls,

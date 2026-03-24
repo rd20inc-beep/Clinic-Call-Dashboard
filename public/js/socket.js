@@ -190,6 +190,18 @@ socket.on('wa_connection', function(data) {
   }
 });
 
+// Live agent presence updates (admin only)
+socket.on('agent_presence', function(data) {
+  if (window.location.hash === '#agents' && typeof loadAgents === 'function') {
+    loadAgents();
+  }
+});
+
+// Send activity pings every 60 seconds so server knows we're active
+setInterval(function() {
+  if (socket.connected) socket.emit('activity');
+}, 60000);
+
 // ===== INITIALIZATION =====
 checkMonitorStatus();
 setInterval(checkMonitorStatus, 15000);

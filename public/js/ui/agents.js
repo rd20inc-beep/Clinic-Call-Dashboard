@@ -67,7 +67,7 @@ function renderAgentCard(a) {
     monitorBadge = '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:' + mColor + ';margin-left:8px;"><span style="width:6px;height:6px;border-radius:50%;background:' + mColor + ';display:inline-block;"></span>' + mLabel + '</span>';
   }
 
-  var lastSeen = agentLastSeen(a.lastHeartbeat);
+  var lastSeen = agentLastSeen(a.lastActivity || a.lastHeartbeat);
   var rateColor = a.answerRate >= 80 ? '#2ecc71' : a.answerRate >= 50 ? '#f39c12' : '#e74c3c';
   var avgDur = a.avgDuration > 0 ? formatCallDuration(a.avgDuration) : '--';
   var displayName = a.displayName && a.displayName !== a.username ? ' (' + escapeHtml(a.displayName) + ')' : '';

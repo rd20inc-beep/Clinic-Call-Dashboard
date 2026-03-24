@@ -4,6 +4,27 @@ const { logEvent } = require('../services/logging.service');
 const { getClientIP } = require('../utils/security');
 const { rememberAgentIP } = require('../services/agentRegistry.service');
 
+// ---------------------------------------------------------------------------
+// Live agent presence tracking
+// ---------------------------------------------------------------------------
+
+// { username: { online: true, lastActivity: Date.now(), socketCount: 0 } }
+const agentPresence = {};
+
+function getPresence(username) {
+  return agentPresence[username] || { online: false, lastActivity: null, socketCount: 0 };
+}
+
+function getAllPresence() {
+  return agentPresence;
+}
+
+function updateActivity(username) {
+  if (!username) return;
+  if (!agentPresence[username]) agentPresence[username] = { online: false, lastActivity: null, socketCount: 0 };
+  agentPresence[username].lastActivity = Date.now();
+}
+
 /**
  * Extract the client IP from a Socket.IO handshake object.
  *
@@ -85,6 +106,22 @@ function setupSockets(io, sessionMiddleware) {
         logEvent('info', 'IP-to-agent mapped: ' + ip + ' => ' + username + ' (from socket)');
       }
 
+      // Track presence
+      if (!agentPresence[username]) agentPresence[username] = { online: false, lastActivity: null, socketCount: 0 };
+      agentPresence[username].socketCount++;
+      agentPresence[username].online = true;
+      agentPresence[username].lastActivity = Date.now();
+
+      // Broadcast presence update to admins
+      io.to('role:admin').emit('agent_presence', {
+        username, status: 'online', lastActivity: agentPresence[username].lastActivity,
+      });
+
+      // Listen for activity pings from frontend
+      socket.on('activity', function() {
+        updateActivity(username);
+      });
+
       // Tell the client which rooms it joined so the frontend can verify
       socket.emit('join_confirm', {
         username: username,
@@ -114,8 +151,21 @@ function setupSockets(io, sessionMiddleware) {
         'Socket disconnected: ' + (username || 'unknown'),
         'SID: ' + socket.id
       );
+
+      // Update presence
+      if (username && agentPresence[username]) {
+        agentPresence[username].socketCount = Math.max(0, agentPresence[username].socketCount - 1);
+        if (agentPresence[username].socketCount === 0) {
+          agentPresence[username].online = false;
+          agentPresence[username].lastActivity = Date.now();
+          // Broadcast to admins
+          io.to('role:admin').emit('agent_presence', {
+            username, status: 'offline', lastActivity: agentPresence[username].lastActivity,
+          });
+        }
+      }
     });
   });
 }
 
-module.exports = { setupSockets };
+module.exports = { setupSockets, getPresence, getAllPresence, updateActivity };
