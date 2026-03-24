@@ -42,6 +42,73 @@ function forceLogoutAll() {
     .catch(function(err) { alert('Error: ' + err.message); });
 }
 
+// ===== QUICK MESSAGE AGENT (contextual from call history) =====
+function quickMessageAgent(agent, caller, status, patient) {
+  // Remove existing modal
+  var old = document.getElementById('quickMsgModal'); if (old) old.remove();
+
+  var name = patient || caller;
+  var templates = [];
+
+  if (status === 'missed') {
+    templates.push({ label: 'Ask about missed call', text: 'Hi, patient ' + name + ' (' + caller + ') called and was missed. Can you please call them back?' });
+    templates.push({ label: 'Urgent callback', text: 'URGENT: Please call back ' + name + ' (' + caller + ') immediately — missed call needs follow-up.' });
+  }
+  if (status === 'answered') {
+    templates.push({ label: 'Ask for update', text: 'Hi, how did the call with ' + name + ' (' + caller + ') go? Was an appointment booked?' });
+    templates.push({ label: 'Appointment reminder', text: 'Please make sure to book an appointment for ' + name + ' (' + caller + ') if not done already.' });
+  }
+  templates.push({ label: 'Follow up', text: 'Please follow up with ' + name + ' (' + caller + ') regarding their inquiry.' });
+  templates.push({ label: 'Custom message', text: '' });
+
+  var ov = document.createElement('div');
+  ov.id = 'quickMsgModal';
+  ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
+
+  var html = '<div style="background:#fff;border-radius:12px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.15);padding:24px;">';
+  html += '<h3 style="margin:0 0 4px;font-size:16px;color:#0f172a;">Message to ' + escapeHtml(agent) + '</h3>';
+  html += '<p style="margin:0 0 16px;font-size:12px;color:#94a3b8;">About: ' + escapeHtml(name) + ' (' + escapeHtml(caller) + ')</p>';
+
+  // Template buttons
+  html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;">';
+  templates.forEach(function(t, i) {
+    if (t.text) {
+      html += '<button onclick="document.getElementById(\'qmText\').value=\'' + t.text.replace(/'/g, "\\'") + '\'" style="text-align:left;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#334155;font-size:12px;cursor:pointer;font-family:inherit;">' + escapeHtml(t.label) + '</button>';
+    }
+  });
+  html += '</div>';
+
+  html += '<textarea id="qmText" rows="3" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;" placeholder="Type or select a template above..."></textarea>';
+  html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">';
+  html += '<button onclick="document.getElementById(\'quickMsgModal\').remove()" style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>';
+  html += '<button onclick="sendQuickMessage(\'' + escapeHtml(agent) + '\')" style="padding:8px 16px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Send</button>';
+  html += '</div></div>';
+
+  ov.innerHTML = html;
+  document.body.appendChild(ov);
+}
+
+function sendQuickMessage(agent) {
+  var msg = document.getElementById('qmText').value.trim();
+  if (!msg) return;
+  waFetch('/admin/message-agent', { method: 'POST', body: JSON.stringify({ agent: agent, message: msg }) })
+    .then(function(d) {
+      if (d.success) {
+        document.getElementById('quickMsgModal').remove();
+        // Show success toast
+        var toast = document.createElement('div');
+        toast.className = 'error-toast success';
+        toast.innerHTML = 'Message sent to ' + escapeHtml(agent) + '<button class="error-toast-close" onclick="dismissToast(this)">&times;</button>';
+        toastContainer.appendChild(toast);
+        setTimeout(function() { if (toast.parentNode) { toast.style.animation = 'toastOut 0.3s ease-in forwards'; setTimeout(function() { toast.remove(); }, 300); } }, 4000);
+      } else {
+        alert('Error: ' + (d.error || 'Failed'));
+      }
+    })
+    .catch(function(err) { alert('Error: ' + err.message); });
+}
+
 // ===== SAFE FETCH HELPER (for non-waFetch callers) =====
 async function safeFetch(url, opts) {
   var res = await fetch(url, opts);
@@ -308,9 +375,10 @@ async function loadCallHistory(page) {
         '<td><span id="duration-' + call.id + '">' + durDisplay + '</span></td>' +
         '<td>' + escapeHtml(time) + '</td>' +
         '<td><span class="meeting-badge loading" id="meeting-' + call.id + '">Loading...</span></td>' +
-        '<td style="display:flex;gap:6px;align-items:center;">' +
-          '<button class="btn-profile" onclick="openProfile(\'' + escapeHtml(call.caller_number) + '\',\'' + escapeHtml(call.clinicea_url) + '\')">View Profile</button>' +
+        '<td style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">' +
+          '<button class="btn-profile" onclick="openProfile(\'' + escapeHtml(call.caller_number) + '\',\'' + escapeHtml(call.clinicea_url) + '\')">Profile</button>' +
           '<a href="' + escapeHtml(call.clinicea_url) + '" target="_blank" class="btn-clinicea">Clinicea</a>' +
+          (myRole === 'admin' && call.agent ? '<button style="padding:3px 6px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:10px;cursor:pointer;" onclick="quickMessageAgent(\'' + escapeHtml(call.agent) + '\',\'' + escapeHtml(displayNumber) + '\',\'' + escapeHtml(call.call_status || '') + '\',\'' + escapeHtml(call.patient_name || '') + '\')">Msg</button>' : '') +
         '</td>' +
       '</tr>';
     });
