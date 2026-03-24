@@ -60,6 +60,13 @@
           WhatsApp Bot
         </a>
 
+        <a class="nav-item admin-only" data-page="agents" onclick="showPage('agents')" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          Agents
+        </a>
+
         <div class="nav-spacer"></div>
 
         <a class="nav-item admin-only" href="/download/call-monitor" style="display:none;">
@@ -157,6 +164,12 @@
         <div id="patientsEmpty" class="empty-state" style="display:none;">
           <p>No patients found</p>
         </div>
+      </div>
+
+      <!-- ===== AGENTS PAGE (admin only) ===== -->
+      <div class="page-container" id="page-agents">
+        <h2 class="section-title" style="margin-bottom:16px;">Agent Management</h2>
+        <div id="agentCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;"></div>
       </div>
 
       <!-- ===== WHATSAPP BOT PAGE ===== -->
@@ -297,6 +310,7 @@
   <script src="/js/ui/popup.js?v=20260324"></script>
   <script src="/js/ui/callLog.js?v=20260324"></script>
   <script src="/js/ui/patientProfile.js?v=20260324"></script>
+  <script src="/js/ui/agents.js?v=20260324"></script>
   <script src="/js/ui/whatsapp.js?v=20260324"></script>
   <script src="/js/socket.js?v=20260324"></script>
 </body>

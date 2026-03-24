@@ -45,6 +45,8 @@ socket.on('monitor_status', function(data) {
   }
   console.log('[Dashboard] monitor_status ACCEPTED — event.agent:', data.agent, 'me:', myUsername);
   setMonitorStatus(data.alive);
+  // Refresh agent cards if on agents page
+  if (window.location.hash === '#agents' && typeof loadAgents === 'function') loadAgents();
 });
 
 // ===== INCOMING CALL HANDLER =====

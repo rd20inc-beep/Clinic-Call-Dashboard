@@ -32,6 +32,9 @@ function showPage(page) {
     loadWaStats();
     loadWaConversations();
   }
+  if (page === 'agents') {
+    loadAgents();
+  }
 }
 
 function toggleSidebar() {
@@ -44,7 +47,7 @@ function toggleSidebar() {
 // Hash-based routing
 function handleRoute() {
   var hash = window.location.hash.replace('#', '') || 'dashboard';
-  var validPages = ['dashboard', 'calendar', 'patients', 'whatsapp'];
+  var validPages = ['dashboard', 'calendar', 'patients', 'whatsapp', 'agents'];
   showPage(validPages.includes(hash) ? hash : 'dashboard');
 }
 

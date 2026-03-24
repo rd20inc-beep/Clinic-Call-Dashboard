@@ -5,6 +5,9 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { apiLimiter } = require('../middleware/rateLimit');
 const { getEventLog, logEvent } = require('../services/logging.service');
 const { requireWebhookSecret } = require('../middleware/webhookAuth');
+const { getUsers } = require('../config/env');
+const { getAllHeartbeats } = require('../services/agentRegistry.service');
+const bcrypt = require('bcryptjs');
 
 // In-memory monitor log storage: { agent: "log text" }
 const monitorLogs = {};
@@ -145,6 +148,72 @@ module.exports = function setupAdminRoutes(io) {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/agents - list all agents with status (admin only)
+  // -------------------------------------------------------------------------
+  router.get('/api/agents', requireAuth, requireAdmin, (req, res) => {
+    const users = getUsers();
+    const heartbeats = getAllHeartbeats();
+    const { db } = require('../db/index');
+
+    // Get connected sockets per agent
+    const onlineAgents = {};
+    if (io) {
+      for (const [, socket] of io.sockets.sockets) {
+        if (socket.agentUsername) {
+          onlineAgents[socket.agentUsername] = true;
+        }
+      }
+    }
+
+    const agents = [];
+    for (const [username, user] of Object.entries(users)) {
+      const hb = heartbeats[username];
+      let todayCalls = 0;
+      let totalCalls = 0;
+      try {
+        todayCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now')").get(username).c;
+        totalCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ?").get(username).c;
+      } catch (e) { /* ignore */ }
+
+      agents.push({
+        username,
+        role: user.role,
+        online: !!onlineAgents[username],
+        monitorAlive: hb ? hb.alive : false,
+        lastHeartbeat: hb ? hb.lastHeartbeat : null,
+        todayCalls,
+        totalCalls,
+      });
+    }
+
+    res.json({ agents });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/change-password - change agent password (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/change-password', requireAuth, requireAdmin, (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) return res.json({ error: 'username and password required' });
+    if (password.length < 6) return res.json({ error: 'Password must be at least 6 characters' });
+
+    const users = getUsers();
+    if (!users[username]) return res.json({ error: 'Unknown user: ' + username });
+
+    // Generate bcrypt hash and set env var (persists for this process only)
+    const hash = bcrypt.hashSync(password, 10);
+    const envKey = 'USER_' + username.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_HASH';
+    process.env[envKey] = hash;
+
+    // Clear any plaintext fallback
+    const passKey = 'USER_' + username.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_PASS';
+    delete process.env[passKey];
+
+    logEvent('info', 'Password changed for ' + username + ' by ' + req.session.username);
+    res.json({ ok: true });
   });
 
   return router;
