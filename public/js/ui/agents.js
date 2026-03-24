@@ -9,7 +9,6 @@ var agentSearchTerm = '';
 function agentToast(message, type) {
   var toast = document.createElement('div');
   toast.className = 'error-toast' + (type === 'warn' ? ' warn' : type === 'success' ? ' success' : '');
-  if (type === 'success') toast.style.cssText = 'background:#2ecc71;color:white;';
   toast.innerHTML = escapeHtml(message) + '<button class="error-toast-close" onclick="dismissToast(this)">&times;</button>';
   toastContainer.appendChild(toast);
   setTimeout(function() {
@@ -280,7 +279,7 @@ function agentChangePassword(username) {
       if (data.ok) agentToast('Password changed for ' + username, 'success');
       else agentToast(data.error || 'Failed to change password', 'warn');
     })
-    .catch(function() {});
+    .catch(function(err) { if (err.message !== 'Session expired') agentToast('Request failed', 'warn'); });
 }
 
 function agentToggleActive(username, active) {
@@ -297,7 +296,7 @@ function agentToggleActive(username, active) {
         if (data.ok) { agentToast(username + ' ' + (active ? 'activated' : 'deactivated'), 'success'); loadAgents(); }
         else agentToast(data.error || 'Action failed', 'warn');
       })
-      .catch(function() {});
+      .catch(function(err) { if (err.message !== 'Session expired') agentToast('Request failed', 'warn'); });
   });
 }
 
@@ -314,7 +313,7 @@ function agentDelete(username) {
         if (data.ok) { agentToast(username + ' deleted', 'success'); loadAgents(); }
         else agentToast(data.error || 'Delete failed', 'warn');
       })
-      .catch(function() {});
+      .catch(function(err) { if (err.message !== 'Session expired') agentToast('Request failed', 'warn'); });
   });
 }
 
@@ -400,7 +399,7 @@ function agentRestore(id) {
           if (data.ok) { agentToast('Agent restored', 'success'); agentShowArchived(); loadAgents(); }
           else agentToast(data.error || 'Restore failed', 'warn');
         })
-        .catch(function() {});
+        .catch(function(err) { if (err.message !== 'Session expired') agentToast('Request failed', 'warn'); });
     });
 }
 

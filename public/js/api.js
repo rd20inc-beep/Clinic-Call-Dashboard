@@ -17,11 +17,21 @@ function formatCallDuration(seconds) {
   return m + ':' + String(s).padStart(2, '0');
 }
 
+// ===== SAFE FETCH HELPER (for non-waFetch callers) =====
+async function safeFetch(url, opts) {
+  var res = await fetch(url, opts);
+  var ct = res.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    if (res.status === 401 || res.redirected) window.location.href = '/login';
+    throw new Error('Non-JSON response');
+  }
+  return res.json();
+}
+
 // ===== CALL STATS =====
 async function loadCallStats() {
   try {
-    var res = await fetch('/api/call-stats');
-    var data = await res.json();
+    var data = await safeFetch('/api/call-stats');
     var el = document.getElementById('callStats');
     if (!el) return;
 
@@ -110,8 +120,7 @@ function dashMiniStat(value, label, color) {
 async function loadCallHistory(page) {
   if (page !== undefined) currentPage = page;
   try {
-    var res = await fetch('/api/calls?page=' + currentPage + '&limit=10');
-    var data = await res.json();
+    var data = await safeFetch('/api/calls?page=' + currentPage + '&limit=10');
     var calls = data.calls;
     var total = data.total;
     var totalPages = data.totalPages;
@@ -311,8 +320,7 @@ function setMonitorStatus(alive) {
 
 async function checkMonitorStatus() {
   try {
-    var res = await fetch('/api/monitor-status');
-    var data = await res.json();
+    var data = await safeFetch('/api/monitor-status');
     setMonitorStatus(data.alive);
   } catch (e) { setMonitorStatus(false); }
 }
@@ -372,8 +380,7 @@ async function loadCalendar() {
   countEl.textContent = '';
 
   try {
-    var res = await fetch('/api/appointments-by-date?date=' + encodeURIComponent(date) + '&refresh=1');
-    var data = await res.json();
+    var data = await safeFetch('/api/appointments-by-date?date=' + encodeURIComponent(date) + '&refresh=1');
 
     if (data.error && data.error !== 'Clinicea API not configured') {
       listEl.innerHTML = '<div class="empty-state"><p>Error: ' + escapeHtml(data.error) + '</p></div>';

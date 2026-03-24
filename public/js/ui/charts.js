@@ -90,9 +90,9 @@ function renderAgentChart(agentComp) {
   agentComp.forEach(function(a) { if (a.total > maxTotal) maxTotal = a.total; });
 
   el.innerHTML = agentComp.map(function(a) {
-    var answeredW = Math.round((a.answered / maxTotal) * 100);
-    var missedW = Math.round((a.missed / maxTotal) * 100);
-    var talkStr = formatCallDuration(a.talkTime);
+    var answeredW = Math.round(((a.answered || 0) / maxTotal) * 100);
+    var missedW = Math.round(((a.missed || 0) / maxTotal) * 100);
+    var talkStr = formatCallDuration(a.talkTime || 0);
 
     return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">' +
       '<div style="width:70px;font-size:12px;font-weight:600;color:#222;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(a.agent) + '</div>' +
