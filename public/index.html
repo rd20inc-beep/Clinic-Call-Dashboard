@@ -144,6 +144,27 @@
           </div>
         </div>
 
+        <!-- Charts (admin only) -->
+        <div id="dashCharts" style="display:none;margin-bottom:20px;">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+            <div style="flex:1;min-width:300px;background:#fff;border-radius:10px;border:1px solid #eee;padding:14px 16px;">
+              <h3 style="margin:0 0 10px;font-size:14px;color:#222;font-weight:600;">Calls Today by Hour</h3>
+              <div id="chartHourly" style="height:120px;display:flex;align-items:flex-end;gap:2px;"></div>
+              <div style="display:flex;justify-content:space-between;margin-top:4px;font-size:9px;color:#bbb;">
+                <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span>
+              </div>
+            </div>
+            <div style="flex:1;min-width:300px;background:#fff;border-radius:10px;border:1px solid #eee;padding:14px 16px;">
+              <h3 style="margin:0 0 10px;font-size:14px;color:#222;font-weight:600;">7-Day Trend</h3>
+              <div id="chartDaily" style="height:120px;display:flex;align-items:flex-end;gap:4px;"></div>
+            </div>
+          </div>
+          <div style="background:#fff;border-radius:10px;border:1px solid #eee;padding:14px 16px;">
+            <h3 style="margin:0 0 10px;font-size:14px;color:#222;font-weight:600;">Agent Performance This Week</h3>
+            <div id="chartAgents"></div>
+          </div>
+        </div>
+
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <h2 class="section-title" style="margin-bottom:0;">Call History</h2>
         </div>
@@ -372,6 +393,7 @@
   <script src="/js/ui/popup.js?v=20260324"></script>
   <script src="/js/ui/callLog.js?v=20260324"></script>
   <script src="/js/ui/patientProfile.js?v=20260324"></script>
+  <script src="/js/ui/charts.js?v=20260324"></script>
   <script src="/js/ui/agents.js?v=20260324"></script>
   <script src="/js/ui/whatsapp.js?v=20260324"></script>
   <script src="/js/socket.js?v=20260324"></script>

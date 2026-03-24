@@ -184,6 +184,46 @@ module.exports = function setupAdminRoutes(io) {
   });
 
   // -------------------------------------------------------------------------
+  // GET /api/call-analytics - charts data (admin only)
+  // -------------------------------------------------------------------------
+  router.get('/api/call-analytics', requireAuth, requireAdmin, (req, res) => {
+    try {
+      const { db } = require('../db/index');
+
+      // 1. Calls per hour today (0-23)
+      const hourlyRows = db.prepare(
+        "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as count FROM calls WHERE date(timestamp) = date('now') GROUP BY hour ORDER BY hour"
+      ).all();
+      const hourly = Array(24).fill(0);
+      hourlyRows.forEach(function(r) { hourly[r.hour] = r.count; });
+
+      // 2. Answered vs missed per hour today
+      const answeredHourly = Array(24).fill(0);
+      const missedHourly = Array(24).fill(0);
+      db.prepare(
+        "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, call_status, COUNT(*) as count FROM calls WHERE date(timestamp) = date('now') AND call_status IN ('answered','missed') GROUP BY hour, call_status"
+      ).all().forEach(function(r) {
+        if (r.call_status === 'answered') answeredHourly[r.hour] = r.count;
+        else missedHourly[r.hour] = r.count;
+      });
+
+      // 3. Daily trend (last 7 days)
+      const dailyRows = db.prepare(
+        "SELECT date(timestamp) as day, COUNT(*) as total, SUM(CASE WHEN call_status='answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN call_status='missed' THEN 1 ELSE 0 END) as missed FROM calls WHERE timestamp >= datetime('now', '-7 days') GROUP BY day ORDER BY day"
+      ).all();
+
+      // 4. Agent comparison (top agents this week by answered calls)
+      const agentComp = db.prepare(
+        "SELECT agent, COUNT(*) as total, SUM(CASE WHEN call_status='answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN call_status='missed' THEN 1 ELSE 0 END) as missed, COALESCE(SUM(duration),0) as talkTime FROM calls WHERE agent IS NOT NULL AND timestamp >= datetime('now', '-7 days') GROUP BY agent ORDER BY answered DESC LIMIT 10"
+      ).all();
+
+      res.json({ hourly, answeredHourly, missedHourly, dailyTrend: dailyRows, agentComparison: agentComp });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // GET /api/agents - list all agents with status (admin only)
   // -------------------------------------------------------------------------
   router.get('/api/agents', requireAuth, requireAdmin, (req, res) => {

@@ -28,6 +28,11 @@ function showPage(page) {
     patientsInitialized = true;
     loadPatients(1);
   }
+  if (page === 'dashboard') {
+    loadCallStats();
+    loadCallHistory();
+    if (typeof loadDashCharts === 'function') loadDashCharts();
+  }
   if (page === 'whatsapp') {
     loadWaStats();
     loadWaConversations();

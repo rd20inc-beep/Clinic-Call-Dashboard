@@ -207,4 +207,5 @@ checkMonitorStatus();
 setInterval(checkMonitorStatus, 15000);
 loadCallHistory();
 loadCallStats();
+if (typeof loadDashCharts === 'function') loadDashCharts();
 handleRoute();
