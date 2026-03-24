@@ -69,7 +69,7 @@
 
         <div class="nav-spacer"></div>
 
-        <a class="nav-item admin-only" href="/admin-console.html" target="_blank" style="display:none;">
+        <a class="nav-item admin-only" data-page="admin-console" onclick="showPage('admin-console')" style="display:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
           </svg>
@@ -299,6 +299,11 @@
           <button onclick="agentShowAuditLog()" style="padding:6px 14px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;">Audit Log</button>
         </div>
         <div id="agentExtraSection"></div>
+      </div>
+
+      <!-- ===== ADMIN CONSOLE PAGE (embedded) ===== -->
+      <div class="page-container" id="page-admin-console" style="padding:0;margin:0;">
+        <iframe id="adminConsoleFrame" src="" style="width:100%;border:none;min-height:calc(100vh - 60px);" onload="this.style.height=this.contentWindow.document.body.scrollHeight+'px'"></iframe>
       </div>
 
       <!-- ===== WHATSAPP BOT PAGE ===== -->

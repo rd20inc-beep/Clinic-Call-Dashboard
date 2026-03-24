@@ -41,6 +41,12 @@ function showPage(page) {
   if (page === 'agents') {
     loadAgents();
   }
+  if (page === 'admin-console') {
+    var frame = document.getElementById('adminConsoleFrame');
+    if (frame && !frame.src.includes('admin-console.html')) {
+      frame.src = '/admin-console.html';
+    }
+  }
 }
 
 function toggleSidebar() {
@@ -53,7 +59,7 @@ function toggleSidebar() {
 // Hash-based routing
 function handleRoute() {
   var hash = window.location.hash.replace('#', '') || 'dashboard';
-  var validPages = ['dashboard', 'calendar', 'patients', 'whatsapp', 'agents'];
+  var validPages = ['dashboard', 'calendar', 'patients', 'whatsapp', 'agents', 'admin-console'];
   showPage(validPages.includes(hash) ? hash : 'dashboard');
 }
 
