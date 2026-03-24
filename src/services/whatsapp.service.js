@@ -420,11 +420,13 @@ async function syncAppointmentsAndScheduleMessages() {
         day: 'numeric',
         month: 'long',
         year: 'numeric',
+        timeZone: 'Asia/Karachi',
       });
       const timeStr = aptDate.toLocaleTimeString('en-PK', {
         hour: '2-digit',
         minute: '2-digit',
         hour12: true,
+        timeZone: 'Asia/Karachi',
       });
 
       let msg = `Assalam o Alaikum ${apt.patient_name}! Your appointment at Dr. Nakhoda's Skin Institute has been scheduled.\n\n`;
@@ -454,11 +456,13 @@ async function syncAppointmentsAndScheduleMessages() {
           weekday: 'long',
           day: 'numeric',
           month: 'long',
+          timeZone: 'Asia/Karachi',
         });
         const timeStr = new Date(apt.appointment_date).toLocaleTimeString('en-PK', {
           hour: '2-digit',
           minute: '2-digit',
           hour12: true,
+          timeZone: 'Asia/Karachi',
         });
 
         let dayWord = 'soon';
