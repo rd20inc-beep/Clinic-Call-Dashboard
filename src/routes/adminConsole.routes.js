@@ -65,36 +65,67 @@ router.get('/admin/analytics/overview', (req, res) => {
         weekCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days')").get(username).c;
       } catch (e) { /* ignore */ }
 
+      // Get DB ID and last_seen
+      let dbId = null, lastSeen = null, avgDur = 0;
+      try {
+        const dbUser = usersRepo.getByUsername(username);
+        if (dbUser) { dbId = dbUser.id; lastSeen = dbUser.last_seen; }
+        avgDur = todayCalls > 0 ? db.prepare("SELECT COALESCE(AVG(duration),0) as a FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL AND duration > 0").get(username).a : 0;
+      } catch (e) { /* ignore */ }
+
       agentStats.push({
+        id: dbId,
         username,
         full_name: user.displayName || username,
-        status,
+        status: status === 'offline' ? 'offline' : 'active',
         portal_online: p.online,
         mobile_online: !!(hb && hb.alive),
-        calls_today: todayCalls,
+        monitor_online: !!(hb && hb.alive),
+        today: todayCalls,
         answered_today: todayAnswered,
         missed_today: todayMissed,
+        answer_rate: todayCalls > 0 ? Math.round((todayAnswered / todayCalls) * 100) : 0,
         talk_time_today: todayTalkTime,
+        avg_duration: Math.round(avgDur),
         calls_week: weekCalls,
+        appointments: 0,
         on_call: p.onCall || false,
+        last_activity: p.lastActivity || null,
+        last_seen: lastSeen,
       });
     }
 
+    // Week + month totals for status strip
+    let callsWeek = 0, callsMonth = 0, inboundTalkToday = 0, outboundTalkToday = 0;
+    try {
+      callsWeek = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '-7 days')").c;
+      callsMonth = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '-30 days')").c;
+      inboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp) = date('now') AND direction = 'inbound' AND duration IS NOT NULL").s;
+      outboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp) = date('now') AND direction = 'outbound' AND duration IS NOT NULL").s;
+    } catch (e) { /* ignore */ }
+
+    // Response matches exact field names expected by remote_admin.html
     res.json({
-      calls_today: callsToday,
-      answered_today: answeredToday,
-      missed_today: missedToday,
-      rejected_today: rejectedToday,
-      outgoing_today: outgoingToday,
-      answer_rate: answerRate,
-      talk_time_today: talkTimeToday,
-      avg_duration: Math.round(avgDuration),
-      active_agents: activeAgents,
-      portal_online: portalOnline,
-      mobile_online: mobileOnline,
-      pending_callbacks: 0,
-      appointments_today: 0,
-      agent_stats: agentStats,
+      callsToday: callsToday,
+      answeredToday: answeredToday,
+      missedToday: missedToday,
+      rejectedToday: rejectedToday,
+      outgoingToday: outgoingToday,
+      answerRate: answerRate,
+      talkTimeToday: talkTimeToday,
+      avgDurationAll: Math.round(avgDuration),
+      activeAgents: activeAgents,
+      portalOnline: portalOnline,
+      mobileOnline: mobileOnline,
+      pendingCallbacks: 0,
+      appointmentsMatched: 0,
+      appointmentsScheduledToday: 0,
+      appointmentsTotal: 0,
+      callsWeek: callsWeek,
+      callsMonth: callsMonth,
+      inboundTalkToday: inboundTalkToday,
+      outboundTalkToday: outboundTalkToday,
+      agentStats: agentStats,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -262,13 +293,36 @@ router.get('/admin/agents/:id/performance', (req, res) => {
     // Recent calls
     const recent = db.prepare("SELECT * FROM calls WHERE agent = ? ORDER BY timestamp DESC LIMIT 20").all(u.username);
 
+    // Get month stats + peak hour
+    const month = callsRepo.getPerformanceMonth().find(r => r.agent === u.username) || {};
+    let peakHour = null;
+    if (hourly.length > 0) {
+      let maxCalls = 0;
+      hourly.forEach(function(h) { if (h.calls > maxCalls) { maxCalls = h.calls; peakHour = h.hour; } });
+    }
+
+    // Get presence
+    const pres = getPresence(u.username);
+    const hb = getAllHeartbeats()[u.username];
+
     res.json({
-      agent: { username: u.username, full_name: u.display_name, role: u.role },
-      today: { calls: today.total_calls || 0, answered: today.answered_calls || 0, missed: today.missed_calls || 0, talk_time: today.total_talk_time || 0, avg_duration: Math.round(today.avg_duration || 0), longest: today.longest_call || 0 },
-      week: { calls: week.total_calls || 0, answered: week.answered_calls || 0, missed: week.missed_calls || 0, talk_time: week.total_talk_time || 0 },
-      all_time: { calls: all.total_calls || 0, answered: all.answered_calls || 0, missed: all.missed_calls || 0, talk_time: all.total_talk_time || 0 },
+      agent: {
+        username: u.username, full_name: u.display_name, role: u.role,
+        portal_online: pres.online, mobile_online: !!(hb && hb.alive), monitor_online: !!(hb && hb.alive),
+        last_activity: pres.lastActivity, last_seen: u.last_seen,
+      },
+      stats: {
+        today: today.total_calls || 0, answered_today: today.answered_calls || 0, missed_today: today.missed_calls || 0,
+        answer_rate: (today.total_calls || 0) > 0 ? Math.round(((today.answered_calls || 0) / today.total_calls) * 100) : 0,
+        talk_time_today: today.total_talk_time || 0, talk_time_week: week.total_talk_time || 0,
+        avg_duration: Math.round(today.avg_duration || 0), longest_call: today.longest_call || 0,
+        peak_hour: peakHour,
+        week: week.total_calls || 0, month: month.total_calls || 0, total: all.total_calls || 0,
+        logged_in_today: 0,
+      },
       hourly,
-      recent_calls: recent,
+      recentCalls: recent,
+      dailyCalls: [],
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -302,12 +356,15 @@ router.get('/admin/leaderboard', (req, res) => {
       rank: i + 1,
       username: r.agent,
       full_name: (users[r.agent] && users[r.agent].displayName) || r.agent,
-      calls: r.total_calls,
+      total_calls: r.total_calls,
       answered: r.answered_calls,
       missed: r.missed_calls,
+      outgoing: 0,
+      answer_rate: r.total_calls > 0 ? Math.round((r.answered_calls / r.total_calls) * 100) : 0,
       talk_time: r.total_talk_time,
       avg_duration: Math.round(r.avg_duration || 0),
-      answer_rate: r.total_calls > 0 ? Math.round((r.answered_calls / r.total_calls) * 100) : 0,
+      appointments: 0,
+      last_call: r.last_call_at,
     }));
 
     res.json({ period, leaderboard: ranked });
@@ -332,8 +389,10 @@ router.get('/admin/calls/history', (req, res) => {
     if (req.query.status) { conditions.push('call_status = ?'); params.push(req.query.status); }
     if (req.query.type === 'incoming') { conditions.push("direction = 'inbound'"); }
     if (req.query.type === 'outgoing') { conditions.push("direction = 'outbound'"); }
-    if (req.query.from) { conditions.push('timestamp >= ?'); params.push(req.query.from + ' 00:00:00'); }
-    if (req.query.to) { conditions.push('timestamp <= ?'); params.push(req.query.to + ' 23:59:59'); }
+    const dateFrom = req.query.from || req.query.date_from;
+    const dateTo = req.query.to || req.query.date_to;
+    if (dateFrom) { conditions.push('timestamp >= ?'); params.push(dateFrom + ' 00:00:00'); }
+    if (dateTo) { conditions.push('timestamp <= ?'); params.push(dateTo + ' 23:59:59'); }
     if (req.query.search) { conditions.push("(caller_number LIKE ? OR patient_name LIKE ?)"); params.push('%' + req.query.search + '%', '%' + req.query.search + '%'); }
 
     const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
