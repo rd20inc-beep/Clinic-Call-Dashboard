@@ -529,17 +529,19 @@ function loadWaApprovalQueue() {
         var time = new Date(m.created_at).toLocaleString();
         var preview = escapeHtml((m.message || '').substring(0, 150));
         if (m.message && m.message.length > 150) preview += '...';
+        var fullMsg = escapeHtml(m.message || '').replace(/\n/g, '<br>');
         var typeTag = m.message_type !== 'chat' ? '<span style="background:rgba(52,152,219,0.2);color:#3498db;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;">' + m.message_type + '</span>' : '';
-        return '<div style="background:rgba(243,156,18,0.08);border:1px solid rgba(243,156,18,0.25);border-radius:8px;padding:12px;margin-bottom:8px;">' +
+        return '<div style="background:#fff;border:1px solid rgba(243,156,18,0.35);border-radius:8px;padding:12px;margin-bottom:8px;color:#222;">' +
           '<div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">' +
-            '<div style="flex:1;min-width:0;">' +
-              '<div style="font-weight:600;font-size:13px;">' + escapeHtml(m.phone) + typeTag + '</div>' +
-              '<div style="font-size:11px;color:#999;margin-top:2px;">' + time + (m.agent ? ' by ' + m.agent : ' (AI)') + '</div>' +
-              '<div style="font-size:13px;margin-top:6px;color:#ddd;white-space:pre-wrap;word-break:break-word;">' + preview + '</div>' +
+            '<div style="flex:1;min-width:0;cursor:pointer;" onclick="this.querySelector(\'.wa-preview\').style.display=this.querySelector(\'.wa-preview\').style.display===\'none\'?\'block\':\'none\';this.querySelector(\'.wa-full\').style.display=this.querySelector(\'.wa-full\').style.display===\'none\'?\'block\':\'none\';">' +
+              '<div style="font-weight:600;font-size:13px;color:#333;">' + escapeHtml(m.phone) + typeTag + '</div>' +
+              '<div style="font-size:11px;color:#888;margin-top:2px;">' + time + (m.agent ? ' by ' + m.agent : ' (AI)') + '</div>' +
+              '<div class="wa-preview" style="font-size:13px;margin-top:6px;color:#444;white-space:pre-wrap;word-break:break-word;">' + preview + '</div>' +
+              '<div class="wa-full" style="display:none;font-size:13px;margin-top:6px;color:#222;white-space:pre-wrap;word-break:break-word;border-top:1px solid #eee;padding-top:8px;">' + fullMsg + '</div>' +
             '</div>' +
             '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">' +
-              '<button onclick="waApproveMessage(' + m.id + ')" style="padding:5px 14px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:12px;font-weight:600;cursor:pointer;">Approve</button>' +
-              '<button onclick="waRejectMessage(' + m.id + ')" style="padding:5px 14px;border:none;border-radius:4px;background:#e74c3c;color:white;font-size:12px;font-weight:600;cursor:pointer;">Reject</button>' +
+              '<button onclick="event.stopPropagation();waApproveMessage(' + m.id + ')" style="padding:5px 14px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:12px;font-weight:600;cursor:pointer;">Approve</button>' +
+              '<button onclick="event.stopPropagation();waRejectMessage(' + m.id + ')" style="padding:5px 14px;border:none;border-radius:4px;background:#e74c3c;color:white;font-size:12px;font-weight:600;cursor:pointer;">Reject</button>' +
             '</div>' +
           '</div>' +
         '</div>';
