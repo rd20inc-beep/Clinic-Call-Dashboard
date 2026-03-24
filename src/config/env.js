@@ -145,6 +145,7 @@ const ALL_USERS = ['admin', ...AGENT_NAMES];
 function getUsers() {
   const users = {};
 
+  // 1. Load from env vars (legacy support)
   for (const name of ALL_USERS) {
     const envKey = name.toUpperCase().replace(/[^A-Z0-9]/g, '_');
     const hashVar = `USER_${envKey}_HASH`;
@@ -158,28 +159,42 @@ function getUsers() {
         passwordHash: hash,
         role: name === 'admin' ? 'admin' : 'agent',
         isMigration: false,
+        source: 'env',
       };
     } else if (pass) {
-      console.warn(
-        `[env] WARNING: User "${name}" is configured with plaintext password (${passVar}). ` +
-          'Generate a bcrypt hash and set ' +
-          hashVar +
-          ' instead for production use.'
-      );
       users[name] = {
         passwordHash: pass,
         role: name === 'admin' ? 'admin' : 'agent',
         isMigration: true,
+        source: 'env',
       };
     }
-    // If neither is set the user simply isn't configured — skip silently.
   }
 
+  // 2. Load from DB (overrides env for same username, adds new ones)
+  try {
+    const usersRepo = require('../db/users.repo');
+    const dbUsers = usersRepo.getAll();
+    for (const u of dbUsers) {
+      if (!u.active) continue; // skip deactivated users
+      users[u.username] = {
+        passwordHash: usersRepo.getByUsername(u.username).password_hash,
+        role: u.role || 'agent',
+        displayName: u.display_name,
+        isMigration: false,
+        source: 'db',
+        dbId: u.id,
+      };
+    }
+  } catch (e) {
+    // DB not available yet during early init — fall through
+  }
+
+  // 3. Fallback defaults if nothing configured
   if (Object.keys(users).length === 0) {
     console.warn(
-      '[env] WARNING: No users configured via env vars. Using built-in defaults.'
+      '[env] WARNING: No users configured. Using built-in defaults.'
     );
-    // Fallback defaults so login always works
     const defaults = {
       admin: 'clinicea2025',
       agent1: 'password1',

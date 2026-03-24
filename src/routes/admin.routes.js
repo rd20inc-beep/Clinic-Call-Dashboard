@@ -7,6 +7,7 @@ const { getEventLog, logEvent } = require('../services/logging.service');
 const { requireWebhookSecret } = require('../middleware/webhookAuth');
 const { getUsers } = require('../config/env');
 const { getAllHeartbeats } = require('../services/agentRegistry.service');
+const usersRepo = require('../db/users.repo');
 const bcrypt = require('bcryptjs');
 
 // In-memory monitor log storage: { agent: "log text" }
@@ -189,8 +190,12 @@ module.exports = function setupAdminRoutes(io) {
 
       agents.push({
         username,
+        displayName: user.displayName || username,
         role: user.role,
         status,
+        active: user.source === 'db' ? (user.active !== false) : true,
+        source: user.source || 'env',
+        dbId: user.dbId || null,
         online: !!onlineAgents[username],
         monitorAlive: hb ? hb.alive : false,
         lastHeartbeat: hb ? hb.lastHeartbeat : null,
@@ -216,26 +221,119 @@ module.exports = function setupAdminRoutes(io) {
   });
 
   // -------------------------------------------------------------------------
+  // POST /api/agents/create - create a new agent (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/create', requireAuth, requireAdmin, (req, res) => {
+    const { username, password, displayName, role, notes } = req.body;
+    if (!username || !password) return res.json({ error: 'Username and password required' });
+    if (username.length < 3) return res.json({ error: 'Username must be at least 3 characters' });
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) return res.json({ error: 'Username can only contain letters, numbers, and underscores' });
+    if (password.length < 6) return res.json({ error: 'Password must be at least 6 characters' });
+    if (usersRepo.usernameExists(username)) return res.json({ error: 'Username already exists' });
+
+    // Also check env-based users
+    const envUsers = getUsers();
+    if (envUsers[username]) return res.json({ error: 'Username already exists' });
+
+    const id = usersRepo.create(username, password, displayName, role || 'agent', notes);
+    logEvent('info', 'Agent created: ' + username + ' by ' + req.session.username);
+    res.json({ ok: true, id });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/update - update agent details (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/update', requireAuth, requireAdmin, (req, res) => {
+    const { username, displayName, role, active, notes } = req.body;
+    if (!username) return res.json({ error: 'Username required' });
+
+    const dbUser = usersRepo.getByUsername(username);
+    if (!dbUser) return res.json({ error: 'Agent not found in database (env-based agents cannot be edited)' });
+
+    // Prevent deactivating the last admin
+    if (role !== 'admin' || !active) {
+      if (dbUser.role === 'admin' && usersRepo.countActiveAdmins() <= 1) {
+        return res.json({ error: 'Cannot deactivate the last admin account' });
+      }
+    }
+
+    usersRepo.update(dbUser.id, displayName, role, active, notes);
+    logEvent('info', 'Agent updated: ' + username + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -------------------------------------------------------------------------
   // POST /api/agents/change-password - change agent password (admin only)
   // -------------------------------------------------------------------------
   router.post('/api/agents/change-password', requireAuth, requireAdmin, (req, res) => {
     const { username, password } = req.body;
-    if (!username || !password) return res.json({ error: 'username and password required' });
+    if (!username || !password) return res.json({ error: 'Username and password required' });
     if (password.length < 6) return res.json({ error: 'Password must be at least 6 characters' });
 
+    // Try DB user first
+    const dbUser = usersRepo.getByUsername(username);
+    if (dbUser) {
+      usersRepo.changePassword(dbUser.id, password);
+      logEvent('info', 'Password changed for ' + username + ' by ' + req.session.username);
+      return res.json({ ok: true });
+    }
+
+    // Fallback to env-based user
     const users = getUsers();
     if (!users[username]) return res.json({ error: 'Unknown user: ' + username });
 
-    // Generate bcrypt hash and set env var (persists for this process only)
     const hash = bcrypt.hashSync(password, 10);
     const envKey = 'USER_' + username.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_HASH';
     process.env[envKey] = hash;
-
-    // Clear any plaintext fallback
     const passKey = 'USER_' + username.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_PASS';
     delete process.env[passKey];
 
     logEvent('info', 'Password changed for ' + username + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/toggle-active - activate/deactivate agent (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/toggle-active', requireAuth, requireAdmin, (req, res) => {
+    const { username, active } = req.body;
+    if (!username) return res.json({ error: 'Username required' });
+
+    const dbUser = usersRepo.getByUsername(username);
+    if (!dbUser) return res.json({ error: 'Only DB-managed agents can be activated/deactivated' });
+
+    // Prevent deactivating last admin
+    if (!active && dbUser.role === 'admin' && usersRepo.countActiveAdmins() <= 1) {
+      return res.json({ error: 'Cannot deactivate the last admin account' });
+    }
+
+    usersRepo.setActive(dbUser.id, !!active);
+    logEvent('info', 'Agent ' + (active ? 'activated' : 'deactivated') + ': ' + username + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/agents/delete - delete agent (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/agents/delete', requireAuth, requireAdmin, (req, res) => {
+    const { username } = req.body;
+    if (!username) return res.json({ error: 'Username required' });
+
+    const dbUser = usersRepo.getByUsername(username);
+    if (!dbUser) return res.json({ error: 'Only DB-managed agents can be deleted' });
+
+    // Prevent deleting last admin
+    if (dbUser.role === 'admin' && usersRepo.countActiveAdmins() <= 1) {
+      return res.json({ error: 'Cannot delete the last admin account' });
+    }
+
+    // Prevent self-deletion
+    if (username === req.session.username) {
+      return res.json({ error: 'Cannot delete your own account' });
+    }
+
+    usersRepo.deleteUser(dbUser.id);
+    logEvent('info', 'Agent deleted: ' + username + ' by ' + req.session.username);
     res.json({ ok: true });
   });
 
