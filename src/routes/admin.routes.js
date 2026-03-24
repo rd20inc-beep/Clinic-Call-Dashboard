@@ -16,8 +16,9 @@ const bcrypt = require('bcryptjs');
 // In-memory monitor log storage: { agent: "log text" }
 const monitorLogs = {};
 
-// Maximum log size per agent (50 KB)
+// Maximum log size per agent (50 KB), max 50 agents in memory
 const MAX_LOG_SIZE = 50 * 1024;
+const MAX_LOG_AGENTS = 50;
 
 /**
  * Setup admin routes. Accepts the Socket.IO instance so that socket-debug
@@ -67,6 +68,11 @@ module.exports = function setupAdminRoutes(io) {
     }
 
     monitorLogs[agent] = logText;
+    // Enforce max agents in memory (LRU: drop oldest)
+    const keys = Object.keys(monitorLogs);
+    if (keys.length > MAX_LOG_AGENTS) {
+      delete monitorLogs[keys[0]];
+    }
     res.json({ status: 'ok' });
   });
 
@@ -833,6 +839,20 @@ module.exports = function setupAdminRoutes(io) {
     logEvent('warn', 'Force logout ALL by ' + req.session.username + ': ' + dashboardDisconnected + ' dashboard, ' + mobileInvalidated + ' mobile sessions');
 
     res.json({ ok: true, dashboardDisconnected, mobileInvalidated });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/admin/clear-cache — clear all in-memory caches (admin only)
+  // -------------------------------------------------------------------------
+  router.post('/api/admin/clear-cache', requireAuth, requireAdmin, (req, res) => {
+    let cleared = [];
+    try {
+      const clinicea = require('./clinicea.routes');
+      if (typeof clinicea.clearPatientCache === 'function') { clinicea.clearPatientCache(); cleared.push('patients'); }
+      if (typeof clinicea.clearAppointmentCache === 'function') { clinicea.clearAppointmentCache(); cleared.push('appointments'); }
+    } catch (e) { /* ignore */ }
+    logEvent('info', 'Cache cleared by ' + req.session.username + ': ' + cleared.join(', '));
+    res.json({ ok: true, cleared });
   });
 
   return router;

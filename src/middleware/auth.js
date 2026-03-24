@@ -32,9 +32,17 @@ async function verifyPassword(username, password) {
   if (user.passwordHash && user.passwordHash.startsWith('$2')) {
     return bcrypt.compareSync(password, user.passwordHash);
   }
-  // Migration mode - plaintext comparison (log warning)
+  // Migration mode - plaintext comparison, auto-hash to bcrypt
   if (user.passwordHash === password) {
-    console.warn(`[SECURITY] User "${username}" using plaintext password - migrate to bcrypt hash`);
+    // Auto-migrate: hash the password and save it
+    try {
+      const usersRepo = require('../db/users.repo');
+      const dbUser = usersRepo.getByUsername(username);
+      if (dbUser) {
+        usersRepo.changePassword(dbUser.id, password);
+        console.log(`[SECURITY] Auto-migrated "${username}" from plaintext to bcrypt`);
+      }
+    } catch (e) { /* ignore if DB user doesn't exist */ }
     return true;
   }
   return false;

@@ -101,7 +101,13 @@ router.post(
           ? clinicea.findPatientByPhone(caller)
           : Promise.resolve(null);
 
-      lookupPromise
+      // Timeout: abort if Clinicea API takes > 8 seconds
+      const withTimeout = Promise.race([
+        lookupPromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Clinicea lookup timeout')), 8000))
+      ]);
+
+      withTimeout
         .then((patient) => {
           if (patient) {
             if (patient.patientName) {

@@ -25,6 +25,9 @@ const agentPresence = {};
 /** socket.id → username mapping for fast lookup */
 const socketToAgent = {};
 
+/** IP → Set<username> reverse map for O(1) agent resolution */
+const ipToAgentMap = {};
+
 let _io = null;
 
 // ---------------------------------------------------------------------------
@@ -211,6 +214,9 @@ function setupSockets(io, sessionMiddleware) {
       if (role !== 'admin' && ip) {
         const fakeReq = { headers: socket.handshake.headers || {}, ip, socket: { remoteAddress: socket.handshake.address || '' } };
         rememberAgentIP(fakeReq, username);
+        // Reverse IP map for O(1) lookups
+        if (!ipToAgentMap[ip]) ipToAgentMap[ip] = new Set();
+        ipToAgentMap[ip].add(username);
       }
 
       // --- Update presence ---
@@ -266,4 +272,5 @@ module.exports = {
   setOnCall,
   clearOnCall,
   recordHeartbeatPresence,
+  ipToAgentMap,
 };

@@ -548,3 +548,7 @@ module.exports.fetchProfileByPatientId = fetchProfileByPatientId;
 module.exports.cliniceaFetch = cliniceaFetch;
 module.exports.extractPatientId = extractPatientId;
 module.exports.mapAppointmentFields = mapAppointmentFields;
+module.exports.patientCache = patientCache;
+module.exports.appointmentDateCache = appointmentDateCache;
+module.exports.clearPatientCache = function() { patientCache = { patients: [], expiry: 0, loading: false, pages: 0 }; };
+module.exports.clearAppointmentCache = function() { appointmentDateCache.clear(); };
