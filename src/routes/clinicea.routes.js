@@ -298,7 +298,7 @@ async function loadAllPatients() {
       allPatients.push(...batch.map(mapPatientFields));
       if (batch.length < 100) break; // last page
       pageNo++;
-      if (pageNo > 50) break; // safety limit (5000 patients max)
+      if (pageNo > 200) break; // safety limit (20000 patients max)
     }
     patientCache = {
       patients: allPatients,
@@ -422,7 +422,7 @@ router.get(
 router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
   const search = (req.query.search || '').trim().toLowerCase();
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const pageSize = 25;
+  const pageSize = parseInt(req.query.pageSize, 10) || 50;
 
   if (!isClinicaConfigured()) {
     return res.json({ error: 'Clinicea API not configured', patients: [], total: 0 });

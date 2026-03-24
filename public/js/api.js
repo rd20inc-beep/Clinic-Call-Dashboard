@@ -679,9 +679,17 @@ async function loadPatients(page) {
   paginationEl.style.display = 'none';
 
   try {
-    var url = '/api/patients?page=' + page + (search ? '&search=' + encodeURIComponent(search) : '');
+    var url = '/api/patients?page=' + page + '&pageSize=50' + (search ? '&search=' + encodeURIComponent(search) : '');
     var res = await fetch(url);
     var data = await res.json();
+
+    if (data.loading) {
+      loadingEl.style.display = 'block';
+      loadingEl.querySelector('p').textContent = 'Loading patients from Clinicea... Please wait.';
+      patientsLoading = false;
+      setTimeout(function() { loadPatients(page); }, 3000);
+      return;
+    }
 
     if (data.error && data.error !== 'Clinicea API not configured') {
       loadingEl.style.display = 'none';
@@ -693,7 +701,7 @@ async function loadPatients(page) {
 
     var patients = data.patients || [];
     var total = data.total || 0;
-    var totalPages = Math.ceil(total / 25);
+    var totalPages = Math.ceil(total / 50);
     patientsPage = page;
 
     countEl.textContent = total > 0 ? total + ' patients' : '';
