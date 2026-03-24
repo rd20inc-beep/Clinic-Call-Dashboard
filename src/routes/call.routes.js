@@ -13,6 +13,7 @@ const callsRepo = require('../db/calls.repo');
 const { normalizePKPhone } = require('../utils/phone');
 const { getClientIP } = require('../utils/security');
 const { config, isClinicaConfigured } = require('../config/env');
+const { setOnCall, updateActivity } = require('../sockets/index');
 
 // Clinicea service is loaded lazily to avoid circular deps or missing-module
 // errors when the service has not been extracted yet.
@@ -72,6 +73,11 @@ router.post(
       routingMethod,
       sourceIp
     );
+
+    // 6b. Mark agent as busy (on call)
+    if (agent) {
+      setOnCall(agent);
+    }
 
     // 7. Route call event via callRouter (strict room targeting)
     const callEvent = {

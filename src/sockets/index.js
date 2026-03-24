@@ -3,40 +3,150 @@
 const { logEvent } = require('../services/logging.service');
 const { getClientIP } = require('../utils/security');
 const { rememberAgentIP } = require('../services/agentRegistry.service');
+const { IDLE_TIMEOUT_MS, IDLE_CHECK_INTERVAL, HEARTBEAT_STALE_MS } = require('../config/constants');
 
 // ---------------------------------------------------------------------------
-// Live agent presence tracking
+// Agent presence engine
 // ---------------------------------------------------------------------------
 
-// { username: { online: true, lastActivity: Date.now(), socketCount: 0 } }
+/**
+ * Per-agent state:
+ *   online:       boolean — at least one socket connected
+ *   socketCount:  number  — how many browser tabs/sockets
+ *   lastActivity: number  — ms timestamp of last activity signal
+ *   onCall:       boolean — currently handling a call
+ *   status:       string  — computed: online | busy | idle | offline
+ */
 const agentPresence = {};
 
+/** socket.id → username mapping for fast lookup */
+const socketToAgent = {};
+
+let _io = null;
+
+// ---------------------------------------------------------------------------
+// Status computation
+// ---------------------------------------------------------------------------
+
+function computeStatus(username) {
+  const p = agentPresence[username];
+  if (!p || !p.online) return 'offline';
+  if (p.onCall) return 'busy';
+  if (p.lastActivity && (Date.now() - p.lastActivity) > IDLE_TIMEOUT_MS) return 'idle';
+  return 'online';
+}
+
+function persistAndBroadcast(username) {
+  const p = agentPresence[username];
+  if (!p) return;
+  const newStatus = computeStatus(username);
+  const changed = p.status !== newStatus;
+  p.status = newStatus;
+
+  // Persist to DB
+  try {
+    const usersRepo = require('../db/users.repo');
+    usersRepo.setStatus(username, newStatus);
+    if (newStatus === 'offline') usersRepo.updateLastSeen(username);
+  } catch (e) { /* ignore */ }
+
+  // Broadcast to admins (always, so dashboard stays fresh)
+  if (_io) {
+    _io.to('role:admin').emit('agent_status_update', {
+      username,
+      status: newStatus,
+      lastActivity: p.lastActivity,
+      onCall: p.onCall || false,
+      changed,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public API — called from routes/services
+// ---------------------------------------------------------------------------
+
 function getPresence(username) {
-  return agentPresence[username] || { online: false, lastActivity: null, socketCount: 0 };
+  return agentPresence[username] || { online: false, lastActivity: null, socketCount: 0, onCall: false, status: 'offline' };
 }
 
 function getAllPresence() {
   return agentPresence;
 }
 
-function updateActivity(username) {
+/** Called when a call starts — sets agent to busy */
+function setOnCall(username) {
   if (!username) return;
-  if (!agentPresence[username]) agentPresence[username] = { online: false, lastActivity: null, socketCount: 0 };
+  ensurePresence(username);
+  agentPresence[username].onCall = true;
   agentPresence[username].lastActivity = Date.now();
+  persistAndBroadcast(username);
+  logEvent('info', 'Agent ' + username + ' → busy (on call)');
 }
 
-/**
- * Extract the client IP from a Socket.IO handshake object.
- *
- * getClientIP() expects a req-like object with `.headers`, `.ip`, and
- * `.socket.remoteAddress`.  The Socket.IO handshake has `.headers` and
- * `.address` but not the Express helpers, so we build a thin shim.
- *
- * @param {object} handshake - socket.handshake
- * @returns {string}
- */
+/** Called when a call ends — clears busy */
+function clearOnCall(username) {
+  if (!username) return;
+  ensurePresence(username);
+  agentPresence[username].onCall = false;
+  agentPresence[username].lastActivity = Date.now();
+  persistAndBroadcast(username);
+  logEvent('info', 'Agent ' + username + ' → call ended');
+}
+
+/** Called on any activity (heartbeat, frontend ping, call event) */
+function updateActivity(username) {
+  if (!username) return;
+  ensurePresence(username);
+  agentPresence[username].lastActivity = Date.now();
+  // Only persist+broadcast if status would change (avoid spam)
+  const current = agentPresence[username].status;
+  const next = computeStatus(username);
+  if (current !== next) persistAndBroadcast(username);
+}
+
+/** Called from heartbeat route — agent's call monitor is alive */
+function recordHeartbeatPresence(username) {
+  if (!username) return;
+  ensurePresence(username);
+  agentPresence[username].lastActivity = Date.now();
+  // If agent isn't connected via socket, heartbeat alone means online
+  if (!agentPresence[username].online) {
+    agentPresence[username].online = true;
+  }
+  const next = computeStatus(username);
+  if (agentPresence[username].status !== next) persistAndBroadcast(username);
+}
+
+function ensurePresence(username) {
+  if (!agentPresence[username]) {
+    agentPresence[username] = { online: false, lastActivity: null, socketCount: 0, onCall: false, status: 'offline' };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Idle sweep — runs periodically to detect agents gone idle
+// ---------------------------------------------------------------------------
+
+function startIdleSweep() {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [username, p] of Object.entries(agentPresence)) {
+      if (!p.online) continue;
+      const prev = p.status;
+      const next = computeStatus(username);
+      if (prev !== next) {
+        persistAndBroadcast(username);
+      }
+    }
+  }, IDLE_CHECK_INTERVAL);
+}
+
+// ---------------------------------------------------------------------------
+// Socket.IO setup
+// ---------------------------------------------------------------------------
+
 function getSocketIP(handshake) {
-  // Build a req-like object that getClientIP can consume
   const fakeReq = {
     headers: handshake.headers || {},
     ip: handshake.address || '',
@@ -45,134 +155,87 @@ function getSocketIP(handshake) {
   return getClientIP(fakeReq);
 }
 
-/**
- * Set up Socket.IO connection handling with session-based rooms.
- *
- * Preserves the exact room-joining behaviour from the original server.js
- * (lines 2220-2271):
- *   - Authenticated users join `agent:<username>`.
- *   - Admins additionally join `role:admin`.
- *   - Unauthenticated sockets join NO rooms and receive nothing.
- *   - Non-admin agents seed the IP-to-agent map so the call monitor on the
- *     same machine can be attributed.
- *
- * @param {import('socket.io').Server} io
- * @param {import('express').RequestHandler} sessionMiddleware
- */
 function setupSockets(io, sessionMiddleware) {
-  // Share the Express session middleware with the Socket.IO engine so that
-  // socket.request.session is populated on every connection.
+  _io = io;
   io.engine.use(sessionMiddleware);
+
+  // Start idle detection sweep
+  startIdleSweep();
 
   io.on('connection', (socket) => {
     const session = socket.request.session;
     const username = session && session.username;
     const role = session && session.role;
 
-    // Store identity on the socket instance for IP-based agent resolution
-    // (used by agentRegistry.service when scanning connected sockets).
     socket.agentUsername = username || null;
     socket.agentRole = role || null;
 
     if (username) {
-      // Each user joins ONLY their own agent room
+      // Track socket → agent mapping
+      socketToAgent[socket.id] = username;
+
+      // Join rooms
       socket.join('agent:' + username);
       const rooms = ['agent:' + username];
-
-      if (role === 'admin') {
-        socket.join('role:admin');
-        rooms.push('role:admin');
-      }
+      if (role === 'admin') { socket.join('role:admin'); rooms.push('role:admin'); }
 
       const ip = getSocketIP(socket.handshake);
+      logEvent('info', 'Socket connected: ' + username + ' (' + role + ')', 'IP: ' + ip + ' | SID: ' + socket.id);
 
-      logEvent(
-        'info',
-        'Socket connected: ' + username + ' (' + role + ')',
-        'Rooms: ' + rooms.join(', ') + ' | IP: ' + ip + ' | SID: ' + socket.id
-      );
-
-      // Seed IP-to-agent mapping from socket connections so that the call
-      // monitor running on the same PC can be attributed to this agent.
+      // IP mapping for call monitor attribution
       if (role !== 'admin' && ip) {
-        // rememberAgentIP expects a req-like object with headers /
-        // connection.remoteAddress — build one from the handshake.
-        const fakeReq = {
-          headers: socket.handshake.headers || {},
-          ip: ip,
-          socket: { remoteAddress: socket.handshake.address || '' },
-        };
+        const fakeReq = { headers: socket.handshake.headers || {}, ip, socket: { remoteAddress: socket.handshake.address || '' } };
         rememberAgentIP(fakeReq, username);
-        logEvent('info', 'IP-to-agent mapped: ' + ip + ' => ' + username + ' (from socket)');
       }
 
-      // Track presence
-      if (!agentPresence[username]) agentPresence[username] = { online: false, lastActivity: null, socketCount: 0 };
+      // --- Update presence ---
+      ensurePresence(username);
       agentPresence[username].socketCount++;
       agentPresence[username].online = true;
       agentPresence[username].lastActivity = Date.now();
+      persistAndBroadcast(username);
 
-      // Update DB status + broadcast
-      try { require('../db/users.repo').setStatus(username, 'online'); } catch (e) { /* ignore */ }
-      io.to('role:admin').emit('agent_presence', {
-        username, status: 'online', lastActivity: agentPresence[username].lastActivity,
-      });
+      // Record login in DB
+      try { require('../db/users.repo').recordLogin(username); } catch (e) { /* ignore */ }
 
-      // Listen for activity pings from frontend
-      socket.on('activity', function() {
+      // --- Activity ping from frontend (every 60s) ---
+      socket.on('activity', () => {
         updateActivity(username);
-        // Persist last_seen to DB (throttled — only every 60s via frontend ping)
-        try {
-          const usersRepo = require('../db/users.repo');
-          usersRepo.updateLastSeen(username);
-        } catch (e) { /* ignore */ }
+        try { require('../db/users.repo').updateLastSeen(username); } catch (e) { /* ignore */ }
       });
 
-      // Tell the client which rooms it joined so the frontend can verify
-      socket.emit('join_confirm', {
-        username: username,
-        role: role,
-        rooms: rooms,
-        socketId: socket.id,
-      });
+      socket.emit('join_confirm', { username, role, rooms, socketId: socket.id });
     } else {
-      // Unauthenticated sockets join NO rooms — they receive nothing
-      logEvent(
-        'warn',
-        'Socket connected (unauthenticated) — no rooms joined',
-        'SID: ' + socket.id
-      );
-      socket.emit('join_confirm', {
-        username: null,
-        role: null,
-        rooms: [],
-        socketId: socket.id,
-        error: 'Session not found — please log in again',
-      });
+      logEvent('warn', 'Socket connected (unauthenticated)', 'SID: ' + socket.id);
+      socket.emit('join_confirm', { username: null, role: null, rooms: [], socketId: socket.id, error: 'Session not found — please log in again' });
     }
 
+    // --- Disconnect ---
     socket.on('disconnect', () => {
-      logEvent(
-        'info',
-        'Socket disconnected: ' + (username || 'unknown'),
-        'SID: ' + socket.id
-      );
+      const agent = socketToAgent[socket.id];
+      delete socketToAgent[socket.id];
 
-      // Update presence
-      if (username && agentPresence[username]) {
-        agentPresence[username].socketCount = Math.max(0, agentPresence[username].socketCount - 1);
-        if (agentPresence[username].socketCount === 0) {
-          agentPresence[username].online = false;
-          agentPresence[username].lastActivity = Date.now();
-          // Update DB status + broadcast
-          try { require('../db/users.repo').setStatus(username, 'offline'); } catch (e) { /* ignore */ }
-          io.to('role:admin').emit('agent_presence', {
-            username, status: 'offline', lastActivity: agentPresence[username].lastActivity,
-          });
+      logEvent('info', 'Socket disconnected: ' + (agent || 'unknown'), 'SID: ' + socket.id);
+
+      if (agent && agentPresence[agent]) {
+        agentPresence[agent].socketCount = Math.max(0, agentPresence[agent].socketCount - 1);
+        if (agentPresence[agent].socketCount === 0) {
+          agentPresence[agent].online = false;
+          agentPresence[agent].lastActivity = Date.now();
+          agentPresence[agent].onCall = false; // can't be on call with no sockets
+          persistAndBroadcast(agent);
         }
       }
     });
   });
 }
 
-module.exports = { setupSockets, getPresence, getAllPresence, updateActivity };
+module.exports = {
+  setupSockets,
+  getPresence,
+  getAllPresence,
+  updateActivity,
+  setOnCall,
+  clearOnCall,
+  recordHeartbeatPresence,
+};

@@ -39,6 +39,12 @@ router.post(
     // 3. Record heartbeat
     const { key, wasDown } = recordHeartbeat(agent);
 
+    // 3b. Update presence engine (keeps agent online even without socket)
+    try {
+      const { recordHeartbeatPresence } = require('../sockets/index');
+      recordHeartbeatPresence(agent);
+    } catch (e) { /* ignore during early init */ }
+
     // 4. Emit monitor status to appropriate rooms
     emitMonitorStatus(agent, true);
 

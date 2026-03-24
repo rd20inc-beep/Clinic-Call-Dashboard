@@ -190,7 +190,18 @@ socket.on('wa_connection', function(data) {
   }
 });
 
-// Live agent presence updates (admin only)
+// Live agent status updates (admin only) — replaces static "Active"
+socket.on('agent_status_update', function(data) {
+  if (window.location.hash === '#agents' && typeof loadAgents === 'function') {
+    loadAgents();
+  }
+  // Also refresh dashboard agent snapshot if on dashboard
+  if (window.location.hash === '#dashboard' || window.location.hash === '') {
+    if (typeof loadCallStats === 'function') loadCallStats();
+  }
+});
+
+// Legacy event (kept for backward compat)
 socket.on('agent_presence', function(data) {
   if (window.location.hash === '#agents' && typeof loadAgents === 'function') {
     loadAgents();

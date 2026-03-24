@@ -7,7 +7,7 @@ const { getEventLog, logEvent } = require('../services/logging.service');
 const { requireWebhookSecret } = require('../middleware/webhookAuth');
 const { getUsers } = require('../config/env');
 const { getAllHeartbeats } = require('../services/agentRegistry.service');
-const { getAllPresence } = require('../sockets/index');
+const { getAllPresence, getPresence } = require('../sockets/index');
 const usersRepo = require('../db/users.repo');
 const auditRepo = require('../db/audit.repo');
 const bcrypt = require('bcryptjs');
@@ -287,21 +287,13 @@ module.exports = function setupAdminRoutes(io) {
       const lastSeenTs = pres.lastActivity || dbLastSeen || (hb ? hb.lastHeartbeat : null);
       const hasEverConnected = !!(lastSeenTs || dbLastLogin);
 
-      let presenceStatus = 'offline';
+      // Use presence engine's computed status, with account-level overrides
+      const livePres = getPresence(username);
+      let presenceStatus = livePres.status || 'offline';
       if (!isAccountActive) {
         presenceStatus = 'disabled';
-      } else if (!hasEverConnected) {
+      } else if (!hasEverConnected && presenceStatus === 'offline') {
         presenceStatus = 'never_connected';
-      } else if (pres.online) {
-        // Live socket connected — check activity recency
-        const actAgo = pres.lastActivity ? (Date.now() - pres.lastActivity) / 1000 : 9999;
-        presenceStatus = actAgo < 300 ? 'online' : 'idle';
-      } else if (hb && hb.alive) {
-        presenceStatus = 'online';
-      } else if (dbStatus === 'busy') {
-        presenceStatus = 'busy';
-      } else {
-        presenceStatus = 'offline';
       }
 
       agents.push({
@@ -313,7 +305,8 @@ module.exports = function setupAdminRoutes(io) {
         source: user.source || 'env',
         dbId: user.dbId || null,
         dbStatus,
-        online: pres.online,
+        onCall: livePres.onCall || false,
+        online: livePres.online || false,
         monitorAlive: hb ? hb.alive : false,
         lastHeartbeat: hb ? hb.lastHeartbeat : null,
         lastSeen: lastSeenTs,

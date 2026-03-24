@@ -197,6 +197,7 @@ function renderAgentCard(a) {
   var rateColor = a.answerRate >= 80 ? '#2ecc71' : a.answerRate >= 50 ? '#f39c12' : '#e74c3c';
   var displayName = a.displayName && a.displayName !== a.username ? '<div style="font-size:11px;color:#888;">' + escapeHtml(a.displayName) + '</div>' : '';
   var monBadge = a.role !== 'admin' ? '<span style="font-size:9px;color:' + (a.monitorAlive ? '#2ecc71' : '#ccc') + ';">' + (a.monitorAlive ? '● Mon' : '○ Mon') + '</span>' : '';
+  var callBadge = a.onCall ? ' <span style="font-size:9px;background:#e67e22;color:white;padding:1px 5px;border-radius:3px;">ON CALL</span>' : '';
   var uid = 'ad-' + a.username.replace(/\W/g, '');
   var isDb = a.source === 'db';
   var lastCall = a.lastCallAt ? formatLastSeen(new Date(a.lastCallAt).getTime()) : 'Never';
@@ -214,7 +215,7 @@ function renderAgentCard(a) {
     '<div onclick="agentToggleDetail(\'' + uid + '\')" style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border-bottom:1px solid #f5f5f5;">' +
       '<div style="display:flex;align-items:center;gap:6px;">' +
         '<span style="width:8px;height:8px;border-radius:50%;background:' + pcfg.dot + ';display:inline-block;"></span>' +
-        '<div><span style="font-weight:700;font-size:14px;color:#222;">' + escapeHtml(a.username) + '</span> ' + roleBadge + ' ' + monBadge + displayName + '</div>' +
+        '<div><span style="font-weight:700;font-size:14px;color:#222;">' + escapeHtml(a.username) + '</span> ' + roleBadge + ' ' + monBadge + callBadge + displayName + '</div>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:6px;">' +
         '<span style="font-size:11px;font-weight:700;color:' + scoreColor + ';">' + a.score + '</span>' +

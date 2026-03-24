@@ -33,4 +33,10 @@ module.exports = Object.freeze({
 
   /** De-duplication window (seconds) for repeated incoming-call webhooks. */
   DEDUP_WINDOW_S: 30,
+
+  /** Agent goes idle after this many ms of no activity (2 minutes). */
+  IDLE_TIMEOUT_MS: 120_000,
+
+  /** How often (ms) to sweep for idle agents. */
+  IDLE_CHECK_INTERVAL: 30_000,
 });
