@@ -446,31 +446,39 @@ async function syncAppointmentsAndScheduleMessages() {
       }
     }
 
-    // --- Send Confirmation Messages ---
+    // --- Send Confirmation Messages (grouped by patient phone) ---
     const unsent = waRepo.getUnsentConfirmations();
+    const confirmByPhone = {};
     for (const apt of unsent) {
-      // Clinicea returns times already in Pakistan local time — parse without timezone shift
-      const rawDate = apt.appointment_date;
-      const aptDate = parseLocalDate(rawDate);
-      const dateStr = formatDatePK(aptDate);
-      const timeStr = formatTimePK(aptDate);
-
-      let msg = `Assalam o Alaikum ${apt.patient_name}! Your appointment at Dr. Nakhoda's Skin Institute has been scheduled.\n\n`;
-      msg += `Date: ${dateStr}\n`;
-      msg += `Time: ${timeStr}\n`;
-      if (apt.service) msg += `Treatment: ${apt.service}\n`;
-      if (apt.doctor_name) msg += `Doctor: ${apt.doctor_name}\n`;
-      msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\n';
-      msg += '\nPlease reply "CONFIRM" to confirm or call +92-300-2105374 to reschedule. We look forward to seeing you!';
-
-      // Queue the message
-      waRepo.insertMessage(apt.patient_phone, null, 'out', msg, 'confirmation', 'pending', null);
-      waRepo.markConfirmationSent(apt.id);
-      logEvent('info', `WA confirmation queued for ${apt.patient_name} (${apt.patient_phone})`);
+      const phone = apt.patient_phone;
+      if (!confirmByPhone[phone]) confirmByPhone[phone] = [];
+      confirmByPhone[phone].push(apt);
     }
 
-    // --- Send Reminder Messages (0-2 days before) ---
+    for (const [phone, apts] of Object.entries(confirmByPhone)) {
+      const name = apts[0].patient_name;
+      let msg = `Assalam o Alaikum ${name}! Your appointment${apts.length > 1 ? 's' : ''} at Dr. Nakhoda's Skin Institute ${apts.length > 1 ? 'have' : 'has'} been scheduled.\n`;
+
+      for (const apt of apts) {
+        const aptDate = parseLocalDate(apt.appointment_date);
+        msg += `\n${formatDatePK(aptDate)} at ${formatTimePK(aptDate)}`;
+        if (apt.service) msg += ` — ${apt.service}`;
+        if (apt.doctor_name) msg += ` (${apt.doctor_name})`;
+      }
+
+      msg += '\n\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi';
+      msg += '\n\nPlease reply "CONFIRM" to confirm or call +92-300-2105374 to reschedule. We look forward to seeing you!';
+
+      waRepo.insertMessage(phone, null, 'out', msg, 'confirmation', 'pending', null);
+      for (const apt of apts) {
+        waRepo.markConfirmationSent(apt.id);
+      }
+      logEvent('info', `WA confirmation queued for ${name} (${phone}) — ${apts.length} appointment(s)`);
+    }
+
+    // --- Send Reminder Messages (grouped by patient phone, 0-2 days before) ---
     const reminderCandidates = waRepo.getUnsentReminders();
+    const reminderByPhone = {};
 
     for (const apt of reminderCandidates) {
       const aptParsed = parseLocalDate(apt.appointment_date);
@@ -479,24 +487,40 @@ async function syncAppointmentsAndScheduleMessages() {
       const daysUntil = Math.round((aptDateOnly - todayOnly) / (24 * 60 * 60 * 1000));
 
       if (daysUntil <= 2 && daysUntil >= 0) {
-        const reminderDate = parseLocalDate(apt.appointment_date);
-        const dateDisplay = formatDatePK(reminderDate);
-        const timeStr = formatTimePK(reminderDate);
-
-        let dayWord = 'soon';
-        if (daysUntil === 0) dayWord = 'today';
-        else if (daysUntil === 1) dayWord = 'tomorrow';
-        else if (daysUntil === 2) dayWord = 'in 2 days';
-
-        let msg = `Reminder: Assalam o Alaikum ${apt.patient_name}! This is a friendly reminder that your appointment at Dr. Nakhoda's Skin Institute is ${dayWord}.\n\n`;
-        msg += `Date: ${dateDisplay}\nTime: ${timeStr}\n`;
-        if (apt.service) msg += `Treatment: ${apt.service}\n`;
-        msg += '\nPlease arrive 10 minutes early. If you need to reschedule, call +92-300-2105374. See you soon!';
-
-        waRepo.insertMessage(apt.patient_phone, null, 'out', msg, 'reminder', 'pending', null);
-        waRepo.markReminderSent(apt.id);
-        logEvent('info', `WA reminder queued for ${apt.patient_name} (${apt.patient_phone}) - appointment ${dayWord}`);
+        const phone = apt.patient_phone;
+        if (!reminderByPhone[phone]) reminderByPhone[phone] = { apts: [], daysUntil };
+        reminderByPhone[phone].apts.push(apt);
+        // Use the closest appointment's daysUntil
+        if (daysUntil < reminderByPhone[phone].daysUntil) {
+          reminderByPhone[phone].daysUntil = daysUntil;
+        }
       }
+    }
+
+    for (const [phone, group] of Object.entries(reminderByPhone)) {
+      const { apts, daysUntil } = group;
+      const name = apts[0].patient_name;
+
+      let dayWord = 'soon';
+      if (daysUntil === 0) dayWord = 'today';
+      else if (daysUntil === 1) dayWord = 'tomorrow';
+      else if (daysUntil === 2) dayWord = 'in 2 days';
+
+      let msg = `Reminder: Assalam o Alaikum ${name}! This is a friendly reminder that your appointment${apts.length > 1 ? 's' : ''} at Dr. Nakhoda's Skin Institute ${apts.length > 1 ? 'are' : 'is'} ${dayWord}.\n`;
+
+      for (const apt of apts) {
+        const aptDate = parseLocalDate(apt.appointment_date);
+        msg += `\n${formatDatePK(aptDate)} at ${formatTimePK(aptDate)}`;
+        if (apt.service) msg += ` — ${apt.service}`;
+      }
+
+      msg += '\n\nPlease arrive 10 minutes early. If you need to reschedule, call +92-300-2105374. See you soon!';
+
+      waRepo.insertMessage(phone, null, 'out', msg, 'reminder', 'pending', null);
+      for (const apt of apts) {
+        waRepo.markReminderSent(apt.id);
+      }
+      logEvent('info', `WA reminder queued for ${name} (${phone}) — ${apts.length} appointment(s), ${dayWord}`);
     }
 
     logEvent('info', 'Appointment sync complete');
