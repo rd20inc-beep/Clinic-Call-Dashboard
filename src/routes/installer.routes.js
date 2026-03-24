@@ -11,8 +11,6 @@ const {
 } = require('../services/installer.service');
 const { timingSafeEqual } = require('../utils/security');
 const path = require('path');
-const fs = require('fs');
-const archiver = require('archiver');
 
 // ---------------------------------------------------------------------------
 // GET /api/monitor-script - serve raw PS1 monitor script
@@ -75,70 +73,6 @@ router.get('/download/call-monitor', requireAuth, (req, res) => {
     'attachment; filename="Install_Call_Monitor_' + agent + '.bat"'
   );
   res.send(bat);
-});
-
-// ---------------------------------------------------------------------------
-// GET /download/whatsapp-extension - download pre-configured extension zip
-// ---------------------------------------------------------------------------
-router.get('/download/whatsapp-extension', requireAuth, (req, res) => {
-  // Resolve extension directory relative to project root
-  const extDir = path.resolve(__dirname, '..', '..', 'whatsapp-extension');
-  if (!fs.existsSync(extDir)) {
-    return res.status(404).send('WhatsApp extension not found');
-  }
-
-  const host = req.get('host');
-  const protocol = req.protocol;
-  const serverUrl = protocol + '://' + host;
-
-  res.setHeader('Content-Type', 'application/zip');
-  res.setHeader(
-    'Content-Disposition',
-    'attachment; filename="WhatsApp_Extension.zip"'
-  );
-
-  const archive = archiver('zip', { zlib: { level: 9 } });
-  archive.on('error', (err) =>
-    res.status(500).send('Zip error: ' + err.message)
-  );
-  archive.pipe(res);
-
-  // Add all extension files, patching background.js and manifest.json
-  const files = fs.readdirSync(extDir);
-  for (const file of files) {
-    const filePath = path.join(extDir, file);
-    if (!fs.statSync(filePath).isFile()) continue;
-
-    if (file === 'background.js') {
-      let content = fs.readFileSync(filePath, 'utf8');
-      content = content.replace(
-        /const DEFAULT_SERVER_URL = '[^']*'/,
-        "const DEFAULT_SERVER_URL = '" + serverUrl + "'"
-      );
-      if (config.EXTENSION_SECRET) {
-        content = content.replace(
-          /const DEFAULT_EXTENSION_KEY = '[^']*'/,
-          "const DEFAULT_EXTENSION_KEY = '" + config.EXTENSION_SECRET + "'"
-        );
-      }
-      archive.append(content, { name: file });
-    } else if (file === 'manifest.json') {
-      let content = fs.readFileSync(filePath, 'utf8');
-      const manifest = JSON.parse(content);
-      const hostPerm = serverUrl.replace(/\/$/, '') + '/*';
-      if (
-        Array.isArray(manifest.host_permissions) &&
-        !manifest.host_permissions.includes(hostPerm)
-      ) {
-        manifest.host_permissions.push(hostPerm);
-      }
-      archive.append(JSON.stringify(manifest, null, 2), { name: file });
-    } else {
-      archive.file(filePath, { name: file });
-    }
-  }
-
-  archive.finalize();
 });
 
 module.exports = router;

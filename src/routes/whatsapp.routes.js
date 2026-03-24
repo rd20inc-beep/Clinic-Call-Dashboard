@@ -8,19 +8,6 @@ const waRepo = require('../db/whatsapp.repo');
 const waService = require('../services/whatsapp.service');
 
 // ---------------------------------------------------------------------------
-// Extension auth middleware
-// ---------------------------------------------------------------------------
-function requireExtensionAuth(req, res, next) {
-  if (!config.EXTENSION_SECRET) return next();
-  const provided = req.headers['x-extension-key'];
-  if (provided !== config.EXTENSION_SECRET) {
-    logEvent('warn', 'Extension auth failed', 'IP: ' + req.ip);
-    return res.status(401).json({ error: 'Invalid extension key', reply: null });
-  }
-  next();
-}
-
-// ---------------------------------------------------------------------------
 // Setup function — returns router, accepts io for socket emissions
 // ---------------------------------------------------------------------------
 
@@ -28,24 +15,13 @@ function requireExtensionAuth(req, res, next) {
  * @param {import('socket.io').Server} io
  * @returns {import('express').Router}
  */
-// Track when the extension last polled (in-memory is fine — resets on restart)
-let extensionLastSeen = null;
-
-/** Check if the extension has polled within the last 60 seconds. */
-function isExtensionConnected() {
-  if (!extensionLastSeen) return false;
-  const secondsAgo = (Date.now() - new Date(extensionLastSeen).getTime()) / 1000;
-  return secondsAgo < 60;
-}
-
 function setupWhatsAppRoutes(io) {
   const router = express.Router();
 
   // -----------------------------------------------------------------------
-  // POST /api/whatsapp/incoming - incoming WA message (extension-auth)
+  // POST /api/whatsapp/incoming - incoming WA message
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/incoming', requireExtensionAuth, async (req, res) => {
-    extensionLastSeen = new Date().toISOString();
+  router.post('/api/whatsapp/incoming', async (req, res) => {
     const { messageId, text, phone, chatName, timestamp } = req.body;
 
     if (!text || (!phone && !chatName)) {
@@ -78,7 +54,7 @@ function setupWhatsAppRoutes(io) {
       return res.json({ reply: null });
     }
 
-    // --- Per-chat pause check (now DB-backed) ---
+    // --- Per-chat pause check (DB-backed) ---
     if (waService.isPaused(contactId) || (chatName && waService.isPaused(chatName))) {
       logEvent('info', 'WA bot paused for ' + (chatName || phone) + ', skipping reply');
       io.to('role:admin').emit('wa_message', {
@@ -91,7 +67,7 @@ function setupWhatsAppRoutes(io) {
     // Get GPT reply
     const reply = await waService.getGPTReply(contactId, text, chatName);
 
-    // Store outgoing reply as PENDING (not 'sent') — extension must confirm delivery
+    // Store outgoing reply as PENDING — needs admin approval before sending
     waRepo.insertMessage(contactId, chatName || null, 'out', reply, 'chat', 'pending', null);
 
     logEvent(
@@ -108,19 +84,16 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
-  // GET /api/whatsapp/outgoing - poll for pending outgoing messages
+  // GET /api/whatsapp/outgoing - poll for approved outgoing messages
   // -----------------------------------------------------------------------
-  router.get('/api/whatsapp/outgoing', requireExtensionAuth, (req, res) => {
-    // Record that extension is alive
-    extensionLastSeen = new Date().toISOString();
-
+  router.get('/api/whatsapp/outgoing', (req, res) => {
     // Expire stale approved messages (>10 min) and stuck sending (>5 min)
     const expired = waRepo.expireStaleMessages();
     if (expired > 0) {
-      logEvent('info', 'WA expired ' + expired + ' stale pending message(s)');
+      logEvent('info', 'WA expired ' + expired + ' stale message(s)');
     }
 
-    // If bot is globally disabled, return nothing — extension sends nothing
+    // If bot is globally disabled, return nothing
     if (!waService.isBotEnabled()) {
       return res.json({ messages: [] });
     }
@@ -136,13 +109,13 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
-  // POST /api/whatsapp/sent - confirm message was sent by extension
+  // POST /api/whatsapp/sent - confirm message was sent
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/sent', requireExtensionAuth, (req, res) => {
+  router.post('/api/whatsapp/sent', (req, res) => {
     const { id, phone, success } = req.body;
     if (id) {
       if (success) {
-        waRepo.markMessageSent(id); // now also sets sent_at timestamp
+        waRepo.markMessageSent(id);
         logEvent('info', 'WA message delivered to ' + phone);
       } else {
         waRepo.markMessageFailed(id);
@@ -329,13 +302,10 @@ function setupWhatsAppRoutes(io) {
     const agent = req.session.username;
     const stats = waRepo.getStats(isAdmin, agent);
     stats.botEnabled = waService.isBotEnabled();
-    stats.extensionLastSeen = extensionLastSeen;
-    stats.extensionConnected = isExtensionConnected();
     return res.json(stats);
   });
 
   return router;
 }
 
-setupWhatsAppRoutes.isExtensionConnected = isExtensionConnected;
 module.exports = setupWhatsAppRoutes;

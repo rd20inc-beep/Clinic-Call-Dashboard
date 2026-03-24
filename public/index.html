@@ -62,12 +62,6 @@
 
         <div class="nav-spacer"></div>
 
-        <a class="nav-item admin-only" href="/download/whatsapp-extension" style="display:none;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/>
-          </svg>
-          Install WhatsApp Bot
-        </a>
         <a class="nav-item admin-only" href="/download/call-monitor" style="display:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
@@ -167,27 +161,11 @@
 
       <!-- ===== WHATSAPP BOT PAGE ===== -->
       <div class="page-container" id="page-whatsapp">
-        <!-- Extension Connection Status + Global Bot Toggle -->
-        <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
-          <div id="waExtensionStatus" style="flex:1;min-width:200px;display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(231,76,60,0.15);border:1px solid rgba(231,76,60,0.3);border-radius:10px;">
-            <span id="waExtDot" style="width:10px;height:10px;border-radius:50%;background:#e74c3c;display:inline-block;flex-shrink:0;"></span>
-            <div>
-              <div style="font-weight:600;font-size:13px;" id="waExtLabel">Extension: Disconnected</div>
-              <div style="font-size:11px;color:#999;" id="waExtDetail">No activity detected</div>
-            </div>
-          </div>
-          <div id="waBotToggleBar" style="flex:1;min-width:200px;display:flex;align-items:center;gap:12px;padding:12px 16px;background:rgba(46,204,113,0.15);border:1px solid rgba(46,204,113,0.3);border-radius:10px;">
-            <span style="font-weight:600;font-size:14px;">WhatsApp Bot:</span>
-            <span id="waBotStatusText" style="font-weight:700;font-size:14px;color:#2ecc71;">ENABLED</span>
-            <button id="waBotToggleBtn" onclick="waToggleBot()" style="margin-left:auto;padding:8px 20px;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;color:white;background:#e74c3c;">Disable Bot</button>
-          </div>
-        </div>
-
-        <!-- Disconnected Banner (shown when extension is not connected) -->
-        <div id="waDisconnectedBanner" style="display:none;padding:16px 20px;margin-bottom:16px;background:rgba(231,76,60,0.12);border:1px solid rgba(231,76,60,0.35);border-radius:10px;text-align:center;">
-          <div style="font-size:20px;margin-bottom:4px;">&#9888;</div>
-          <div style="font-weight:700;font-size:15px;color:#e74c3c;">WhatsApp Bot is Paused</div>
-          <div style="font-size:13px;color:#ccc;margin-top:4px;">Extension is not connected. No messages will be sent or received until WhatsApp Web is open with the extension active.</div>
+        <!-- Global Bot Toggle -->
+        <div id="waBotToggleBar" style="display:flex;align-items:center;gap:12px;padding:12px 16px;margin-bottom:16px;background:rgba(46,204,113,0.15);border:1px solid rgba(46,204,113,0.3);border-radius:10px;">
+          <span style="font-weight:600;font-size:14px;">WhatsApp Bot:</span>
+          <span id="waBotStatusText" style="font-weight:700;font-size:14px;color:#2ecc71;">ENABLED</span>
+          <button id="waBotToggleBtn" onclick="waToggleBot()" style="margin-left:auto;padding:8px 20px;border:none;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer;color:white;background:#e74c3c;">Disable Bot</button>
         </div>
 
         <!-- Stats Cards -->
@@ -240,7 +218,7 @@
         <!-- Conversations -->
         <h3 style="margin:24px 0 12px;font-size:16px;font-weight:600;">Recent Conversations</h3>
         <div id="waConversations" class="wa-conversations">
-          <div class="empty-state"><p>No WhatsApp conversations yet. Install the Chrome extension and open WhatsApp Web to get started.</p></div>
+          <div class="empty-state"><p>No WhatsApp conversations yet.</p></div>
         </div>
 
         <!-- Chat View (shown when clicking a conversation) -->
@@ -253,18 +231,6 @@
           <div id="waChatMessages" class="wa-chat-messages"></div>
         </div>
 
-        <!-- Setup Instructions -->
-        <div class="wa-setup-info">
-          <h3>Setup Instructions</h3>
-          <ol>
-            <li>Open <code>chrome://extensions</code> in Google Chrome</li>
-            <li>Enable "Developer mode" (top right toggle)</li>
-            <li>Click "Load unpacked" and select the <code>whatsapp-extension</code> folder from this project</li>
-            <li>Open <a href="https://web.whatsapp.com" target="_blank">web.whatsapp.com</a> and scan the QR code</li>
-            <li>Click the extension icon and set the server URL to this dashboard's URL</li>
-            <li>The bot will automatically respond to messages and send appointment reminders!</li>
-          </ol>
-        </div>
       </div>
 
     </main>

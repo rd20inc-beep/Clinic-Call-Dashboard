@@ -1,7 +1,6 @@
 // ===== WHATSAPP CHAT UI =====
 
 var waBotEnabled = true;
-var waExtensionConnected = false;
 
 // Helper: fetch JSON API with proper headers and session-expiry handling
 function waFetch(url, opts) {
@@ -11,15 +10,13 @@ function waFetch(url, opts) {
   if (opts.body) opts.headers['Content-Type'] = 'application/json';
   return fetch(url, opts).then(function(r) {
     var ct = r.headers.get('content-type') || '';
-    // If response is not JSON, the session likely expired or route failed
     if (!ct.includes('application/json')) {
-      console.error('[waFetch] Non-JSON response from', url, '- status:', r.status, 'type:', ct, 'redirected:', r.redirected);
       if (r.status === 401 || r.redirected) {
         window.location.href = '/login';
       }
       return r.text().then(function(body) {
-        console.error('[waFetch] Response body preview:', body.substring(0, 200));
-        return Promise.reject(new Error('Server returned non-JSON response (status ' + r.status + '). Check console for details.'));
+        console.error('[waFetch] Non-JSON response from', url, '- status:', r.status);
+        return Promise.reject(new Error('Server returned non-JSON response (status ' + r.status + ')'));
       });
     }
     return r.json();
@@ -74,15 +71,6 @@ function waOpenChat(phone, name) {
 function waUpdatePauseBtn() {
   var btn = document.getElementById('waPauseBtn');
 
-  if (!waExtensionConnected) {
-    btn.textContent = 'Not Connected';
-    btn.style.background = '#e74c3c';
-    btn.style.cursor = 'not-allowed';
-    btn.style.opacity = '0.7';
-    btn.disabled = true;
-    return;
-  }
-
   if (!waBotEnabled) {
     btn.textContent = 'Bot Disabled';
     btn.style.background = '#e74c3c';
@@ -101,7 +89,7 @@ function waUpdatePauseBtn() {
 }
 
 function waTogglePause() {
-  if (!waCurrentChatPhone || !waExtensionConnected || !waBotEnabled) return;
+  if (!waCurrentChatPhone || !waBotEnabled) return;
   var isPaused = waPausedChats.has(waCurrentChatPhone);
   var endpoint = isPaused ? '/api/whatsapp/resume' : '/api/whatsapp/pause';
 
@@ -127,7 +115,6 @@ function waCloseChat() {
 }
 
 function waSendManual() {
-  if (!waExtensionConnected) return alert('Cannot send — WhatsApp extension is not connected.');
   var phone = document.getElementById('waSendPhone').value.trim();
   var message = document.getElementById('waSendMessage').value.trim();
   if (!phone || !message) return alert('Please enter both phone number and message');
@@ -137,13 +124,13 @@ function waSendManual() {
       if (data.ok) {
         document.getElementById('waSendPhone').value = '';
         document.getElementById('waSendMessage').value = '';
-        alert('Message queued! It will be sent when WhatsApp Web is open with the extension active.');
+        alert('Message queued for approval.');
         loadWaStats();
       } else {
         alert('Error: ' + (data.error || 'Unknown error'));
       }
     })
-    .catch(function(err) { if (err.message !== 'Session expired') alert('Error: ' + err.message); });
+    .catch(function(err) { alert('Error: ' + err.message); });
 }
 
 // ===== MESSAGE APPROVAL =====
@@ -165,71 +152,6 @@ function waApproveAllMessages() {
   waFetch('/api/whatsapp/approve-all', { method: 'POST' })
     .then(function(data) { if (data.ok) { loadWaApprovalQueue(); loadWaStats(); } })
     .catch(function() {});
-}
-
-// ===== EXTENSION CONNECTION STATUS =====
-
-function waUpdateExtensionStatus(lastSeen) {
-  var dot = document.getElementById('waExtDot');
-  var label = document.getElementById('waExtLabel');
-  var detail = document.getElementById('waExtDetail');
-  var container = document.getElementById('waExtensionStatus');
-  var prevConnected = waExtensionConnected;
-
-  if (!lastSeen) {
-    waExtensionConnected = false;
-    dot.style.background = '#e74c3c';
-    label.textContent = 'Extension: Disconnected';
-    detail.textContent = 'No activity detected since server start';
-    container.style.background = 'rgba(231,76,60,0.15)';
-    container.style.borderColor = 'rgba(231,76,60,0.3)';
-    if (prevConnected !== waExtensionConnected) waUpdatePauseBtn();
-    return;
-  }
-
-  var lastSeenDate = new Date(lastSeen);
-  var secondsAgo = Math.floor((Date.now() - lastSeenDate.getTime()) / 1000);
-
-  if (secondsAgo < 60) {
-    waExtensionConnected = true;
-    dot.style.background = '#2ecc71';
-    label.textContent = 'Extension: Connected';
-    detail.textContent = 'Last seen ' + secondsAgo + 's ago';
-    container.style.background = 'rgba(46,204,113,0.15)';
-    container.style.borderColor = 'rgba(46,204,113,0.3)';
-  } else if (secondsAgo < 300) {
-    waExtensionConnected = false;
-    dot.style.background = '#f39c12';
-    label.textContent = 'Extension: Idle';
-    var mins = Math.floor(secondsAgo / 60);
-    detail.textContent = 'Last seen ' + mins + 'm ago';
-    container.style.background = 'rgba(243,156,18,0.15)';
-    container.style.borderColor = 'rgba(243,156,18,0.3)';
-  } else {
-    waExtensionConnected = false;
-    dot.style.background = '#e74c3c';
-    label.textContent = 'Extension: Disconnected';
-    var minsAgo = Math.floor(secondsAgo / 60);
-    detail.textContent = 'Last seen ' + minsAgo + 'm ago';
-    container.style.background = 'rgba(231,76,60,0.15)';
-    container.style.borderColor = 'rgba(231,76,60,0.3)';
-  }
-
-  waUpdateDisconnectedState();
-  if (prevConnected !== waExtensionConnected) waUpdatePauseBtn();
-}
-
-function waUpdateDisconnectedState() {
-  var banner = document.getElementById('waDisconnectedBanner');
-  var sendBtn = document.getElementById('waSendBtn');
-
-  if (!waExtensionConnected) {
-    banner.style.display = '';
-    if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.5'; sendBtn.style.cursor = 'not-allowed'; }
-  } else {
-    banner.style.display = 'none';
-    if (sendBtn) { sendBtn.disabled = false; sendBtn.style.opacity = '1'; sendBtn.style.cursor = 'pointer'; }
-  }
 }
 
 // ===== GLOBAL BOT TOGGLE =====

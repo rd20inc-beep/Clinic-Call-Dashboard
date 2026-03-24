@@ -108,10 +108,6 @@ app.use(installerRoutes);
 //    the static-files middleware so /api/whatsapp/* is not caught by it
 app.use(setupWhatsAppRoutes(io));
 
-// Wire up extension connectivity check for the service (avoids circular require)
-const waService = require('./services/whatsapp.service');
-waService.setExtensionConnectedCheck(setupWhatsAppRoutes.isExtensionConnected);
-
 // 5. Protected static files — the root and all files under /public require
 //    an authenticated session
 app.get('/', requireAuth, (req, res, next) => next());

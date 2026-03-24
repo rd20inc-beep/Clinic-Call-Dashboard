@@ -498,9 +498,6 @@ function loadWaStats() {
       // Global bot toggle state
       waUpdateBotToggle(data.botEnabled !== false);
 
-      // Extension connection status
-      waUpdateExtensionStatus(data.extensionLastSeen);
-
       // Load approval queue
       loadWaApprovalQueue();
     })
