@@ -224,8 +224,7 @@ function calSendAftercare(phone, name, service, doctor) {
     msg += '- Stay hydrated and rest well\n';
   }
 
-  msg += '\nIf you have any questions or concerns, please call us at +92-300-2105374.\n';
-  msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9';
+  msg += '\nIf you have any questions or concerns, please call us at +92-300-2105374.';
 
   waShowPreview('Send Aftercare Instructions', phone, name, msg).then(function(ok) {
     if (!ok) return;
