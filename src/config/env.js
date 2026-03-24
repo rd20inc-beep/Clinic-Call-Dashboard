@@ -177,8 +177,24 @@ function getUsers() {
 
   if (Object.keys(users).length === 0) {
     console.warn(
-      '[env] WARNING: No users configured. Set USER_ADMIN_HASH (or USER_ADMIN_PASS) etc.'
+      '[env] WARNING: No users configured via env vars. Using built-in defaults.'
     );
+    // Fallback defaults so login always works
+    const defaults = {
+      admin: 'clinicea2025',
+      agent1: 'password1',
+      agent2: 'password2',
+      agent3: 'password3',
+      agent4: 'password4',
+      agent5: 'password5',
+    };
+    for (const [name, pass] of Object.entries(defaults)) {
+      users[name] = {
+        passwordHash: pass,
+        role: name === 'admin' ? 'admin' : 'agent',
+        isMigration: true,
+      };
+    }
   }
 
   return users;
