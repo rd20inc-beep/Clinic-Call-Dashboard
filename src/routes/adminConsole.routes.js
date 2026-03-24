@@ -367,6 +367,38 @@ router.get('/admin/agents/:id/performance', (req, res) => {
       ).all(u.username);
     } catch (e) { /* ignore */ }
 
+    // Calculate online time today (time since last_login if logged in today)
+    let loggedInToday = 0;
+    try {
+      if (u.last_login) {
+        const loginDate = new Date(u.last_login);
+        const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+        if (loginDate >= todayStart) {
+          loggedInToday = Math.round((Date.now() - loginDate.getTime()) / 1000);
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // Appointments attributed to this agent (phone match)
+    let agentAppointments = [];
+    try {
+      const trackingRows = db.prepare("SELECT * FROM wa_appointment_tracking WHERE confirmation_sent = 1 ORDER BY appointment_date DESC").all();
+      for (const row of trackingRows) {
+        if (!row.patient_phone) continue;
+        const phone = row.patient_phone.replace(/[\s\-()]/g, '');
+        const match = db.prepare("SELECT agent FROM calls WHERE caller_number LIKE ? AND agent = ? ORDER BY timestamp DESC LIMIT 1").get('%' + phone.slice(-10) + '%', u.username);
+        if (match) {
+          agentAppointments.push({
+            appointment_date: row.appointment_date,
+            patient_name: row.patient_name,
+            patient_phone: row.patient_phone,
+            doctor_name: row.doctor_name,
+            service: row.service,
+          });
+        }
+      }
+    } catch (e) { /* ignore */ }
+
     res.json({
       agent: {
         username: u.username, full_name: u.display_name, role: u.role,
@@ -380,11 +412,12 @@ router.get('/admin/agents/:id/performance', (req, res) => {
         avg_duration: Math.round(today.avg_duration || 0), longest_call: today.longest_call || 0,
         peak_hour: peakHour,
         week: week.total_calls || 0, month: month.total_calls || 0, total: all.total_calls || 0,
-        logged_in_today: 0,
+        logged_in_today: loggedInToday,
       },
       hourly,
       recentCalls: recent,
       daily: dailyCalls,
+      appointments: agentAppointments,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
