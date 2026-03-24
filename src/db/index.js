@@ -59,24 +59,40 @@ try { db.exec('ALTER TABLE wa_messages ADD COLUMN sent_at DATETIME'); } catch (e
 try { db.exec('ALTER TABLE wa_messages ADD COLUMN wa_message_id TEXT'); } catch (e) { /* already exists */ }
 
 // --- Local patients table (supplements Clinicea API cache) ---
-db.exec(`
-  CREATE TABLE IF NOT EXISTS patients (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    clinicea_id TEXT,
-    name TEXT NOT NULL,
-    phone TEXT UNIQUE,
-    email TEXT,
-    gender TEXT,
-    file_no TEXT,
-    doctor TEXT,
-    last_service TEXT,
-    last_appointment DATETIME,
-    source TEXT DEFAULT 'appointment',
-    notes TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`);
+// Check if table exists and has UNIQUE on phone, recreate if not
+try {
+  // Test if UNIQUE constraint works
+  const testStmt = db.prepare("INSERT INTO patients (name, phone) VALUES ('_test_', '_test_unique_check_') ON CONFLICT(phone) DO UPDATE SET name = name");
+  testStmt.run();
+  db.prepare("DELETE FROM patients WHERE phone = '_test_unique_check_'").run();
+} catch (e) {
+  // Table doesn't exist or lacks UNIQUE — recreate
+  try { db.exec('ALTER TABLE patients RENAME TO patients_old'); } catch(e2) { /* doesn't exist */ }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS patients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      clinicea_id TEXT,
+      name TEXT NOT NULL,
+      phone TEXT UNIQUE,
+      email TEXT,
+      gender TEXT,
+      file_no TEXT,
+      doctor TEXT,
+      last_service TEXT,
+      last_appointment DATETIME,
+      source TEXT DEFAULT 'appointment',
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  // Migrate data from old table if it existed
+  try {
+    db.exec("INSERT OR IGNORE INTO patients SELECT * FROM patients_old");
+    db.exec("DROP TABLE patients_old");
+    console.log('[MIGRATION] Recreated patients table with UNIQUE constraint');
+  } catch(e3) { /* no old table */ }
+}
 
 // Seed patients from existing appointment tracking (one-time migration)
 try {
