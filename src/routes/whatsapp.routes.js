@@ -308,6 +308,14 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
+  // GET /api/whatsapp/tracking-status - message tracking status by phone
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/tracking-status', requireAuth, (req, res) => {
+    const tracking = waRepo.getTrackingByPhone();
+    return res.json({ tracking });
+  });
+
+  // -----------------------------------------------------------------------
   // POST /api/whatsapp/reset-appointments - clear and re-queue appointment messages (admin)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/reset-appointments', requireAuth, (req, res) => {

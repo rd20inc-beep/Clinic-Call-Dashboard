@@ -79,6 +79,11 @@ const stmtIsChatPaused = db.prepare(
   "SELECT chat_id FROM wa_paused_chats WHERE chat_id = ? LIMIT 1"
 );
 
+// --- Appointment tracking lookup ---
+const stmtGetTrackingByPhone = db.prepare(
+  "SELECT patient_phone, MIN(confirmation_sent) AS confirmation_sent, MIN(reminder_sent) AS reminder_sent FROM wa_appointment_tracking WHERE patient_phone IS NOT NULL AND patient_phone != '' GROUP BY patient_phone"
+);
+
 // --- Failed / expired messages ---
 const stmtFailedMessagesCount = db.prepare(
   "SELECT COUNT(*) AS count FROM wa_messages WHERE status = 'failed'"
@@ -423,6 +428,16 @@ module.exports = {
   },
 
   // --- Failed messages ---
+
+  /** Get message tracking status grouped by phone. Returns map { phone: { confirmation_sent, reminder_sent } } */
+  getTrackingByPhone() {
+    const rows = stmtGetTrackingByPhone.all();
+    const map = {};
+    for (const r of rows) {
+      map[r.patient_phone] = { confirmationSent: !!r.confirmation_sent, reminderSent: !!r.reminder_sent };
+    }
+    return map;
+  },
 
   /** Get all failed messages. */
   getFailedMessages() {

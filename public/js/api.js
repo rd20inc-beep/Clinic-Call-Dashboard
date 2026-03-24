@@ -336,6 +336,13 @@ async function loadCalendar() {
       return;
     }
 
+    // Fetch message tracking status
+    var tracking = {};
+    try {
+      var trackRes = await waFetch('/api/whatsapp/tracking-status');
+      tracking = trackRes.tracking || {};
+    } catch (e) { /* ignore — just won't show badges */ }
+
     // Sort by start time
     appointments.sort(function(a, b) { return new Date(a.startTime || 0) - new Date(b.startTime || 0); });
 
@@ -356,9 +363,20 @@ async function loadCalendar() {
       var endTimeStr = apt.endTime ? ' - ' + formatTime(apt.endTime) : '';
       var durationStr = apt.duration ? ' (' + apt.duration + ' min)' : '';
 
+      // Message tracking badges
+      var aptPhone = (apt.phone || apt.patientPhone || apt.mobile || '').replace(/[\s\-()]/g, '');
+      var trackInfo = tracking[aptPhone] || tracking['+' + aptPhone] || null;
+      // Also try with + prefix stripped
+      if (!trackInfo && aptPhone.startsWith('+')) trackInfo = tracking[aptPhone.substring(1)] || null;
+      var msgBadges = '';
+      if (trackInfo) {
+        if (trackInfo.confirmationSent) msgBadges += '<span style="background:#2ecc71;color:white;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;">Confirmed</span>';
+        if (trackInfo.reminderSent) msgBadges += '<span style="background:#3498db;color:white;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;">Reminded</span>';
+      }
+
       html += '<div class="calendar-card ' + statusClass + '" onclick="openProfileById(\'' + escapeHtml(String(apt.patientID)) + '\', \'' + escapeHtml(apt.patientName) + '\')">';
       html += '<div class="calendar-card-left">';
-      html += '<h4>' + escapeHtml(apt.patientName) + '</h4>';
+      html += '<h4>' + escapeHtml(apt.patientName) + msgBadges + '</h4>';
       html += '<p>' + escapeHtml(apt.service || 'Appointment');
       if (apt.doctor) html += ' &middot; ' + escapeHtml(apt.doctor);
       html += '</p>';
