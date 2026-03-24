@@ -786,21 +786,23 @@
       await loadTrends();
       if (overviewData) {
         renderTodayVsWeek(overviewData.agentStats);
-        renderScores(overviewData.agentStats);
+        if (typeof renderScores === 'function') renderScores(overviewData.agentStats);
       } else {
         var res = await fetch('/admin/analytics/overview');
         overviewData = await res.json();
         renderTodayVsWeek(overviewData.agentStats);
-        renderScores(overviewData.agentStats);
+        if (typeof renderScores === 'function') renderScores(overviewData.agentStats);
       }
     }
 
     async function loadTrends() {
-      var agent = document.getElementById('trendAgentFilter').value;
-      var url = '/admin/analytics/trends?days=' + trendDays + (agent ? '&agent=' + encodeURIComponent(agent) : '');
-      var res = await fetch(url);
-      var data = await res.json();
-      renderTrendChart(data.trends);
+      try {
+        var agent = document.getElementById('trendAgentFilter').value;
+        var url = '/admin/analytics/trends?days=' + trendDays + (agent ? '&agent=' + encodeURIComponent(agent) : '');
+        var res = await fetch(url);
+        var data = await res.json();
+        renderTrendChart(data.trends || []);
+      } catch(e) { console.error('Failed to load trends:', e); }
     }
 
     function renderTrendChart(trends) {

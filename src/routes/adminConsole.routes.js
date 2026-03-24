@@ -135,6 +135,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
         talk_time_today: todayTalkTime,
         avg_duration: Math.round(avgDur),
         calls_week: weekCalls,
+        week: weekCalls,
         appointments: agentAppointments[username] || 0,
         on_call: p.onCall || false,
         last_activity: p.lastActivity || null,
@@ -499,7 +500,7 @@ router.get('/admin/analytics/trends', (req, res) => {
       " GROUP BY day ORDER BY day"
     ).all(days, ...params);
 
-    res.json(rows);
+    res.json({ trends: rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
