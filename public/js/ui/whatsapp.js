@@ -10,8 +10,14 @@ function waFetch(url, opts) {
   opts.headers['Accept'] = 'application/json';
   if (opts.body) opts.headers['Content-Type'] = 'application/json';
   return fetch(url, opts).then(function(r) {
+    // Detect session expiry: redirect to login page or 401
     if (r.redirected || r.status === 401) {
       window.location.href = '/login';
+      return Promise.reject(new Error('Session expired'));
+    }
+    // Check if response is actually JSON (not an HTML error page)
+    var ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
       return Promise.reject(new Error('Session expired'));
     }
     return r.json();
