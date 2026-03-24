@@ -74,6 +74,7 @@ function buildPerfQuery(dateFilter) {
 
 const stmtPerfToday = buildPerfQuery("date(timestamp) = date('now')");
 const stmtPerfWeek = buildPerfQuery("timestamp >= datetime('now', '-7 days')");
+const stmtPerfMonth = buildPerfQuery("timestamp >= datetime('now', '-30 days')");
 const stmtPerfAll = buildPerfQuery('');
 
 // Single agent performance with custom date range
@@ -201,6 +202,11 @@ module.exports = {
   /** Get per-agent performance for this week. */
   getPerformanceWeek() {
     return stmtPerfWeek.all();
+  },
+
+  /** Get per-agent performance for this month (30 days). */
+  getPerformanceMonth() {
+    return stmtPerfMonth.all();
   },
 
   /** Get per-agent performance for all time. */

@@ -506,6 +506,76 @@ module.exports = function setupAdminRoutes(io) {
   });
 
   // -------------------------------------------------------------------------
+  // GET /api/leaderboard - ranked agent list (admin only)
+  //   ?range=today|week|month|all (default: today)
+  //   ?sort=calls|talktime|rate (default: calls)
+  // -------------------------------------------------------------------------
+  router.get('/api/leaderboard', requireAuth, requireAdmin, (req, res) => {
+    try {
+      // Auto-finalize stale calls
+      callsRepo.finalizeStale();
+
+      const range = req.query.range || 'today';
+      const sortBy = req.query.sort || 'calls';
+
+      let rows;
+      if (range === 'week') rows = callsRepo.getPerformanceWeek();
+      else if (range === 'month') rows = callsRepo.getPerformanceMonth();
+      else if (range === 'all') rows = callsRepo.getPerformanceAll();
+      else rows = callsRepo.getPerformanceToday();
+
+      // Compute answer rate and composite score for each agent
+      const ranked = rows.map(function(r) {
+        const answerRate = r.total_calls > 0 ? Math.round((r.answered_calls / r.total_calls) * 100) : 0;
+        // Composite score: answered×2 - missed×3 + talkTime/300
+        const score = Math.max(0, (r.answered_calls * 2) - (r.missed_calls * 3) + Math.floor(r.total_talk_time / 300));
+        return {
+          agent: r.agent,
+          total_calls: r.total_calls,
+          answered_calls: r.answered_calls,
+          missed_calls: r.missed_calls,
+          total_talk_time: r.total_talk_time,
+          avg_duration: Math.round(r.avg_duration || 0),
+          longest_call: r.longest_call || 0,
+          answer_rate: answerRate,
+          score: score,
+          last_call_at: r.last_call_at,
+        };
+      });
+
+      // Sort by requested criteria
+      if (sortBy === 'talktime') {
+        ranked.sort(function(a, b) { return b.total_talk_time - a.total_talk_time; });
+      } else if (sortBy === 'rate') {
+        ranked.sort(function(a, b) { return b.answer_rate - a.answer_rate || b.total_calls - a.total_calls; });
+      } else if (sortBy === 'score') {
+        ranked.sort(function(a, b) { return b.score - a.score; });
+      } else {
+        // Default: by total calls
+        ranked.sort(function(a, b) { return b.total_calls - a.total_calls; });
+      }
+
+      // Add position numbers
+      ranked.forEach(function(r, i) { r.position = i + 1; });
+
+      // Get display names from users
+      const users = getUsers();
+      ranked.forEach(function(r) {
+        var u = users[r.agent];
+        r.display_name = (u && u.displayName) || r.agent;
+      });
+
+      res.json({
+        range: range,
+        sort: sortBy,
+        leaderboard: ranked,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // GET /api/agents/performance - per-agent performance analytics (admin only)
   //   ?period=today|week|all (default: today)
   //   ?agent=username (optional, for single agent)
