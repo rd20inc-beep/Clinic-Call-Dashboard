@@ -94,48 +94,57 @@ module.exports = function setupAdminRoutes(io) {
   // GET /api/call-stats - call statistics (agent-scoped)
   // -------------------------------------------------------------------------
   router.get('/api/call-stats', requireAuth, (req, res) => {
-    const { db } = require('../db/index');
-    const isAdmin = req.session.role === 'admin';
-    const agent = req.session.username;
+    try {
+      const { db } = require('../db/index');
+      const isAdmin = req.session.role === 'admin';
+      const agent = req.session.username;
 
-    function q(sql, ...params) {
-      return db.prepare(sql).get(...params);
+      // Ensure columns exist (VPS DB may not have them yet)
+      try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* exists */ }
+      try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* exists */ }
+      try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* exists */ }
+
+      function q(sql, ...params) {
+        return db.prepare(sql).get(...params);
+      }
+
+      let total, inbound, outbound, answered, missed, avgDuration;
+      let todayTotal, todayInbound, todayOutbound, todayAnswered, todayMissed;
+
+      if (isAdmin) {
+        total = q('SELECT COUNT(*) as c FROM calls').c;
+        inbound = q("SELECT COUNT(*) as c FROM calls WHERE direction = 'inbound'").c;
+        outbound = q("SELECT COUNT(*) as c FROM calls WHERE direction = 'outbound'").c;
+        answered = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'answered'").c;
+        missed = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'missed'").c;
+        avgDuration = q('SELECT AVG(duration) as a FROM calls WHERE duration IS NOT NULL').a;
+        todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now')").c;
+        todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND direction = 'inbound'").c;
+        todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND direction = 'outbound'").c;
+        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'answered'").c;
+        todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'missed'").c;
+      } else {
+        total = q('SELECT COUNT(*) as c FROM calls WHERE agent = ?', agent).c;
+        inbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND direction = 'inbound'", agent).c;
+        outbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND direction = 'outbound'", agent).c;
+        answered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered'", agent).c;
+        missed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'missed'", agent).c;
+        avgDuration = q('SELECT AVG(duration) as a FROM calls WHERE agent = ? AND duration IS NOT NULL', agent).a;
+        todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now')", agent).c;
+        todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND direction = 'inbound'", agent).c;
+        todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND direction = 'outbound'", agent).c;
+        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'answered'", agent).c;
+        todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'missed'", agent).c;
+      }
+
+      res.json({
+        total, inbound, outbound, answered, missed,
+        avgDuration: Math.round(avgDuration || 0),
+        today: { total: todayTotal, inbound: todayInbound, outbound: todayOutbound, answered: todayAnswered, missed: todayMissed }
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
     }
-
-    let total, inbound, outbound, answered, missed, avgDuration;
-    let todayTotal, todayInbound, todayOutbound, todayAnswered, todayMissed;
-
-    if (isAdmin) {
-      total = q('SELECT COUNT(*) as c FROM calls').c;
-      inbound = q("SELECT COUNT(*) as c FROM calls WHERE direction = 'inbound'").c;
-      outbound = q("SELECT COUNT(*) as c FROM calls WHERE direction = 'outbound'").c;
-      answered = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'answered'").c;
-      missed = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'missed'").c;
-      avgDuration = q('SELECT AVG(duration) as a FROM calls WHERE duration IS NOT NULL').a;
-      todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now')").c;
-      todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND direction = 'inbound'").c;
-      todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND direction = 'outbound'").c;
-      todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'answered'").c;
-      todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'missed'").c;
-    } else {
-      total = q('SELECT COUNT(*) as c FROM calls WHERE agent = ?', agent).c;
-      inbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND direction = 'inbound'", agent).c;
-      outbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND direction = 'outbound'", agent).c;
-      answered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered'", agent).c;
-      missed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'missed'", agent).c;
-      avgDuration = q('SELECT AVG(duration) as a FROM calls WHERE agent = ? AND duration IS NOT NULL', agent).a;
-      todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now')", agent).c;
-      todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND direction = 'inbound'", agent).c;
-      todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND direction = 'outbound'", agent).c;
-      todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'answered'", agent).c;
-      todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'missed'", agent).c;
-    }
-
-    res.json({
-      total, inbound, outbound, answered, missed,
-      avgDuration: Math.round(avgDuration || 0),
-      today: { total: todayTotal, inbound: todayInbound, outbound: todayOutbound, answered: todayAnswered, missed: todayMissed }
-    });
   });
 
   return router;
