@@ -114,7 +114,7 @@ const CLINIC_SYSTEM_PROMPT = `You are the WhatsApp assistant for Dr. Nakhoda's S
 CLINIC INFO:
 - Name: Dr. Nakhoda's Skin Institute
 - Lead Doctor: Dr. Tasneem Nakhoda - Board Certified Dermatologist, 20+ years experience, trained in Pakistan & USA
-- Location: GPC 11, Rojhan Street, Block 5, Clifton, Karachi
+- Location: GPC 11, Rojhan Street, Block 5, Clifton, Karachi (Google Maps: https://maps.app.goo.gl/YadKKdh4911HmxKL9)
 - Phone: +92-300-2105374, +92-321-3822113
 - Hours: 9 AM to 11 PM (call to book)
 - Onsite pharmacy with skincare products
@@ -466,7 +466,7 @@ async function syncAppointmentsAndScheduleMessages() {
         if (apt.doctor_name) msg += ` (${apt.doctor_name})`;
       }
 
-      msg += '\n\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi';
+      msg += '\n\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9';
       msg += '\n\nPlease reply "CONFIRM" to confirm or call +92-300-2105374 to reschedule. We look forward to seeing you!';
 
       waRepo.insertMessage(phone, null, 'out', msg, 'confirmation', 'pending', null);

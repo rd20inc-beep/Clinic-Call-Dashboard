@@ -165,7 +165,7 @@ function calSendReminder(phone, name, date, time, service, doctor) {
   msg += 'Time: ' + time + '\n';
   if (service) msg += 'Treatment: ' + service + '\n';
   if (doctor) msg += 'Doctor: ' + doctor + '\n';
-  msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\n';
+  msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9\n';
   msg += '\nPlease arrive 10 minutes early. If you need to reschedule, call +92-300-2105374. See you soon!';
 
   if (!confirm('Send reminder to ' + name + ' (' + phone + ')?\n\n' + msg)) return;
