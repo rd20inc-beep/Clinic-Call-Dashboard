@@ -191,6 +191,12 @@ router.post('/api/incoming-call', (req, res) => {
       source || 'phone'
     );
 
+    // Save caller as patient
+    try {
+      const patientsRepo = require('../db/patients.repo');
+      patientsRepo.upsertFromCall(caller_name, caller, null);
+    } catch (e) { /* ignore */ }
+
     // Mark agent busy
     setOnCall(agent);
     updateActivity(agent);

@@ -443,6 +443,12 @@ async function syncAppointmentsAndScheduleMessages() {
 
         // Upsert tracking record
         waRepo.upsertAppointmentTracking(appointmentId, patientId, patientName, phone, aptDate, doctorName, service);
+
+        // Save patient to local DB
+        try {
+          const patientsRepo = require('../db/patients.repo');
+          patientsRepo.upsertFromAppointment(patientId, patientName, phone, doctorName, service, aptDate);
+        } catch (e) { /* ignore */ }
       }
     }
 

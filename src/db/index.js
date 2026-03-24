@@ -58,6 +58,56 @@ try { db.exec('ALTER TABLE wa_messages ADD COLUMN agent TEXT'); } catch (e) { /*
 try { db.exec('ALTER TABLE wa_messages ADD COLUMN sent_at DATETIME'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE wa_messages ADD COLUMN wa_message_id TEXT'); } catch (e) { /* already exists */ }
 
+// --- Local patients table (supplements Clinicea API cache) ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS patients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    clinicea_id TEXT,
+    name TEXT NOT NULL,
+    phone TEXT UNIQUE,
+    email TEXT,
+    gender TEXT,
+    file_no TEXT,
+    doctor TEXT,
+    last_service TEXT,
+    last_appointment DATETIME,
+    source TEXT DEFAULT 'appointment',
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// Seed patients from existing appointment tracking (one-time migration)
+try {
+  const existingPatients = db.prepare('SELECT COUNT(*) as c FROM patients').get().c;
+  if (existingPatients === 0) {
+    const apts = db.prepare("SELECT DISTINCT patient_id, patient_name, patient_phone, doctor_name, service, appointment_date FROM wa_appointment_tracking WHERE patient_phone IS NOT NULL AND patient_phone != ''").all();
+    if (apts.length > 0) {
+      const pInsert = db.prepare("INSERT OR IGNORE INTO patients (clinicea_id, name, phone, doctor, last_service, last_appointment, source) VALUES (?, ?, ?, ?, ?, ?, 'appointment')");
+      let seeded = 0;
+      for (const a of apts) {
+        try {
+          pInsert.run(a.patient_id, a.patient_name || 'Patient', a.patient_phone.replace(/[\s\-()]/g, ''), a.doctor_name, a.service, a.appointment_date);
+          seeded++;
+        } catch (e) { /* duplicate phone */ }
+      }
+      if (seeded > 0) console.log('[MIGRATION] Seeded ' + seeded + ' patients from appointments');
+    }
+    // Also seed from calls
+    const calls = db.prepare("SELECT DISTINCT caller_number, patient_name FROM calls WHERE caller_number IS NOT NULL AND caller_number != '' AND caller_number != 'Unknown' AND caller_number != 'Anonymous'").all();
+    let callSeeded = 0;
+    const cInsert = db.prepare("INSERT OR IGNORE INTO patients (name, phone, source) VALUES (?, ?, 'call')");
+    for (const c of calls) {
+      try {
+        cInsert.run(c.patient_name || 'Unknown', c.caller_number.replace(/[\s\-()]/g, ''));
+        callSeeded++;
+      } catch (e) { /* duplicate */ }
+    }
+    if (callSeeded > 0) console.log('[MIGRATION] Seeded ' + callSeeded + ' patients from calls');
+  }
+} catch (e) { /* table may not exist on very first run */ }
+
 // --- WhatsApp settings (global toggle, persisted paused chats) ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS wa_settings (

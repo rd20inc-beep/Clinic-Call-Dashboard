@@ -438,13 +438,40 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
 
     let patients = patientCache.patients;
 
+    // Merge local DB patients (from appointments/calls) that aren't in Clinicea
+    try {
+      const patientsRepo = require('../db/patients.repo');
+      const localPatients = patientsRepo.getPatients({ page: 1, pageSize: 10000 }).patients;
+      const existingPhones = new Set(patients.map(p => p.phone.replace(/[\s\-()]/g, '')));
+
+      for (const lp of localPatients) {
+        const cleanPhone = (lp.phone || '').replace(/[\s\-()]/g, '');
+        if (cleanPhone && !existingPhones.has(cleanPhone)) {
+          patients.push({
+            patientID: lp.clinicea_id || 'local-' + lp.id,
+            name: lp.name,
+            phone: lp.phone,
+            email: lp.email || '',
+            fileNo: '',
+            gender: lp.gender || '',
+            createdDate: lp.created_at || '',
+            _local: true,
+            _doctor: lp.doctor,
+            _service: lp.last_service,
+            _lastAppointment: lp.last_appointment,
+          });
+          existingPhones.add(cleanPhone);
+        }
+      }
+    } catch (e) { /* ignore */ }
+
     // Filter by search
     if (search) {
       patients = patients.filter(
         (p) =>
           p.name.toLowerCase().includes(search) ||
           p.phone.toLowerCase().includes(search) ||
-          p.email.toLowerCase().includes(search) ||
+          (p.email && p.email.toLowerCase().includes(search)) ||
           (p.fileNo && p.fileNo.toLowerCase().includes(search))
       );
     }
