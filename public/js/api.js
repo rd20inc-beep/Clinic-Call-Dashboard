@@ -38,12 +38,12 @@ async function loadCallStats() {
     var todayTalkTime = data.today.talkTime || 0;
 
     el.innerHTML =
-      dashStatCard('Today', data.today.total || 0) +
-      dashStatCard('Inbound', data.today.inbound || 0, 'inbound') +
-      dashStatCard('Outbound', data.today.outbound || 0, 'outbound') +
-      dashStatCard('Answered', data.today.answered || 0, 'answered') +
-      dashStatCard('Missed', data.today.missed || 0, 'missed') +
-      dashStatCard('Talk Time', formatCallDuration(todayTalkTime)) +
+      dashStatCard('Today', data.today.total || 0, '', 'all') +
+      dashStatCard('Inbound', data.today.inbound || 0, 'inbound', 'direction=inbound') +
+      dashStatCard('Outbound', data.today.outbound || 0, 'outbound', 'direction=outbound') +
+      dashStatCard('Answered', data.today.answered || 0, 'answered', 'status=answered') +
+      dashStatCard('Missed', data.today.missed || 0, 'missed', 'status=missed') +
+      dashStatCard('Talk Time', formatCallDuration(todayTalkTime), '', 'status=answered') +
       dashStatCard('Avg Duration', formatCallDuration(data.avgDuration));
 
     // Admin-only sections
@@ -102,8 +102,9 @@ async function loadCallStats() {
   }
 }
 
-function dashStatCard(label, value, cls) {
-  return '<div class="call-stat-card' + (cls ? ' ' + cls : '') + '">' +
+function dashStatCard(label, value, cls, filter) {
+  var onclick = filter ? ' onclick="applyCallFilter(\'' + filter + '\')" style="cursor:pointer;"' : '';
+  return '<div class="call-stat-card' + (cls ? ' ' + cls : '') + '"' + onclick + '>' +
     '<div class="call-stat-value">' + value + '</div>' +
     '<div class="call-stat-label">' + label + '</div>' +
   '</div>';
@@ -116,11 +117,94 @@ function dashMiniStat(value, label, color) {
   '</div>';
 }
 
+// ===== CALL FILTERS =====
+var activeCallFilters = {};
+
+function applyCallFilter(filterStr) {
+  // Parse filter string like "status=missed" or "direction=inbound" or "all"
+  if (filterStr === 'all') {
+    clearCallFilters();
+    return;
+  }
+  var parts = filterStr.split('=');
+  if (parts.length === 2) {
+    activeCallFilters[parts[0]] = parts[1];
+    // Update dropdowns
+    if (parts[0] === 'status') document.getElementById('filterStatus').value = parts[1];
+    if (parts[0] === 'direction') document.getElementById('filterDirection').value = parts[1];
+  }
+  currentPage = 1;
+  loadFilteredCalls();
+}
+
+function loadFilteredCalls() {
+  activeCallFilters.status = document.getElementById('filterStatus').value || '';
+  activeCallFilters.direction = document.getElementById('filterDirection').value || '';
+  activeCallFilters.agent = document.getElementById('filterAgent').value || '';
+  activeCallFilters.from = document.getElementById('filterFrom').value || '';
+  activeCallFilters.to = document.getElementById('filterTo').value || '';
+  currentPage = 1;
+  loadCallHistory();
+}
+
+function clearCallFilters() {
+  activeCallFilters = {};
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('filterDirection').value = '';
+  document.getElementById('filterAgent').value = '';
+  document.getElementById('filterFrom').value = '';
+  document.getElementById('filterTo').value = '';
+  document.getElementById('filterActiveLabel').style.display = 'none';
+  currentPage = 1;
+  loadCallHistory();
+}
+
+function buildCallQueryString() {
+  var qs = 'page=' + currentPage + '&limit=10';
+  if (activeCallFilters.status) qs += '&status=' + activeCallFilters.status;
+  if (activeCallFilters.direction) qs += '&direction=' + activeCallFilters.direction;
+  if (activeCallFilters.agent) qs += '&agent=' + activeCallFilters.agent;
+  if (activeCallFilters.from) qs += '&from=' + activeCallFilters.from;
+  if (activeCallFilters.to) qs += '&to=' + activeCallFilters.to;
+  return qs;
+}
+
+function updateFilterLabel() {
+  var parts = [];
+  if (activeCallFilters.status) parts.push(activeCallFilters.status);
+  if (activeCallFilters.direction) parts.push(activeCallFilters.direction);
+  if (activeCallFilters.agent) parts.push(activeCallFilters.agent);
+  if (activeCallFilters.from || activeCallFilters.to) parts.push((activeCallFilters.from || '...') + ' to ' + (activeCallFilters.to || '...'));
+  var label = document.getElementById('filterActiveLabel');
+  if (parts.length > 0) {
+    label.textContent = 'Filtered: ' + parts.join(', ');
+    label.style.display = '';
+  } else {
+    label.style.display = 'none';
+  }
+}
+
+// Populate agent filter dropdown (admin only)
+function loadAgentFilterOptions() {
+  if (myRole !== 'admin') return;
+  var sel = document.getElementById('filterAgent');
+  if (!sel) return;
+  sel.style.display = '';
+  waFetch('/api/agents').then(function(data) {
+    var opts = '<option value="">All Agents</option>';
+    (data.agents || []).forEach(function(a) {
+      if (a.role !== 'admin') opts += '<option value="' + escapeHtml(a.username) + '">' + escapeHtml(a.displayName || a.username) + '</option>';
+    });
+    sel.innerHTML = opts;
+  }).catch(function() {});
+}
+
 // ===== CALL HISTORY =====
 async function loadCallHistory(page) {
   if (page !== undefined) currentPage = page;
+  updateFilterLabel();
   try {
-    var data = await safeFetch('/api/calls?page=' + currentPage + '&limit=10');
+    var data = await safeFetch('/api/calls?' + buildCallQueryString());
     var calls = data.calls;
     var total = data.total;
     var totalPages = data.totalPages;

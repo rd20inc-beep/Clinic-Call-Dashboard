@@ -32,6 +32,7 @@ function showPage(page) {
     loadCallStats();
     loadCallHistory();
     if (typeof loadDashCharts === 'function') loadDashCharts();
+    if (typeof loadAgentFilterOptions === 'function') loadAgentFilterOptions();
   }
   if (page === 'whatsapp') {
     loadWaStats();

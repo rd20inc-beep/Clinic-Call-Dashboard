@@ -212,7 +212,7 @@ function renderAgentCard(a) {
 
   return '<div style="background:#fff;border-radius:10px;border:1px solid #eee;box-shadow:0 1px 3px rgba(0,0,0,0.05);overflow:hidden;' + (!a.active ? 'opacity:0.5;' : '') + '">' +
     // Header
-    '<div onclick="agentToggleDetail(\'' + uid + '\')" style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border-bottom:1px solid #f5f5f5;">' +
+    '<div onclick="agentToggleDetail(\'' + uid + '\')" ondblclick="openAgentDetail(\'' + escapeHtml(a.username) + '\')" title="Double-click for full detail" style="padding:10px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;border-bottom:1px solid #f5f5f5;">' +
       '<div style="display:flex;align-items:center;gap:6px;">' +
         '<span style="width:8px;height:8px;border-radius:50%;background:' + pcfg.dot + ';display:inline-block;"></span>' +
         '<div><span style="font-weight:700;font-size:14px;color:#222;">' + escapeHtml(a.username) + '</span> ' + roleBadge + ' ' + monBadge + callBadge + displayName + '</div>' +
@@ -342,4 +342,70 @@ function agentShowAuditLog() {
       logs.map(function(l) { return '<tr style="border-bottom:1px solid #f5f5f5;"><td style="padding:6px 8px;color:#999;white-space:nowrap;">' + new Date(l.created_at).toLocaleString() + '</td><td style="padding:6px 8px;color:' + (colors[l.action] || '#555') + ';font-weight:600;">' + escapeHtml(l.action.replace(/_/g, ' ')) + '</td><td style="padding:6px 8px;color:#222;">' + escapeHtml(l.target || '-') + '</td><td style="padding:6px 8px;color:#888;">' + escapeHtml(l.details || '-') + '</td><td style="padding:6px 8px;color:#888;">' + escapeHtml(l.performed_by) + '</td></tr>'; }).join('') +
     '</table></div>';
   }).catch(function() { s.innerHTML = '<p style="color:#e74c3c;">Failed to load</p>'; });
+}
+
+// ===== AGENT DETAIL MODAL =====
+
+function openAgentDetail(username) {
+  var modal = document.getElementById('agentDetailModal');
+  var title = document.getElementById('agentDetailTitle');
+  var body = document.getElementById('agentDetailBody');
+  title.textContent = username + ' — Detail';
+  body.innerHTML = '<div class="modal-loading"><div class="spinner"></div><p>Loading...</p></div>';
+  modal.style.display = 'flex';
+
+  Promise.all([
+    waFetch('/api/agents/performance?agent=' + encodeURIComponent(username)),
+    waFetch('/api/agents/performance?agent=' + encodeURIComponent(username) + '&period=week'),
+    safeFetch('/api/calls?agent=' + encodeURIComponent(username) + '&limit=15'),
+  ]).then(function(results) {
+    var today = results[0].performance || {};
+    var week = results[1].performance || {};
+    var calls = results[2].calls || [];
+    var hourly = results[0].hourly || [];
+
+    var html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">' +
+      adCard('Today Calls', today.total_calls || 0) + adCard('Today Talk', formatTalkTime(today.total_talk_time || 0)) +
+      adCard('Week Calls', week.total_calls || 0) + adCard('Week Talk', formatTalkTime(week.total_talk_time || 0)) +
+    '</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;">' +
+      adCard('Answered', today.answered_calls || 0, '#2ecc71') + adCard('Missed', today.missed_calls || 0, '#e74c3c') +
+      adCard('Avg Duration', formatTalkTime(Math.round(today.avg_duration || 0))) + adCard('Longest', formatTalkTime(today.longest_call || 0)) +
+    '</div>';
+
+    // Hourly chart
+    if (hourly.length > 0) {
+      html += '<h4 style="margin:0 0 6px;font-size:13px;color:#222;">Today by Hour</h4>';
+      html += '<div style="display:flex;align-items:flex-end;gap:2px;height:50px;margin-bottom:16px;">';
+      var maxH = 1, hourMap = {};
+      hourly.forEach(function(h) { hourMap[h.hour] = h; if (h.calls > maxH) maxH = h.calls; });
+      for (var i = 0; i < 24; i++) {
+        var hv = hourMap[i] || { calls: 0, talk_time: 0 };
+        html += '<div title="' + i + ':00 — ' + hv.calls + ' calls" style="flex:1;height:' + Math.max(2, Math.round((hv.calls / maxH) * 100)) + '%;background:#3498db;border-radius:2px;min-width:0;"></div>';
+      }
+      html += '</div>';
+    }
+
+    // Recent calls table
+    html += '<h4 style="margin:0 0 6px;font-size:13px;color:#222;">Recent Calls</h4>';
+    if (calls.length === 0) {
+      html += '<p style="color:#999;font-size:12px;">No calls</p>';
+    } else {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><tr style="border-bottom:2px solid #eee;"><th style="padding:4px 6px;text-align:left;color:#888;">Caller</th><th style="padding:4px 6px;color:#888;">Dir</th><th style="padding:4px 6px;color:#888;">Status</th><th style="padding:4px 6px;color:#888;">Duration</th><th style="padding:4px 6px;color:#888;">Time</th></tr>';
+      calls.forEach(function(c) {
+        var stC = c.call_status === 'answered' ? '#2ecc71' : c.call_status === 'missed' ? '#e74c3c' : '#999';
+        var t = new Date(c.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        html += '<tr style="border-bottom:1px solid #f5f5f5;"><td style="padding:4px 6px;">' + escapeHtml(c.caller_number) + '</td><td style="padding:4px 6px;text-align:center;">' + (c.direction === 'outbound' ? '\u2197' : '\u2199') + '</td><td style="padding:4px 6px;text-align:center;color:' + stC + ';font-weight:600;">' + (c.call_status || '--') + '</td><td style="padding:4px 6px;text-align:center;">' + formatTalkTime(c.duration) + '</td><td style="padding:4px 6px;color:#999;">' + t + '</td></tr>';
+      });
+      html += '</table>';
+    }
+
+    html += '<div style="margin-top:12px;text-align:center;"><button onclick="closeAgentDetail();document.getElementById(\'filterAgent\').value=\'' + username + '\';loadFilteredCalls();" style="padding:6px 16px;border:none;border-radius:6px;background:#3498db;color:white;font-size:12px;font-weight:600;cursor:pointer;">View All Calls</button></div>';
+    body.innerHTML = html;
+  }).catch(function() { body.innerHTML = '<p style="color:#e74c3c;">Failed to load</p>'; });
+}
+
+function closeAgentDetail() { document.getElementById('agentDetailModal').style.display = 'none'; }
+
+function adCard(label, value, color) {
+  return '<div style="background:#f8f9fa;border-radius:8px;padding:10px;text-align:center;"><div style="font-weight:700;font-size:16px;' + (color ? 'color:' + color : 'color:#222') + ';">' + value + '</div><div style="font-size:10px;color:#999;margin-top:2px;">' + label + '</div></div>';
 }

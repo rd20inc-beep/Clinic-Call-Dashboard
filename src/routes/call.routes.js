@@ -202,16 +202,72 @@ router.post('/api/test-call', requireAuth, apiLimiter, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /api/calls - paginated call history
+// GET /api/calls - paginated call history with filters
+//   ?page=1&limit=10
+//   ?status=answered|missed|unknown  (filter by call_status)
+//   ?agent=username                   (filter by agent, admin only)
+//   ?direction=inbound|outbound       (filter by direction)
+//   ?from=YYYY-MM-DD&to=YYYY-MM-DD   (date range)
 // ---------------------------------------------------------------------------
 router.get('/api/calls', requireAuth, apiLimiter, (req, res) => {
+  const { db } = require('../db/index');
   const isAdmin = req.session.role === 'admin';
-  const agent = req.session.username;
-  const page = parseInt(req.query.page, 10) || 1;
-  const limit = parseInt(req.query.limit, 10) || undefined;
+  const sessionAgent = req.session.username;
 
-  const result = callsRepo.getCalls({ page, limit, agent, isAdmin });
-  res.json(result);
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 10));
+  const offset = (page - 1) * limit;
+
+  // Build WHERE clauses
+  const conditions = [];
+  const params = [];
+
+  // Agent filter — agents can only see own calls
+  if (!isAdmin || !req.query.agent) {
+    if (!isAdmin) { conditions.push('agent = ?'); params.push(sessionAgent); }
+  } else {
+    conditions.push('agent = ?');
+    params.push(req.query.agent);
+  }
+
+  // Status filter
+  if (req.query.status) {
+    conditions.push('call_status = ?');
+    params.push(req.query.status);
+  }
+
+  // Direction filter
+  if (req.query.direction) {
+    conditions.push('direction = ?');
+    params.push(req.query.direction);
+  }
+
+  // Date range filter
+  if (req.query.from) {
+    conditions.push('timestamp >= ?');
+    params.push(req.query.from + ' 00:00:00');
+  }
+  if (req.query.to) {
+    conditions.push('timestamp <= ?');
+    params.push(req.query.to + ' 23:59:59');
+  }
+
+  const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+
+  try {
+    const total = db.prepare('SELECT COUNT(*) as c FROM calls' + where).get(...params).c;
+    const calls = db.prepare('SELECT * FROM calls' + where + ' ORDER BY timestamp DESC LIMIT ? OFFSET ?').all(...params, limit, offset);
+
+    res.json({
+      calls,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit) || 1,
+      filters: { status: req.query.status || null, agent: req.query.agent || null, direction: req.query.direction || null, from: req.query.from || null, to: req.query.to || null },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
