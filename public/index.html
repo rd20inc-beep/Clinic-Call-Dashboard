@@ -63,13 +63,6 @@
           WhatsApp Bot
         </a>
 
-        <a class="nav-item admin-only" data-page="agents" onclick="showPage('agents')" style="display:none;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
-          </svg>
-          Agents
-        </a>
-
         <div class="nav-spacer"></div>
 
         <a class="nav-item admin-only" data-page="admin-console" onclick="showPage('admin-console')" style="display:none;">
@@ -230,73 +223,6 @@
         </div>
       </div>
 
-      <!-- ===== AGENTS PAGE (admin only) ===== -->
-      <div class="page-container" id="page-agents">
-        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:24px;margin-bottom:20px;">
-          <h2 style="font-size:15px;font-weight:700;margin:0 0 16px;color:#0f172a;display:flex;align-items:center;justify-content:space-between;padding-bottom:12px;border-bottom:1px solid #f1f5f9;">
-            Agent Management
-            <div style="display:flex;gap:6px;flex-wrap:wrap;">
-              <input id="agentSearchInput" type="text" placeholder="Search..." oninput="agentSearch()" style="padding:6px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;width:140px;">
-              <button onclick="clearAllActivity()" style="padding:6px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;">Reset All Stats</button>
-              <button onclick="clearAllHistory()" style="padding:6px 12px;border:none;border-radius:6px;background:#ef4444;color:white;font-size:12px;font-weight:600;cursor:pointer;">Delete All History</button>
-              <button onclick="agentShowCreateForm()" style="padding:6px 12px;border:none;border-radius:6px;background:#3b82f6;color:white;font-size:12px;font-weight:600;cursor:pointer;">+ Add Agent</button>
-            </div>
-          </h2>
-
-          <!-- Create/Edit Agent Form -->
-          <div id="agentCreateSection" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px;margin-bottom:16px;">
-            <input type="hidden" id="editAgentId">
-            <h3 id="createFormTitle" style="margin:0 0 14px;font-size:15px;color:#0f172a;">Add Agent</h3>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-              <div>
-                <label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:4px;">Username *</label>
-                <input id="newAgentUsername" type="text" placeholder="e.g. agent6" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;">
-              </div>
-              <div id="passwordRow">
-                <label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:4px;">Password *</label>
-                <input id="newAgentPassword" type="text" placeholder="Min 6 characters" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;">
-              </div>
-              <div>
-                <label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:4px;">Full Name</label>
-                <input id="newAgentName" type="text" placeholder="e.g. Ahmed Khan" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;">
-              </div>
-              <div>
-                <label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:4px;">Role</label>
-                <select id="newAgentRole" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;">
-                  <option value="agent">Agent</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div>
-                <label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:4px;">Phone</label>
-                <input id="newAgentPhone" type="text" placeholder="+923001234567" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;">
-              </div>
-              <div>
-                <label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:4px;">Email</label>
-                <input id="newAgentEmail" type="email" placeholder="agent@clinic.com" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;">
-              </div>
-              <div style="grid-column:span 2;">
-                <label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:4px;">Notes</label>
-                <input id="newAgentNotes" type="text" placeholder="Optional" style="width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;">
-              </div>
-            </div>
-            <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">
-              <button onclick="document.getElementById('agentCreateSection').style.display='none'" style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;">Cancel</button>
-              <button onclick="agentCreate()" style="padding:8px 16px;border:none;border-radius:6px;background:#3b82f6;color:white;font-size:12px;font-weight:600;cursor:pointer;">Save</button>
-            </div>
-          </div>
-
-          <!-- Agent Table -->
-          <div id="agentCards"></div>
-        </div>
-
-        <!-- Archived + Audit -->
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-          <button onclick="agentShowArchived()" style="padding:6px 14px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;">Archived Agents</button>
-          <button onclick="agentShowAuditLog()" style="padding:6px 14px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;">Audit Log</button>
-        </div>
-        <div id="agentExtraSection"></div>
-      </div>
 
       <!-- ===== ADMIN CONSOLE PAGE (embedded, full width) ===== -->
       <div class="page-container" id="page-admin-console" style="padding:0;margin:0;max-width:none;overflow:hidden;">

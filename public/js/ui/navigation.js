@@ -38,9 +38,6 @@ function showPage(page) {
     loadWaStats();
     loadWaConversations();
   }
-  if (page === 'agents') {
-    loadAgents();
-  }
   if (page === 'admin-console') {
     var frame = document.getElementById('adminConsoleFrame');
     if (frame && !frame.src.includes('admin-console.html')) {
@@ -62,7 +59,7 @@ function toggleSidebar() {
 // Hash-based routing
 function handleRoute() {
   var hash = window.location.hash.replace('#', '') || 'dashboard';
-  var validPages = ['dashboard', 'calendar', 'patients', 'whatsapp', 'agents', 'admin-console'];
+  var validPages = ['dashboard', 'calendar', 'patients', 'whatsapp', 'admin-console'];
   showPage(validPages.includes(hash) ? hash : 'dashboard');
 }
 
