@@ -166,6 +166,20 @@ try {
   }
 } catch (e) { /* table may not exist yet on very first run */ }
 
+// --- Internal messaging table ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS internal_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_user TEXT NOT NULL,
+    to_user TEXT NOT NULL,
+    message TEXT NOT NULL,
+    read INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_to ON internal_messages(to_user, read, created_at DESC)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_conv ON internal_messages(from_user, to_user, created_at DESC)'); } catch(e) {}
+
 // --- Audit log table ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS audit_log (

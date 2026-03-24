@@ -546,10 +546,135 @@ router.put('/admin/callbacks/:id/status', (req, res) => {
 // -------------------------------------------------------------------------
 
 // -------------------------------------------------------------------------
+// Admin → Agent Direct Messaging (via Socket.IO)
+// -------------------------------------------------------------------------
+router.post('/admin/message-agent', (req, res) => {
+  const { agent, message } = req.body;
+  if (!agent || !message) return res.status(400).json({ error: 'agent and message required' });
+  const { db } = require('../db/index');
+
+  // Persist message
+  db.prepare('INSERT INTO internal_messages (from_user, to_user, message) VALUES (?, ?, ?)').run(req.session.username, agent, message.trim());
+
+  // Real-time delivery via Socket.IO
+  const io = require('../app').io;
+  if (io) {
+    io.to('agent:' + agent).emit('admin_message', {
+      from: req.session.username,
+      message: message.trim(),
+      timestamp: new Date().toISOString(),
+    });
+    io.to('agent:' + agent).emit('chat_message', {
+      from: req.session.username,
+      to: agent,
+      message: message.trim(),
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  auditRepo.log('message_sent', agent, message.substring(0, 50), req.session.username);
+  logEvent('info', 'Admin message to ' + agent + ': ' + message.substring(0, 50));
+  res.json({ success: true });
+});
+
+// -------------------------------------------------------------------------
+// Broadcast to all active agents
+// -------------------------------------------------------------------------
+router.post('/admin/broadcast', (req, res) => {
+  const { message } = req.body;
+  if (!message) return res.status(400).json({ error: 'message required' });
+  const { db } = require('../db/index');
+
+  // Get all active agents
+  const agents = db.prepare("SELECT username FROM users WHERE active = 1 AND role = 'agent' AND deleted_at IS NULL").all();
+
+  const io = require('../app').io;
+  let sent = 0;
+  for (const a of agents) {
+    // Persist each message
+    db.prepare('INSERT INTO internal_messages (from_user, to_user, message) VALUES (?, ?, ?)').run(req.session.username, a.username, message.trim());
+
+    // Real-time delivery
+    if (io) {
+      io.to('agent:' + a.username).emit('admin_message', {
+        from: req.session.username,
+        message: message.trim(),
+        timestamp: new Date().toISOString(),
+        broadcast: true,
+      });
+    }
+    sent++;
+  }
+
+  auditRepo.log('broadcast', null, sent + ' agents: ' + message.substring(0, 50), req.session.username);
+  logEvent('info', 'Admin broadcast to ' + sent + ' agents: ' + message.substring(0, 50));
+  res.json({ success: true, sent_to: sent });
+});
+
+// -------------------------------------------------------------------------
+// Internal Chat API — used by both admin and agents
+// -------------------------------------------------------------------------
+router.post('/api/chat/send', requireAuth, (req, res) => {
+  const { to, message } = req.body;
+  if (!to || !message) return res.status(400).json({ error: 'to and message required' });
+  const from = req.session.username;
+  const { db } = require('../db/index');
+  db.prepare('INSERT INTO internal_messages (from_user, to_user, message) VALUES (?, ?, ?)').run(from, to, message.trim());
+
+  const io = require('../app').io;
+  if (io) {
+    const payload = { from, to, message: message.trim(), timestamp: new Date().toISOString() };
+    io.to('agent:' + to).emit('chat_message', payload);
+    io.to('agent:' + from).emit('chat_message', payload);
+  }
+  res.json({ success: true });
+});
+
+router.get('/api/chat/history/:user', requireAuth, (req, res) => {
+  const me = req.session.username;
+  const other = req.params.user;
+  const { db } = require('../db/index');
+  const messages = db.prepare(
+    'SELECT * FROM internal_messages WHERE (from_user = ? AND to_user = ?) OR (from_user = ? AND to_user = ?) ORDER BY created_at ASC LIMIT 100'
+  ).all(me, other, other, me);
+  // Mark as read
+  db.prepare('UPDATE internal_messages SET read = 1 WHERE to_user = ? AND from_user = ? AND read = 0').run(me, other);
+  res.json({ messages });
+});
+
+router.get('/api/chat/unread', requireAuth, (req, res) => {
+  const me = req.session.username;
+  const { db } = require('../db/index');
+  const unread = db.prepare('SELECT from_user, COUNT(*) as count FROM internal_messages WHERE to_user = ? AND read = 0 GROUP BY from_user').all(me);
+  const total = unread.reduce((s, r) => s + r.count, 0);
+  res.json({ unread, total });
+});
+
+router.get('/api/chat/contacts', requireAuth, (req, res) => {
+  const me = req.session.username;
+  const { db } = require('../db/index');
+  const contacts = db.prepare("SELECT username, display_name as full_name, role, status FROM users WHERE username != ? AND active = 1 AND deleted_at IS NULL ORDER BY role DESC, username ASC").all(me);
+  res.json({ contacts });
+});
+
+// -------------------------------------------------------------------------
+// Fix call status (admin can correct a call's status)
+// -------------------------------------------------------------------------
+router.post('/api/calls/:id/status', requireAuth, requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { status } = req.body;
+  if (!id || !status) return res.json({ error: 'id and status required' });
+  const valid = ['answered', 'missed', 'rejected', 'outgoing', 'no_answer'];
+  if (!valid.includes(status)) return res.json({ error: 'Invalid status' });
+  callsRepo.updateCallStatus(id, status);
+  auditRepo.log('call_status_fixed', 'call:' + id, 'Changed to: ' + status, req.session.username);
+  res.json({ success: true });
+});
+
+// -------------------------------------------------------------------------
 // Stubs for features not yet implemented
 // -------------------------------------------------------------------------
 router.get('/admin/wa-sessions', (req, res) => res.json({ sessions: [] }));
-router.post('/admin/broadcast', (req, res) => res.json({ success: true, sent: 0 }));
 router.get('/admin/appointments', (req, res) => res.json({ appointments: [] }));
 
 module.exports = router;
