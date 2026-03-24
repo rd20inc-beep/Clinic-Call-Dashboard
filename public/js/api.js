@@ -477,8 +477,7 @@ async function loadPatients(page) {
 
 // ===== WHATSAPP API =====
 function loadWaStats() {
-  fetch('/api/whatsapp/stats')
-    .then(function(r) { return r.json(); })
+  waFetch('/api/whatsapp/stats')
     .then(function(data) {
       document.getElementById('waTotalMessages').textContent = data.totalMessages || 0;
       document.getElementById('waTodayMessages').textContent = data.todayMessages || 0;
@@ -509,8 +508,7 @@ function loadWaStats() {
 }
 
 function loadWaApprovalQueue() {
-  fetch('/api/whatsapp/pending-approval')
-    .then(function(r) { return r.json(); })
+  waFetch('/api/whatsapp/pending-approval')
     .then(function(data) {
       var section = document.getElementById('waApprovalSection');
       var container = document.getElementById('waApprovalQueue');
@@ -549,15 +547,14 @@ function loadWaApprovalQueue() {
 }
 
 function loadWaPausedChats() {
-  return fetch('/api/whatsapp/paused').then(function(r) { return r.json(); }).then(function(data) {
+  return waFetch('/api/whatsapp/paused').then(function(data) {
     waPausedChats = new Set(data.pausedChats || []);
   }).catch(function() {});
 }
 
 function loadWaConversations() {
   loadWaPausedChats().then(function() {
-    fetch('/api/whatsapp/conversations')
-      .then(function(r) { return r.json(); })
+    waFetch('/api/whatsapp/conversations')
       .then(function(data) {
         var container = document.getElementById('waConversations');
         if (!data.conversations || data.conversations.length === 0) {

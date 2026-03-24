@@ -3,6 +3,21 @@
 var waBotEnabled = true;
 var waExtensionConnected = false;
 
+// Helper: fetch JSON API with proper headers and session-expiry handling
+function waFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = opts.headers || {};
+  opts.headers['Accept'] = 'application/json';
+  if (opts.body) opts.headers['Content-Type'] = 'application/json';
+  return fetch(url, opts).then(function(r) {
+    if (r.redirected || r.status === 401) {
+      window.location.href = '/login';
+      return Promise.reject(new Error('Session expired'));
+    }
+    return r.json();
+  });
+}
+
 function waOpenChat(phone, name) {
   waCurrentChatPhone = phone;
   document.getElementById('waConversations').style.display = 'none';
@@ -10,8 +25,7 @@ function waOpenChat(phone, name) {
   document.getElementById('waChatName').textContent = name;
   waUpdatePauseBtn();
 
-  fetch('/api/whatsapp/history/' + encodeURIComponent(phone))
-    .then(function(r) { return r.json(); })
+  waFetch('/api/whatsapp/history/' + encodeURIComponent(phone))
     .then(function(data) {
       var container = document.getElementById('waChatMessages');
       if (!data.messages || data.messages.length === 0) {
@@ -83,12 +97,7 @@ function waTogglePause() {
   var isPaused = waPausedChats.has(waCurrentChatPhone);
   var endpoint = isPaused ? '/api/whatsapp/resume' : '/api/whatsapp/pause';
 
-  fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chatId: waCurrentChatPhone })
-  })
-    .then(function(r) { return r.json(); })
+  waFetch(endpoint, { method: 'POST', body: JSON.stringify({ chatId: waCurrentChatPhone }) })
     .then(function(data) {
       if (data.ok) {
         if (data.paused) {
@@ -106,7 +115,7 @@ function waCloseChat() {
   waCurrentChatPhone = null;
   document.getElementById('waChatView').style.display = 'none';
   document.getElementById('waConversations').style.display = 'flex';
-  loadWaConversations(); // refresh to show updated pause status
+  loadWaConversations();
 }
 
 function waSendManual() {
@@ -115,12 +124,7 @@ function waSendManual() {
   var message = document.getElementById('waSendMessage').value.trim();
   if (!phone || !message) return alert('Please enter both phone number and message');
 
-  fetch('/api/whatsapp/send', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone: phone, message: message })
-  })
-    .then(function(r) { return r.json(); })
+  waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: message }) })
     .then(function(data) {
       if (data.ok) {
         document.getElementById('waSendPhone').value = '';
@@ -131,47 +135,27 @@ function waSendManual() {
         alert('Error: ' + (data.error || 'Unknown error'));
       }
     })
-    .catch(function(err) { alert('Error: ' + err.message); });
+    .catch(function(err) { if (err.message !== 'Session expired') alert('Error: ' + err.message); });
 }
 
 // ===== MESSAGE APPROVAL =====
 
 function waApproveMessage(id) {
-  fetch('/api/whatsapp/approve', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: id })
-  })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.ok) { loadWaApprovalQueue(); loadWaStats(); }
-    })
+  waFetch('/api/whatsapp/approve', { method: 'POST', body: JSON.stringify({ id: id }) })
+    .then(function(data) { if (data.ok) { loadWaApprovalQueue(); loadWaStats(); } })
     .catch(function() {});
 }
 
 function waRejectMessage(id) {
-  fetch('/api/whatsapp/reject', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: id })
-  })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.ok) { loadWaApprovalQueue(); loadWaStats(); }
-    })
+  waFetch('/api/whatsapp/reject', { method: 'POST', body: JSON.stringify({ id: id }) })
+    .then(function(data) { if (data.ok) { loadWaApprovalQueue(); loadWaStats(); } })
     .catch(function() {});
 }
 
 function waApproveAllMessages() {
   if (!confirm('Approve all pending messages for sending?')) return;
-  fetch('/api/whatsapp/approve-all', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.ok) { loadWaApprovalQueue(); loadWaStats(); }
-    })
+  waFetch('/api/whatsapp/approve-all', { method: 'POST' })
+    .then(function(data) { if (data.ok) { loadWaApprovalQueue(); loadWaStats(); } })
     .catch(function() {});
 }
 
@@ -223,7 +207,6 @@ function waUpdateExtensionStatus(lastSeen) {
     container.style.borderColor = 'rgba(231,76,60,0.3)';
   }
 
-  // Update dependent UI elements
   waUpdateDisconnectedState();
   if (prevConnected !== waExtensionConnected) waUpdatePauseBtn();
 }
@@ -234,18 +217,10 @@ function waUpdateDisconnectedState() {
 
   if (!waExtensionConnected) {
     banner.style.display = '';
-    if (sendBtn) {
-      sendBtn.disabled = true;
-      sendBtn.style.opacity = '0.5';
-      sendBtn.style.cursor = 'not-allowed';
-    }
+    if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.5'; sendBtn.style.cursor = 'not-allowed'; }
   } else {
     banner.style.display = 'none';
-    if (sendBtn) {
-      sendBtn.disabled = false;
-      sendBtn.style.opacity = '1';
-      sendBtn.style.cursor = 'pointer';
-    }
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.style.opacity = '1'; sendBtn.style.cursor = 'pointer'; }
   }
 }
 
@@ -273,7 +248,6 @@ function waUpdateBotToggle(enabled) {
     btn.style.background = '#2ecc71';
   }
 
-  // Refresh pause button since it depends on bot enabled state
   waUpdatePauseBtn();
 }
 
@@ -282,12 +256,7 @@ function waToggleBot() {
   var action = newState ? 'enable' : 'disable';
   if (!confirm('Are you sure you want to ' + action + ' the WhatsApp bot globally?\n\nThis affects ALL chats, AI replies, and appointment messages.')) return;
 
-  fetch('/api/whatsapp/bot-toggle', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ enabled: newState })
-  })
-    .then(function(r) { return r.json(); })
+  waFetch('/api/whatsapp/bot-toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) })
     .then(function(data) {
       if (data.ok) {
         waUpdateBotToggle(data.enabled);
@@ -295,14 +264,13 @@ function waToggleBot() {
         alert('Error: ' + (data.error || 'Unknown error'));
       }
     })
-    .catch(function(err) { alert('Error: ' + err.message); });
+    .catch(function(err) { if (err.message !== 'Session expired') alert('Error: ' + err.message); });
 }
 
 // ===== FAILED MESSAGES =====
 
 function waShowFailed() {
-  fetch('/api/whatsapp/failed')
-    .then(function(r) { return r.json(); })
+  waFetch('/api/whatsapp/failed')
     .then(function(data) {
       if (!data.messages || data.messages.length === 0) {
         alert('No failed messages.');
@@ -337,28 +305,14 @@ function waShowFailed() {
 }
 
 function waRetryOne(id) {
-  fetch('/api/whatsapp/retry', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: id })
-  })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.ok) {
-        waShowFailed(); // refresh the list
-        loadWaStats();
-      }
-    })
+  waFetch('/api/whatsapp/retry', { method: 'POST', body: JSON.stringify({ id: id }) })
+    .then(function(data) { if (data.ok) { waShowFailed(); loadWaStats(); } })
     .catch(function() {});
 }
 
 function waRetryAll() {
   if (!confirm('Retry all failed messages?')) return;
-  fetch('/api/whatsapp/retry-all', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  })
-    .then(function(r) { return r.json(); })
+  waFetch('/api/whatsapp/retry-all', { method: 'POST' })
     .then(function(data) {
       if (data.ok) {
         alert(data.count + ' message(s) re-queued for sending.');
