@@ -24,34 +24,86 @@ async function loadCallStats() {
     var data = await res.json();
     var el = document.getElementById('callStats');
     if (!el) return;
+
+    var todayTalkTime = data.today.talkTime || 0;
+
     el.innerHTML =
-      '<div class="call-stat-card">' +
-        '<div class="call-stat-value">' + (data.today.total || 0) + '</div>' +
-        '<div class="call-stat-label">Today</div>' +
-      '</div>' +
-      '<div class="call-stat-card inbound">' +
-        '<div class="call-stat-value">' + (data.today.inbound || 0) + '</div>' +
-        '<div class="call-stat-label">Inbound</div>' +
-      '</div>' +
-      '<div class="call-stat-card outbound">' +
-        '<div class="call-stat-value">' + (data.today.outbound || 0) + '</div>' +
-        '<div class="call-stat-label">Outbound</div>' +
-      '</div>' +
-      '<div class="call-stat-card answered">' +
-        '<div class="call-stat-value">' + (data.today.answered || 0) + '</div>' +
-        '<div class="call-stat-label">Answered</div>' +
-      '</div>' +
-      '<div class="call-stat-card missed">' +
-        '<div class="call-stat-value">' + (data.today.missed || 0) + '</div>' +
-        '<div class="call-stat-label">Missed</div>' +
-      '</div>' +
-      '<div class="call-stat-card">' +
-        '<div class="call-stat-value">' + formatCallDuration(data.avgDuration) + '</div>' +
-        '<div class="call-stat-label">Avg Duration</div>' +
-      '</div>';
+      dashStatCard('Today', data.today.total || 0) +
+      dashStatCard('Inbound', data.today.inbound || 0, 'inbound') +
+      dashStatCard('Outbound', data.today.outbound || 0, 'outbound') +
+      dashStatCard('Answered', data.today.answered || 0, 'answered') +
+      dashStatCard('Missed', data.today.missed || 0, 'missed') +
+      dashStatCard('Talk Time', formatCallDuration(todayTalkTime)) +
+      dashStatCard('Avg Duration', formatCallDuration(data.avgDuration));
+
+    // Admin-only sections
+    var adminRow = document.getElementById('dashAdminRow');
+    if (myRole === 'admin' && adminRow) {
+      adminRow.style.display = '';
+
+      // Agent snapshot
+      var snap = data.agentSnapshot || [0, 0, 0];
+      var countsEl = document.getElementById('dashAgentCounts');
+      if (countsEl) {
+        countsEl.innerHTML =
+          dashMiniStat(snap[0], 'Active', '#2ecc71') +
+          dashMiniStat(snap[1], 'Idle', '#f39c12') +
+          dashMiniStat(snap[2], 'Offline', '#e74c3c');
+      }
+
+      // Recent calls
+      var recentEl = document.getElementById('dashRecentCalls');
+      if (recentEl && data.recentCalls) {
+        if (data.recentCalls.length === 0) {
+          recentEl.innerHTML = '<span style="color:#999;">No recent calls</span>';
+        } else {
+          recentEl.innerHTML = data.recentCalls.map(function(c) {
+            var icon = c.direction === 'outbound' ? '\u2197' : '\u2199';
+            var statusColor = c.call_status === 'answered' ? '#2ecc71' : c.call_status === 'missed' ? '#e74c3c' : '#999';
+            var time = new Date(c.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f5f5f5;">' +
+              '<span style="font-size:14px;">' + icon + '</span>' +
+              '<span style="flex:1;font-weight:500;">' + escapeHtml(c.caller_number) + '</span>' +
+              '<span style="font-size:11px;color:#888;">' + escapeHtml(c.agent || 'untagged') + '</span>' +
+              '<span style="width:6px;height:6px;border-radius:50%;background:' + statusColor + ';display:inline-block;"></span>' +
+              '<span style="font-size:11px;color:#999;">' + time + '</span>' +
+            '</div>';
+          }).join('');
+        }
+      }
+
+      // Alerts
+      var alertsEl = document.getElementById('dashAlerts');
+      if (alertsEl && data.alerts && data.alerts.length > 0) {
+        alertsEl.innerHTML = data.alerts.map(function(a) {
+          var bg = a.type === 'error' ? 'rgba(231,76,60,0.12)' : 'rgba(243,156,18,0.12)';
+          var border = a.type === 'error' ? 'rgba(231,76,60,0.3)' : 'rgba(243,156,18,0.3)';
+          var color = a.type === 'error' ? '#e74c3c' : '#f39c12';
+          return '<div style="padding:10px 14px;background:' + bg + ';border:1px solid ' + border + ';border-radius:8px;margin-bottom:6px;font-size:13px;color:' + color + ';font-weight:600;">' +
+            '\u26A0 ' + escapeHtml(a.text) +
+          '</div>';
+        }).join('');
+      } else if (alertsEl) {
+        alertsEl.innerHTML = '';
+      }
+    }
   } catch (err) {
     console.error('Failed to load call stats:', err);
   }
+}
+
+function dashStatCard(label, value, cls) {
+  return '<div class="call-stat-card' + (cls ? ' ' + cls : '') + '">' +
+    '<div class="call-stat-value">' + value + '</div>' +
+    '<div class="call-stat-label">' + label + '</div>' +
+  '</div>';
+}
+
+function dashMiniStat(value, label, color) {
+  return '<div style="text-align:center;flex:1;">' +
+    '<div style="font-weight:700;font-size:20px;color:' + color + ';">' + value + '</div>' +
+    '<div style="font-size:11px;color:#999;">' + label + '</div>' +
+  '</div>';
 }
 
 // ===== CALL HISTORY =====

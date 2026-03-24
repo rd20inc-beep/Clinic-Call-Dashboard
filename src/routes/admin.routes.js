@@ -137,10 +137,46 @@ module.exports = function setupAdminRoutes(io) {
         todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'missed'", agent).c;
       }
 
+      // Extra admin data
+      let todayTalkTime = 0, agentSnapshot = [], recentCalls = [], alerts = [];
+      if (isAdmin) {
+        todayTalkTime = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp) = date('now') AND duration IS NOT NULL").s;
+
+        // Agent snapshot
+        const presence = getAllPresence();
+        const users = getUsers();
+        let activeCount = 0, idleCount = 0, offlineCount = 0;
+        for (const [uname, user] of Object.entries(users)) {
+          if (user.role === 'admin') continue;
+          const p = presence[uname] || {};
+          if (p.online) {
+            const actAgo = p.lastActivity ? (Date.now() - p.lastActivity) / 1000 : 9999;
+            if (actAgo < 300) activeCount++; else idleCount++;
+          } else {
+            offlineCount++;
+          }
+        }
+        agentSnapshot = [activeCount, idleCount, offlineCount];
+
+        // Recent calls (last 5)
+        try {
+          recentCalls = db.prepare("SELECT caller_number, agent, direction, call_status, timestamp FROM calls ORDER BY timestamp DESC LIMIT 5").all();
+        } catch (e) { /* ignore */ }
+
+        // Alerts
+        if (todayMissed > 5) alerts.push({ type: 'warn', text: todayMissed + ' missed calls today' });
+        if (offlineCount > 0 && activeCount === 0) alerts.push({ type: 'error', text: 'No active agents — all offline or idle' });
+        const lastHourMissed = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'missed' AND timestamp >= datetime('now', '-1 hour')").c;
+        if (lastHourMissed > 3) alerts.push({ type: 'warn', text: lastHourMissed + ' missed calls in the last hour' });
+      }
+
       res.json({
         total, inbound, outbound, answered, missed,
         avgDuration: Math.round(avgDuration || 0),
-        today: { total: todayTotal, inbound: todayInbound, outbound: todayOutbound, answered: todayAnswered, missed: todayMissed }
+        today: { total: todayTotal, inbound: todayInbound, outbound: todayOutbound, answered: todayAnswered, missed: todayMissed, talkTime: todayTalkTime },
+        agentSnapshot,
+        recentCalls,
+        alerts,
       });
     } catch (err) {
       res.status(500).json({ error: err.message });
