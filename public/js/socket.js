@@ -118,34 +118,30 @@ socket.on('incoming_call', function(data) {
     }
   }
 
-  // Auto-open Clinicea profile — only for inbound calls
-  var shouldAutoOpen = !isOutbound;
-  var lockKey = 'call_opened_' + data.callId;
-  console.log('[dashboard] auto-open check', { shouldAutoOpen: shouldAutoOpen, lockKey: lockKey, lockExists: !!localStorage.getItem(lockKey), cliniceaUrl: data.cliniceaUrl });
-  if (shouldAutoOpen && !localStorage.getItem(lockKey)) {
-    localStorage.setItem(lockKey, '1');
-    setTimeout(function() { localStorage.removeItem(lockKey); }, 60000);
-    console.log('[dashboard] opening Clinicea', data.cliniceaUrl);
-    var win = window.open(data.cliniceaUrl, 'clinicea_patient');
-    console.log('[dashboard] window.open result', { success: !!win, blocked: !win || win.closed, url: data.cliniceaUrl });
-    // Detect popup blocker — show fallback link if blocked
-    if (!win || win.closed) {
-      console.warn('[dashboard] Popup BLOCKED! Showing fallback link.');
-      cliniceaLink.textContent = '\u26A0 CLICK HERE to open patient profile (popup was blocked)';
-      cliniceaLink.style.color = '#e74c3c';
-      cliniceaLink.style.fontWeight = 'bold';
-      cliniceaLink.style.fontSize = '16px';
+  // Auto-open Clinicea profile — only for the assigned agent, not admin
+  if (isMyCall || myRole !== 'admin') {
+    var shouldAutoOpen = !isOutbound;
+    var lockKey = 'call_opened_' + data.callId;
+    if (shouldAutoOpen && !localStorage.getItem(lockKey)) {
+      localStorage.setItem(lockKey, '1');
+      setTimeout(function() { localStorage.removeItem(lockKey); }, 60000);
+      var win = window.open(data.cliniceaUrl, 'clinicea_patient');
+      if (!win || win.closed) {
+        cliniceaLink.textContent = '\u26A0 CLICK HERE to open patient profile (popup was blocked)';
+        cliniceaLink.style.color = '#e74c3c';
+        cliniceaLink.style.fontWeight = 'bold';
+        cliniceaLink.style.fontSize = '16px';
+      }
     }
-  } else {
-    console.log('[dashboard] NOT auto-opening', { role: myRole, eventAgent: data.agent, myUsername: myUsername, agentMatch: data.agent === myUsername, untagged: !data.agent, lockExists: !!localStorage.getItem(lockKey) });
+
+    setTimeout(function() {
+      notification.classList.remove('active');
+    }, isOutbound ? 10000 : 30000);
   }
 
+  // Always refresh call history and stats (admin and agents)
   loadCallHistory(1);
   loadCallStats();
-
-  setTimeout(function() {
-    notification.classList.remove('active');
-  }, isOutbound ? 10000 : 30000);
 });
 
 // Call updated (duration/status arrived after call ended)
