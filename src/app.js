@@ -103,7 +103,11 @@ app.use(authRoutes);
 app.use(callRoutes);
 app.use(heartbeatRoutes);
 
-// 3. Installer routes (monitor script download, extension zip)
+// 3. Mobile app routes (agent login, heartbeat, incoming-call) — Bearer token auth
+const mobileAppRoutes = require('./routes/mobileApp.routes');
+app.use(mobileAppRoutes);
+
+// 4. Installer routes (monitor script download, extension zip)
 app.use(installerRoutes);
 
 // 4. WhatsApp extension routes — uses extension-key auth, must come before
