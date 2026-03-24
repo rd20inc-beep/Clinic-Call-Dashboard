@@ -112,8 +112,8 @@ router.post('/api/app/heartbeat', (req, res) => {
   const { wasDown } = recordHeartbeat(agent);
   emitMonitorStatus(agent, true);
 
-  // Update presence engine
-  recordHeartbeatPresence(agent);
+  // Update presence engine (mark as mobile source)
+  recordHeartbeatPresence(agent, 'mobile');
   updateActivity(agent);
 
   // Update last_seen in DB

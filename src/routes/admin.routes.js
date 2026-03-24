@@ -316,6 +316,8 @@ module.exports = function setupAdminRoutes(io) {
         phone, email, notes,
         onCall: livePres.onCall || false,
         online: livePres.online || false,
+        portalOnline: livePres.portalOnline || false,
+        mobileOnline: livePres.mobileOnline || false,
         monitorAlive: hb ? hb.alive : false,
         lastHeartbeat: hb ? hb.lastHeartbeat : null,
         lastSeen: lastSeenTs,

@@ -11,11 +11,14 @@ const { IDLE_TIMEOUT_MS, IDLE_CHECK_INTERVAL, HEARTBEAT_STALE_MS } = require('..
 
 /**
  * Per-agent state:
- *   online:       boolean — at least one socket connected
- *   socketCount:  number  — how many browser tabs/sockets
- *   lastActivity: number  — ms timestamp of last activity signal
- *   onCall:       boolean — currently handling a call
- *   status:       string  — computed: online | busy | idle | offline
+ *   online:        boolean — at least one source connected
+ *   portalOnline:  boolean — web dashboard socket connected
+ *   mobileOnline:  boolean — mobile app heartbeat active
+ *   socketCount:   number  — how many browser tabs/sockets
+ *   lastActivity:  number  — ms timestamp of last activity signal
+ *   lastMobileHb:  number  — ms timestamp of last mobile heartbeat
+ *   onCall:        boolean — currently handling a call
+ *   status:        string  — computed: online | busy | idle | offline
  */
 const agentPresence = {};
 
@@ -67,7 +70,7 @@ function persistAndBroadcast(username) {
 // ---------------------------------------------------------------------------
 
 function getPresence(username) {
-  return agentPresence[username] || { online: false, lastActivity: null, socketCount: 0, onCall: false, status: 'offline' };
+  return agentPresence[username] || { online: false, portalOnline: false, mobileOnline: false, lastActivity: null, lastMobileHb: null, socketCount: 0, onCall: false, status: 'offline' };
 }
 
 function getAllPresence() {
@@ -105,12 +108,17 @@ function updateActivity(username) {
   if (current !== next) persistAndBroadcast(username);
 }
 
-/** Called from heartbeat route — agent's call monitor is alive */
-function recordHeartbeatPresence(username) {
+/** Called from heartbeat route — agent's call monitor / mobile app is alive */
+function recordHeartbeatPresence(username, source) {
   if (!username) return;
   ensurePresence(username);
   agentPresence[username].lastActivity = Date.now();
-  // If agent isn't connected via socket, heartbeat alone means online
+  // Track which source the heartbeat came from
+  if (source === 'mobile') {
+    agentPresence[username].mobileOnline = true;
+    agentPresence[username].lastMobileHb = Date.now();
+  }
+  // Heartbeat alone means online
   if (!agentPresence[username].online) {
     agentPresence[username].online = true;
   }
@@ -120,7 +128,7 @@ function recordHeartbeatPresence(username) {
 
 function ensurePresence(username) {
   if (!agentPresence[username]) {
-    agentPresence[username] = { online: false, lastActivity: null, socketCount: 0, onCall: false, status: 'offline' };
+    agentPresence[username] = { online: false, portalOnline: false, mobileOnline: false, lastActivity: null, lastMobileHb: null, socketCount: 0, onCall: false, status: 'offline' };
   }
 }
 
@@ -132,6 +140,13 @@ function startIdleSweep() {
   setInterval(() => {
     const now = Date.now();
     for (const [username, p] of Object.entries(agentPresence)) {
+      // Check if mobile heartbeat went stale (no heartbeat for 90s)
+      if (p.mobileOnline && p.lastMobileHb && (now - p.lastMobileHb) > HEARTBEAT_STALE_MS) {
+        p.mobileOnline = false;
+        // If portal is also disconnected, agent goes offline
+        if (!p.portalOnline) p.online = false;
+      }
+
       if (!p.online) continue;
       const prev = p.status;
       const next = computeStatus(username);
@@ -192,6 +207,7 @@ function setupSockets(io, sessionMiddleware) {
       ensurePresence(username);
       agentPresence[username].socketCount++;
       agentPresence[username].online = true;
+      agentPresence[username].portalOnline = true;
       agentPresence[username].lastActivity = Date.now();
       persistAndBroadcast(username);
 
@@ -220,9 +236,11 @@ function setupSockets(io, sessionMiddleware) {
       if (agent && agentPresence[agent]) {
         agentPresence[agent].socketCount = Math.max(0, agentPresence[agent].socketCount - 1);
         if (agentPresence[agent].socketCount === 0) {
-          agentPresence[agent].online = false;
+          agentPresence[agent].portalOnline = false;
+          // Only go offline if mobile is also not connected
+          agentPresence[agent].online = agentPresence[agent].mobileOnline;
           agentPresence[agent].lastActivity = Date.now();
-          agentPresence[agent].onCall = false; // can't be on call with no sockets
+          if (!agentPresence[agent].online) agentPresence[agent].onCall = false;
           persistAndBroadcast(agent);
         }
       }

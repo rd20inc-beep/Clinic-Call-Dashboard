@@ -103,6 +103,7 @@ function renderAgentTable() {
       '<th style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;font-weight:600;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:left;">Name</th>' +
       '<th style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;font-weight:600;background:#f8fafc;border-bottom:2px solid #e2e8f0;">Role</th>' +
       '<th style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;font-weight:600;background:#f8fafc;border-bottom:2px solid #e2e8f0;">Status</th>' +
+      '<th style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;font-weight:600;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:center;">Connected</th>' +
       '<th style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;font-weight:600;background:#f8fafc;border-bottom:2px solid #e2e8f0;">Phone</th>' +
       '<th style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;font-weight:600;background:#f8fafc;border-bottom:2px solid #e2e8f0;">Last Login</th>' +
       '<th style="padding:12px 16px;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;font-weight:600;background:#f8fafc;border-bottom:2px solid #e2e8f0;text-align:right;">Actions</th>' +
@@ -113,6 +114,12 @@ function renderAgentTable() {
     var statusBadge = badge(pc.label, pc.color, pc.bg);
     var roleBadge = a.role === 'admin' ? badge('Admin', '#2563eb', '#eff6ff') : badge('Agent', '#7c3aed', '#f5f3ff');
     var callBadge = a.onCall ? ' ' + badge('ON CALL', '#fff', '#ea580c') : '';
+
+    // Connection source dots: portal (green) + mobile (blue)
+    var portalDot = a.portalOnline ? '<span title="Dashboard" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:3px;"></span>' : '<span title="Dashboard" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e2e8f0;margin-right:3px;"></span>';
+    var mobileDot = a.mobileOnline ? '<span title="Mobile App" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3b82f6;margin-right:3px;"></span>' : '<span title="Mobile App" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e2e8f0;margin-right:3px;"></span>';
+    var monitorDotHtml = a.monitorAlive ? '<span title="Monitor" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;"></span>' : '<span title="Monitor" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e2e8f0;"></span>';
+    var connectionDots = portalDot + mobileDot + monitorDotHtml;
     var name = escapeHtml(a.displayName && a.displayName !== a.username ? a.displayName : '-');
     var phone = a.phone ? escapeHtml(a.phone) : '<span style="color:#94a3b8;">-</span>';
     var lastLogin = a.lastLogin ? formatLastSeen(a.lastLogin) : '<span style="color:#94a3b8;">Never</span>';
@@ -129,6 +136,7 @@ function renderAgentTable() {
       '<td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;color:#334155;">' + name + '</td>' +
       '<td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;text-align:center;">' + roleBadge + '</td>' +
       '<td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;text-align:center;">' + statusBadge + '</td>' +
+      '<td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;text-align:center;">' + connectionDots + '</td>' +
       '<td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#334155;">' + phone + '</td>' +
       '<td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;font-size:11px;color:#94a3b8;">' + lastLogin + '</td>' +
       '<td style="padding:12px 16px;border-bottom:1px solid #f1f5f9;">' + actions + '</td>' +
