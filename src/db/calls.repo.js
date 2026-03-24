@@ -10,8 +10,8 @@ try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'")
 try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* exists */ }
 
 const stmtInsertCall = db.prepare(`
-  INSERT INTO calls (caller_number, call_sid, clinicea_url, agent, routing_method, source_ip, direction, call_status)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO calls (caller_number, call_sid, clinicea_url, agent, routing_method, source_ip, direction, call_status, source)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const stmtUpdateCallStatus = db.prepare(
@@ -115,7 +115,7 @@ module.exports = {
    * Insert a new call record.
    * @returns {{ callId: number }}
    */
-  insertCall(callerNumber, callSid, cliniceaUrl, agent, routingMethod, sourceIp, direction, callStatus) {
+  insertCall(callerNumber, callSid, cliniceaUrl, agent, routingMethod, sourceIp, direction, callStatus, source) {
     const result = stmtInsertCall.run(
       callerNumber,
       callSid || null,
@@ -124,7 +124,8 @@ module.exports = {
       routingMethod || null,
       sourceIp || null,
       direction || 'inbound',
-      callStatus || 'unknown'
+      callStatus || 'unknown',
+      source || 'phone'
     );
     return { callId: result.lastInsertRowid };
   },

@@ -57,9 +57,17 @@ router.post('/api/agent/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
-  // Generate a simple token
+  // Single device enforcement: invalidate all previous tokens for this agent
+  for (const [existingToken, entry] of Object.entries(appTokens)) {
+    if (entry.agent === agent_id) {
+      delete appTokens[existingToken];
+      logEvent('info', 'Mobile session invalidated for ' + agent_id + ' (new login from ' + getClientIP(req) + ')');
+    }
+  }
+
+  // Generate a new token
   const token = require('crypto').randomBytes(32).toString('hex');
-  appTokens[token] = { agent: agent_id, role: user.role, loginAt: Date.now() };
+  appTokens[token] = { agent: agent_id, role: user.role, loginAt: Date.now(), ip: getClientIP(req) };
 
   // Record login in DB
   try {
@@ -179,7 +187,8 @@ router.post('/api/incoming-call', (req, res) => {
       'mobile_app',
       sourceIp,
       direction,
-      'unknown'
+      'unknown',
+      source || 'phone'
     );
 
     // Mark agent busy

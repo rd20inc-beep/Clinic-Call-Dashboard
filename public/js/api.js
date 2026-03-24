@@ -242,6 +242,7 @@ async function loadCallHistory(page) {
           '<th>Caller</th>' +
           '<th>Patient</th>' +
           '<th>Agent</th>' +
+          '<th>Source</th>' +
           '<th>Status</th>' +
           '<th>Duration</th>' +
           '<th>Time</th>' +
@@ -288,6 +289,7 @@ async function loadCallHistory(page) {
         '</td>' +
         '<td>' + nameDisplay + '</td>' +
         '<td><strong style="color:#334155;font-size:12px;">' + escapeHtml(call.agent || '-') + '</strong></td>' +
+        '<td>' + (call.source === 'whatsapp' ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#dcfce7;color:#16a34a;">WhatsApp</span>' : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#eff6ff;color:#2563eb;">Phone</span>') + '</td>' +
         '<td><span id="status-' + call.id + '">' + stBadge + '</span></td>' +
         '<td><span id="duration-' + call.id + '">' + durDisplay + '</span></td>' +
         '<td>' + escapeHtml(time) + '</td>' +
