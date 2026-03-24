@@ -167,7 +167,15 @@ module.exports = function setupAdminRoutes(io) {
 
         // Alerts
         if (todayMissed > 5) alerts.push({ type: 'warn', text: todayMissed + ' missed calls today' });
-        if (offlineCount > 0 && activeCount === 0) alerts.push({ type: 'error', text: 'No active agents — all offline or idle' });
+        // Only show "no active agents" if no agent seen in DB within 5 minutes (avoids false alarm after restart)
+        if (offlineCount > 0 && activeCount === 0) {
+          try {
+            const recentlySeen = db.prepare("SELECT COUNT(*) as c FROM users WHERE last_seen >= datetime('now', '-5 minutes') AND active = 1 AND role = 'agent' AND deleted_at IS NULL").get().c;
+            if (recentlySeen === 0) alerts.push({ type: 'error', text: 'No active agents — all offline or idle' });
+          } catch (e) {
+            alerts.push({ type: 'error', text: 'No active agents — all offline or idle' });
+          }
+        }
         const lastHourMissed = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'missed' AND timestamp >= datetime('now', '-1 hour')").c;
         if (lastHourMissed > 3) alerts.push({ type: 'warn', text: lastHourMissed + ' missed calls in the last hour' });
       }
