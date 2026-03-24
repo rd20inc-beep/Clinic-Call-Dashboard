@@ -101,6 +101,11 @@
           <span id="monitorText">Monitor: Unknown</span>
         </div>
         <div class="sidebar-status" id="agentInfo" style="margin-top:4px;font-weight:600;color:rgba(255,255,255,0.8);"></div>
+        <select id="agentStatusSelect" onchange="setMyStatus(this.value)" style="width:100%;margin-top:6px;padding:5px 8px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.8);font-size:11px;font-weight:600;">
+          <option value="available">Available</option>
+          <option value="busy">Busy</option>
+          <option value="on_break">On Break</option>
+        </select>
         <button class="admin-only" onclick="forceLogoutAll()" style="display:none;width:100%;margin-top:6px;padding:6px;border:1px solid rgba(239,68,68,0.4);border-radius:6px;background:rgba(239,68,68,0.1);color:#fca5a5;font-size:11px;font-weight:600;cursor:pointer;">Force Logout All</button>
         <a href="/logout" class="sidebar-logout">Sign Out</a>
       </div>
@@ -122,6 +127,9 @@
         <p id="callTime"></p>
         <a id="cliniceaLink" href="#" target="_blank">Open Patient Profile in Clinicea</a>
       </div>
+
+      <!-- Callback badge (admin) -->
+      <div id="callbackBadge" style="display:none;padding:8px 16px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin:8px 32px 0;font-size:13px;color:#dc2626;font-weight:600;cursor:pointer;" onclick="window.location.hash='admin-console';showPage('admin-console');"></div>
 
       <!-- ===== DASHBOARD PAGE ===== -->
       <div class="page-container active" id="page-dashboard">
@@ -172,6 +180,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
           <h2 class="section-title" style="margin-bottom:0;">Call History</h2>
           <div id="callFilterBar" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+            <input id="filterSearch" type="text" placeholder="Search name/number..." onkeyup="clearTimeout(this._t);this._t=setTimeout(loadFilteredCalls,400)" style="padding:4px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;width:150px;">
             <select id="filterStatus" onchange="loadFilteredCalls()" style="padding:4px 8px;border:1px solid #ddd;border-radius:4px;font-size:12px;">
               <option value="">All Status</option>
               <option value="answered">Answered</option>

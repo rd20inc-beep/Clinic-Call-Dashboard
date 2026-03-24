@@ -258,6 +258,12 @@ router.get('/api/calls', requireAuth, apiLimiter, (req, res) => {
     params.push(req.query.to + ' 23:59:59');
   }
 
+  // Search by patient name or caller number
+  if (req.query.search) {
+    conditions.push('(patient_name LIKE ? OR caller_number LIKE ?)');
+    params.push('%' + req.query.search + '%', '%' + req.query.search + '%');
+  }
+
   const where = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
 
   try {
@@ -274,6 +280,46 @@ router.get('/api/calls', requireAuth, apiLimiter, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/calls/:id/disposition — set call outcome
+// ---------------------------------------------------------------------------
+router.post('/api/calls/:id/disposition', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { disposition } = req.body;
+  if (!id || !disposition) return res.json({ error: 'id and disposition required' });
+  const valid = ['appointment_booked', 'follow_up_needed', 'wrong_number', 'no_answer', 'existing_patient', 'inquiry_only', 'other'];
+  if (!valid.includes(disposition)) return res.json({ error: 'Invalid disposition' });
+  callsRepo.updateDisposition(id, disposition);
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/calls/:id/notes — add/update agent notes on a call
+// ---------------------------------------------------------------------------
+router.post('/api/calls/:id/notes', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id);
+  const { notes } = req.body;
+  if (!id) return res.json({ error: 'id required' });
+  callsRepo.updateNotes(id, (notes || '').substring(0, 500));
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/agent/set-status — agent sets own status (available/busy/break)
+// ---------------------------------------------------------------------------
+router.post('/api/agent/set-status', requireAuth, (req, res) => {
+  const { status } = req.body;
+  const valid = ['available', 'busy', 'on_break', 'offline'];
+  if (!status || !valid.includes(status)) return res.json({ error: 'Valid status: ' + valid.join(', ') });
+  try {
+    const usersRepo = require('../db/users.repo');
+    usersRepo.setStatus(req.session.username, status);
+    const { updateActivity } = require('../sockets/index');
+    updateActivity(req.session.username);
+  } catch (e) { /* ignore */ }
+  res.json({ ok: true, status });
 });
 
 module.exports = router;

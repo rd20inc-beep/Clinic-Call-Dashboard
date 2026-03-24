@@ -4,6 +4,13 @@ const { db } = require('./index');
 
 // --- Prepared statements ---
 
+// Ensure columns exist
+try { db.exec('ALTER TABLE calls ADD COLUMN disposition TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN notes TEXT'); } catch (e) { /* exists */ }
+
+const stmtUpdateDisposition = db.prepare('UPDATE calls SET disposition = ? WHERE id = ?');
+const stmtUpdateNotes = db.prepare('UPDATE calls SET notes = ? WHERE id = ?');
+
 // Ensure direction/call_status/duration columns exist
 try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* exists */ }
 try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* exists */ }
@@ -248,5 +255,15 @@ module.exports = {
   /** Get hourly call + talk time breakdown for an agent today. */
   getAgentHourlyToday(agent) {
     return stmtAgentHourly.all(agent);
+  },
+
+  /** Update call disposition. */
+  updateDisposition(callId, disposition) {
+    stmtUpdateDisposition.run(disposition, callId);
+  },
+
+  /** Update call notes. */
+  updateNotes(callId, notes) {
+    stmtUpdateNotes.run(notes, callId);
   },
 };

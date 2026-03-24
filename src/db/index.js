@@ -39,6 +39,8 @@ try { db.exec('ALTER TABLE calls ADD COLUMN patient_id TEXT'); } catch (e) { /* 
 try { db.exec('ALTER TABLE calls ADD COLUMN agent TEXT'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN routing_method TEXT'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN source_ip TEXT'); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN disposition TEXT'); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN notes TEXT'); } catch (e) { /* already exists */ }
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS wa_messages (

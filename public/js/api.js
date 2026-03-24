@@ -109,6 +109,47 @@ function sendQuickMessage(agent) {
     .catch(function(err) { alert('Error: ' + err.message); });
 }
 
+// ===== CALL DISPOSITION =====
+function setCallDisposition(callId, disposition) {
+  if (!disposition) return;
+  fetch('/api/calls/' + callId + '/disposition', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ disposition: disposition }) }).catch(function() {});
+}
+
+// ===== CALL NOTES =====
+function addCallNote(callId) {
+  var note = prompt('Add note for call #' + callId + ':');
+  if (note === null) return;
+  fetch('/api/calls/' + callId + '/notes', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ notes: note }) })
+    .then(function() { loadCallHistory(); })
+    .catch(function() {});
+}
+
+// ===== AGENT STATUS SELECTOR =====
+function setMyStatus(status) {
+  fetch('/api/agent/set-status', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ status: status }) }).catch(function() {});
+}
+
+// ===== PERSISTENT NOTIFICATIONS =====
+function saveNotification(msg) {
+  var stored = JSON.parse(localStorage.getItem('dashNotifications') || '[]');
+  stored.unshift({ text: msg, time: Date.now() });
+  if (stored.length > 15) stored = stored.slice(0, 15);
+  localStorage.setItem('dashNotifications', JSON.stringify(stored));
+}
+
+// ===== CALLBACK BADGE =====
+function loadCallbackBadge() {
+  if (myRole !== 'admin') return;
+  fetch('/admin/callbacks/summary', { headers: { 'Accept': 'application/json' } })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var pending = d.pending || 0;
+      var el = document.getElementById('callbackBadge');
+      if (el) { el.textContent = pending > 0 ? pending + ' pending callbacks' : ''; el.style.display = pending > 0 ? '' : 'none'; }
+    })
+    .catch(function() {});
+}
+
 // ===== SAFE FETCH HELPER (for non-waFetch callers) =====
 async function safeFetch(url, opts) {
   var res = await fetch(url, opts);
@@ -244,6 +285,7 @@ function loadFilteredCalls() {
   activeCallFilters.agent = document.getElementById('filterAgent').value || '';
   activeCallFilters.from = document.getElementById('filterFrom').value || '';
   activeCallFilters.to = document.getElementById('filterTo').value || '';
+  activeCallFilters.search = (document.getElementById('filterSearch') || {}).value || '';
   currentPage = 1;
   loadCallHistory();
 }
@@ -255,6 +297,7 @@ function clearCallFilters() {
   document.getElementById('filterAgent').value = '';
   document.getElementById('filterFrom').value = '';
   document.getElementById('filterTo').value = '';
+  var searchEl = document.getElementById('filterSearch'); if (searchEl) searchEl.value = '';
   document.getElementById('filterActiveLabel').style.display = 'none';
   currentPage = 1;
   loadCallHistory();
@@ -267,6 +310,7 @@ function buildCallQueryString() {
   if (activeCallFilters.agent) qs += '&agent=' + activeCallFilters.agent;
   if (activeCallFilters.from) qs += '&from=' + activeCallFilters.from;
   if (activeCallFilters.to) qs += '&to=' + activeCallFilters.to;
+  if (activeCallFilters.search) qs += '&search=' + encodeURIComponent(activeCallFilters.search);
   return qs;
 }
 
@@ -375,10 +419,18 @@ async function loadCallHistory(page) {
         '<td><span id="duration-' + call.id + '">' + durDisplay + '</span></td>' +
         '<td>' + escapeHtml(time) + '</td>' +
         '<td><span class="meeting-badge loading" id="meeting-' + call.id + '">Loading...</span></td>' +
-        '<td style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">' +
+        '<td style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;">' +
           '<button class="btn-profile" onclick="openProfile(\'' + escapeHtml(call.caller_number) + '\',\'' + escapeHtml(call.clinicea_url) + '\')">Profile</button>' +
-          '<a href="' + escapeHtml(call.clinicea_url) + '" target="_blank" class="btn-clinicea">Clinicea</a>' +
-          (myRole === 'admin' && call.agent ? '<button style="padding:3px 6px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:10px;cursor:pointer;" onclick="quickMessageAgent(\'' + escapeHtml(call.agent) + '\',\'' + escapeHtml(displayNumber) + '\',\'' + escapeHtml(call.call_status || '') + '\',\'' + escapeHtml(call.patient_name || '') + '\')">Msg</button>' : '') +
+          '<select style="padding:2px 4px;border:1px solid #e2e8f0;border-radius:3px;font-size:9px;color:#475569;max-width:80px;" onchange="setCallDisposition(' + call.id + ',this.value)" title="Disposition">' +
+            '<option value=""' + (!call.disposition ? ' selected' : '') + '>Outcome</option>' +
+            '<option value="appointment_booked"' + (call.disposition === 'appointment_booked' ? ' selected' : '') + '>Appt Booked</option>' +
+            '<option value="follow_up_needed"' + (call.disposition === 'follow_up_needed' ? ' selected' : '') + '>Follow Up</option>' +
+            '<option value="inquiry_only"' + (call.disposition === 'inquiry_only' ? ' selected' : '') + '>Inquiry</option>' +
+            '<option value="wrong_number"' + (call.disposition === 'wrong_number' ? ' selected' : '') + '>Wrong #</option>' +
+            '<option value="existing_patient"' + (call.disposition === 'existing_patient' ? ' selected' : '') + '>Existing</option>' +
+          '</select>' +
+          '<button style="padding:2px 5px;border:1px solid #e2e8f0;border-radius:3px;background:#fff;color:#64748b;font-size:9px;cursor:pointer;" onclick="addCallNote(' + call.id + ')" title="' + escapeHtml(call.notes || 'Add note') + '">' + (call.notes ? '📝' : '✏️') + '</button>' +
+          (myRole === 'admin' && call.agent ? '<button style="padding:2px 5px;border:1px solid #e2e8f0;border-radius:3px;background:#fff;color:#3b82f6;font-size:9px;cursor:pointer;" onclick="quickMessageAgent(\'' + escapeHtml(call.agent) + '\',\'' + escapeHtml(displayNumber) + '\',\'' + escapeHtml(call.call_status || '') + '\',\'' + escapeHtml(call.patient_name || '') + '\')">Msg</button>' : '') +
         '</td>' +
       '</tr>';
     });

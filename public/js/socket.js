@@ -236,4 +236,5 @@ setInterval(checkMonitorStatus, 15000);
 loadCallHistory();
 loadCallStats();
 if (typeof loadDashCharts === 'function') loadDashCharts();
+if (typeof loadCallbackBadge === 'function') { loadCallbackBadge(); setInterval(loadCallbackBadge, 60000); }
 handleRoute();
