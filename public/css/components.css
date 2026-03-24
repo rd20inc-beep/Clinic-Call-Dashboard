@@ -101,6 +101,28 @@
 .meeting-badge.none { color: #999; font-style: italic; }
 .meeting-badge.loading { color: #6c757d; }
 
+/* Call direction badges */
+.call-dir { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.call-dir.inbound { background: #e3f2fd; color: #1565c0; }
+.call-dir.outbound { background: #f3e5f5; color: #7b1fa2; }
+
+/* Call status badges */
+.call-st { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.call-st.answered { background: #e8f5e9; color: #2e7d32; }
+.call-st.missed { background: #fce4ec; color: #c62828; }
+.call-st.unknown { color: #999; }
+
+/* Call stats bar */
+.call-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.call-stat-card { background: white; border-radius: 10px; padding: 16px; text-align: center; border: 1px solid #e9ecef; transition: transform 0.15s, box-shadow 0.15s; }
+.call-stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.call-stat-value { font-size: 24px; font-weight: 700; color: #1a1a2e; }
+.call-stat-label { font-size: 12px; color: #888; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.3px; }
+.call-stat-card.missed .call-stat-value { color: #c62828; }
+.call-stat-card.outbound .call-stat-value { color: #7b1fa2; }
+.call-stat-card.inbound .call-stat-value { color: #1565c0; }
+.call-stat-card.answered .call-stat-value { color: #2e7d32; }
+
 /* Pagination */
 .pagination {
   display: flex;
@@ -832,8 +854,11 @@
 }
 
 .apt-status.completed { background: #e8f5e9; color: #2e7d32; }
+.apt-status.checkout { background: #e8f5e9; color: #2e7d32; }
 .apt-status.upcoming { background: #e3f2fd; color: #1565c0; }
-.apt-status.confirmed { background: #e3f2fd; color: #1565c0; }
+.apt-status.confirmed { background: #e0f7fa; color: #00838f; }
+.apt-status.engaged { background: #f3e5f5; color: #7b1fa2; }
+.apt-status.scheduled { background: #fff3cd; color: #856404; }
 .apt-status.pending { background: #fff3cd; color: #856404; }
 .apt-status.cancelled { background: #f5f5f5; color: #999; }
 .apt-status.noshow { background: #fff3e0; color: #e65100; }
@@ -998,10 +1023,13 @@
 
 .calendar-card:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.12); }
 
-.calendar-card.status-confirmed { border-left-color: #1565c0; }
+.calendar-card.status-confirmed { border-left-color: #00838f; }
+.calendar-card.status-engaged { border-left-color: #7b1fa2; }
+.calendar-card.status-scheduled { border-left-color: #f9a825; }
 .calendar-card.status-pending { border-left-color: #f9a825; }
 .calendar-card.status-cancelled { border-left-color: #bdbdbd; }
 .calendar-card.status-completed { border-left-color: #2e7d32; }
+.calendar-card.status-checkout { border-left-color: #2e7d32; }
 .calendar-card.status-checkedin { border-left-color: #2e7d32; }
 
 .calendar-card-left { flex: 1; }

@@ -349,15 +349,15 @@ async function loadCalendar() {
     var html = '';
     appointments.forEach(function(apt) {
       var status = (apt.status || 'unknown').toLowerCase();
-      var statusClass = 'status-pending';
-      if (status.includes('confirm')) statusClass = 'status-confirmed';
-      else if (status.includes('cancel')) statusClass = 'status-cancelled';
-      else if (status.includes('complet') || status.includes('checked') || status.includes('arrived')) statusClass = 'status-completed';
-
-      var aptStatusBadge = 'pending';
-      if (status.includes('confirm')) aptStatusBadge = 'confirmed';
-      else if (status.includes('cancel')) aptStatusBadge = 'cancelled';
-      else if (status.includes('complet') || status.includes('checked') || status.includes('arrived')) aptStatusBadge = 'completed';
+      var statusClass = 'status-scheduled';
+      var aptStatusBadge = 'scheduled';
+      if (status.includes('engaged') || status.includes('in progress')) { statusClass = 'status-engaged'; aptStatusBadge = 'engaged'; }
+      else if (status.includes('confirm')) { statusClass = 'status-confirmed'; aptStatusBadge = 'confirmed'; }
+      else if (status.includes('check') && status.includes('out')) { statusClass = 'status-checkout'; aptStatusBadge = 'checkout'; }
+      else if (status.includes('complet') || status.includes('checked') || status.includes('arrived')) { statusClass = 'status-completed'; aptStatusBadge = 'completed'; }
+      else if (status.includes('cancel')) { statusClass = 'status-cancelled'; aptStatusBadge = 'cancelled'; }
+      else if (status.includes('no show') || status.includes('noshow')) { statusClass = 'status-cancelled'; aptStatusBadge = 'noshow'; }
+      else if (status.includes('schedul')) { statusClass = 'status-scheduled'; aptStatusBadge = 'scheduled'; }
 
       var timeStr = formatTime(apt.startTime);
       var endTimeStr = apt.endTime ? ' - ' + formatTime(apt.endTime) : '';
