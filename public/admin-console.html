@@ -686,7 +686,7 @@
 
     function renderAgentCallsChart(stats) {
       destroyChart('agentCalls');
-      var active = stats.filter(function(a) { return a.status === 'active'; });
+      var active = stats.filter(function(a) { return a.status !== 'disabled'; });
       var ctx = document.getElementById('chartAgentCalls').getContext('2d');
       chartInstances.agentCalls = new Chart(ctx, {
         type: 'bar',
@@ -703,7 +703,7 @@
 
     function renderAnsweredMissedChart(stats) {
       destroyChart('answeredMissed');
-      var active = stats.filter(function(a) { return a.status === 'active'; });
+      var active = stats.filter(function(a) { return a.status !== 'disabled'; });
       var ctx = document.getElementById('chartAnsweredMissed').getContext('2d');
       chartInstances.answeredMissed = new Chart(ctx, {
         type: 'bar',
@@ -833,7 +833,7 @@
 
     function renderTodayVsWeek(stats) {
       destroyChart('todayVsWeek');
-      var active = stats.filter(function(a) { return a.status === 'active'; });
+      var active = stats.filter(function(a) { return a.status !== 'disabled'; });
       var ctx = document.getElementById('chartTodayVsWeek').getContext('2d');
       chartInstances.todayVsWeek = new Chart(ctx, {
         type: 'bar',
