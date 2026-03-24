@@ -147,14 +147,33 @@ function saveNotification(msg) {
 // ===== CALLBACK BADGE =====
 function loadCallbackBadge() {
   if (myRole !== 'admin') return;
+  if (sessionStorage.getItem('callbackBadgeDismissed')) return;
   fetch('/admin/callbacks/summary', { headers: { 'Accept': 'application/json' } })
     .then(function(r) { return r.json(); })
     .then(function(d) {
       var pending = d.pending || 0;
+      var overdue = d.overdue || 0;
       var el = document.getElementById('callbackBadge');
-      if (el) { el.textContent = pending > 0 ? pending + ' pending callbacks' : ''; el.style.display = pending > 0 ? '' : 'none'; }
+      var textEl = document.getElementById('callbackBadgeText');
+      if (el && textEl) {
+        if (pending > 0) {
+          var msg = pending + ' pending callback' + (pending !== 1 ? 's' : '');
+          if (overdue > 0) msg += ' (' + overdue + ' overdue)';
+          msg += ' — click to review';
+          textEl.textContent = msg;
+          el.style.display = 'flex';
+        } else {
+          el.style.display = 'none';
+        }
+      }
     })
     .catch(function() {});
+}
+
+function dismissCallbackBadge() {
+  var el = document.getElementById('callbackBadge');
+  if (el) el.style.display = 'none';
+  sessionStorage.setItem('callbackBadgeDismissed', '1');
 }
 
 // ===== SAFE FETCH HELPER (for non-waFetch callers) =====
