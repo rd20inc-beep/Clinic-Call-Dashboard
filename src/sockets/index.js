@@ -33,7 +33,15 @@ let _io = null;
 
 function computeStatus(username) {
   const p = agentPresence[username];
-  if (!p || !p.online) return 'offline';
+  if (!p || !p.online) {
+    // Can't be on call if offline — auto-clear stale onCall
+    if (p && p.onCall) p.onCall = false;
+    return 'offline';
+  }
+  // Auto-clear onCall if stuck for more than 5 minutes (call_ended never received)
+  if (p.onCall && p.onCallSince && (Date.now() - p.onCallSince) > 300000) {
+    p.onCall = false;
+  }
   if (p.onCall) return 'busy';
   if (p.lastActivity && (Date.now() - p.lastActivity) > IDLE_TIMEOUT_MS) return 'idle';
   return 'online';
@@ -82,6 +90,7 @@ function setOnCall(username) {
   if (!username) return;
   ensurePresence(username);
   agentPresence[username].onCall = true;
+  agentPresence[username].onCallSince = Date.now();
   agentPresence[username].lastActivity = Date.now();
   persistAndBroadcast(username);
   logEvent('info', 'Agent ' + username + ' → busy (on call)');
@@ -92,6 +101,7 @@ function clearOnCall(username) {
   if (!username) return;
   ensurePresence(username);
   agentPresence[username].onCall = false;
+  agentPresence[username].onCallSince = null;
   agentPresence[username].lastActivity = Date.now();
   persistAndBroadcast(username);
   logEvent('info', 'Agent ' + username + ' → call ended');
