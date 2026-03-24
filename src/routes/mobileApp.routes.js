@@ -23,13 +23,25 @@ const callsRepo = require('../db/calls.repo');
 const { config } = require('../config/env');
 const bcrypt = require('bcryptjs');
 
-// In-memory token → agent map (simple auth for mobile app)
+// In-memory token → agent map with TTL (24 hours)
 const appTokens = {};
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// Cleanup expired tokens every 30 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of Object.entries(appTokens)) {
+    if (now - entry.loginAt > TOKEN_TTL_MS) {
+      delete appTokens[token];
+    }
+  }
+}, 30 * 60 * 1000);
 
 // ---------------------------------------------------------------------------
-// POST /api/agent/login — mobile app authentication
+// POST /api/agent/login — mobile app authentication (rate limited)
 // ---------------------------------------------------------------------------
-router.post('/api/agent/login', (req, res) => {
+const { loginLimiter } = require('../middleware/rateLimit');
+router.post('/api/agent/login', loginLimiter, (req, res) => {
   const { agent_id, password } = req.body;
 
   if (!agent_id || !password) {
@@ -100,7 +112,14 @@ function resolveAppAgent(req) {
   if (authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
     const entry = appTokens[token];
-    if (entry) return entry.agent;
+    if (entry) {
+      // Check TTL
+      if (Date.now() - entry.loginAt > TOKEN_TTL_MS) {
+        delete appTokens[token];
+        return null;
+      }
+      return entry.agent;
+    }
   }
   // Fall back to agent_id in body
   return req.body.agent_id || null;
@@ -250,11 +269,10 @@ router.post('/api/incoming-call', (req, res) => {
       ).get(agent, caller);
 
       if (recent) {
-        // Update existing call
+        // Always update status + duration together
+        callsRepo.updateCallStatus(recent.id, finalStatus);
         if (dur > 0) {
           callsRepo.updateCallDuration(recent.id, dur);
-        } else {
-          callsRepo.updateCallStatus(recent.id, finalStatus);
         }
         // Fix direction if call_ended has it but original didn't
         if (call_type && ((call_type === 'outgoing' && recent.direction !== 'outbound') || (call_type === 'incoming' && recent.direction !== 'inbound'))) {

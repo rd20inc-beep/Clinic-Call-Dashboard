@@ -189,6 +189,8 @@ try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (e) { /* exist
 try { db.exec('ALTER TABLE users ADD COLUMN activity_reset_at DATETIME'); } catch (e) { /* exists */ }
 try { db.exec('ALTER TABLE users ADD COLUMN device_info TEXT'); } catch (e) { /* exists */ }
 
+// Call dedup index + timing and source columns
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_sid ON calls(call_sid) WHERE call_sid IS NOT NULL'); } catch(e) {}
 // Call timing and source columns
 try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN call_ended_at DATETIME'); } catch (e) { /* exists */ }

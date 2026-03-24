@@ -77,20 +77,11 @@ socket.on('patient_info', function(data) {
 });
 
 socket.on('incoming_call', function(data) {
-  console.log('[dashboard] incoming_call RAW received', JSON.stringify(data));
-  console.log('[dashboard] identity at receive time', { myUsername: myUsername, myRole: myRole, socketConnected: socket.connected, socketId: socket.id });
-
   // STRICT OWNERSHIP CHECK: ignore events not belonging to this user
-  console.log('[dashboard] ownership check', { eventAgent: data.agent, myUsername: myUsername, myRole: myRole, willPass: myRole === 'admin' || (data.agent && data.agent === myUsername) });
-  if (!isEventForMe(data)) {
-    console.log('[dashboard] REJECTED by isEventForMe', { eventAgent: data.agent, myUsername: myUsername, myRole: myRole });
-    return;
-  }
-  console.log('[dashboard] ACCEPTED event', { eventAgent: data.agent, myUsername: myUsername, myRole: myRole });
+  if (!isEventForMe(data)) return;
 
   // Skip if we already handled this exact call
   if (data.callId && data.callId === lastHandledCallId) {
-    console.log('[dashboard] SKIPPED — duplicate callId', { callId: data.callId });
     return;
   }
   lastHandledCallId = data.callId;

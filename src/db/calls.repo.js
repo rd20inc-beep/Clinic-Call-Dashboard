@@ -47,10 +47,10 @@ const stmtSelectByAgent = db.prepare(
 // ---------------------------------------------------------------------------
 // Finalized call filter:
 //   call_status IN ('answered','missed','rejected','completed','failed','cancelled')
-//   OR (call_status = 'unknown' AND timestamp < datetime('now', '-5 minutes'))
+//   OR (call_status = 'unknown' AND timestamp < datetime('now', '-15 minutes'))
 // This excludes calls still ringing (< 5 min old with unknown status)
 // ---------------------------------------------------------------------------
-const FINALIZED_WHERE = "(call_status IN ('answered','missed','rejected','completed','failed','cancelled') OR (call_status = 'unknown' AND timestamp < datetime('now', '-5 minutes')))";
+const FINALIZED_WHERE = "(call_status IN ('answered','missed','rejected','completed','failed','cancelled') OR (call_status = 'unknown' AND timestamp < datetime('now', '-15 minutes')))";
 
 // Per-agent performance aggregation — parameterized by date filter
 function buildPerfQuery(dateFilter) {
@@ -105,7 +105,7 @@ const stmtAgentHourly = db.prepare(`
 // Auto-finalize stale unknown calls (older than 5 minutes, still unknown → missed)
 const stmtFinalizeStale = db.prepare(`
   UPDATE calls SET call_status = 'missed'
-  WHERE call_status = 'unknown' AND timestamp < datetime('now', '-5 minutes')
+  WHERE call_status = 'unknown' AND timestamp < datetime('now', '-15 minutes')
 `);
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -203,7 +203,7 @@ module.exports = {
   /** Auto-finalize stale unknown calls as missed. Creates callbacks for them. Returns count finalized. */
   finalizeStale() {
     // Get the calls that will be finalized (before updating them)
-    const stale = db.prepare("SELECT id, caller_number, patient_name, agent, timestamp FROM calls WHERE call_status = 'unknown' AND timestamp < datetime('now', '-5 minutes')").all();
+    const stale = db.prepare("SELECT id, caller_number, patient_name, agent, timestamp FROM calls WHERE call_status = 'unknown' AND timestamp < datetime('now', '-15 minutes')").all();
 
     const changes = stmtFinalizeStale.run().changes;
 
