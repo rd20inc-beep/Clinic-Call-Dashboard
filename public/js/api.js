@@ -358,6 +358,10 @@ function updateFilterLabel() {
   }
 }
 
+// Agent name lookup map
+var agentNameMap = {};
+function getAgentDisplayName(username) { return agentNameMap[username] || username || '-'; }
+
 // Populate agent filter dropdown (admin only)
 function loadAgentFilterOptions() {
   if (myRole !== 'admin') return;
@@ -367,6 +371,7 @@ function loadAgentFilterOptions() {
   waFetch('/api/agents').then(function(data) {
     var opts = '<option value="">All Agents</option>';
     (data.agents || []).forEach(function(a) {
+      agentNameMap[a.username] = a.displayName || a.username;
       if (a.role !== 'admin') opts += '<option value="' + escapeHtml(a.username) + '">' + escapeHtml(a.displayName || a.username) + '</option>';
     });
     sel.innerHTML = opts;
@@ -442,7 +447,7 @@ async function loadCallHistory(page) {
           '</span>' +
         '</td>' +
         '<td>' + nameDisplay + '</td>' +
-        '<td><strong style="color:#334155;font-size:12px;">' + escapeHtml(call.agent || '-') + '</strong></td>' +
+        '<td><strong style="color:#334155;font-size:12px;">' + escapeHtml(getAgentDisplayName(call.agent)) + '</strong></td>' +
         '<td>' + (call.source === 'whatsapp' ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#dcfce7;color:#16a34a;">WhatsApp</span>' : '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#eff6ff;color:#2563eb;">Phone</span>') + '</td>' +
         '<td><span id="status-' + call.id + '">' + stBadge + '</span></td>' +
         '<td><span id="duration-' + call.id + '">' + durDisplay + '</span></td>' +
