@@ -258,12 +258,19 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
           <h2 class="section-title" style="margin-bottom:0;">All Patients <span id="patientsCount" style="font-size:13px;color:#94a3b8;font-weight:500;"></span></h2>
           <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-            <input type="text" id="patientSearch" placeholder="Search name, phone, email..." oninput="onPatientSearch()" style="padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;width:200px;">
+            <input type="text" id="patientSearch" placeholder="Search name, phone, email..." oninput="onPatientSearch()" style="padding:5px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;width:180px;">
+            <select id="patientDoctorFilter" onchange="loadPatients(1)" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
+              <option value="">All Doctors</option>
+            </select>
+            <select id="patientServiceFilter" onchange="loadPatients(1)" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
+              <option value="">All Services</option>
+            </select>
             <select id="patientSort" onchange="loadPatients(1)" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;">
               <option value="recent">Most Recent</option>
               <option value="name">Name A-Z</option>
               <option value="phone">Phone</option>
             </select>
+            <button onclick="clearPatientFilters()" style="padding:5px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#888;font-size:11px;cursor:pointer;">Clear</button>
           </div>
         </div>
         <div id="patientsGrid"></div>

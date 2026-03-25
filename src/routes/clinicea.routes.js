@@ -465,6 +465,14 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
       }
     } catch (e) { /* ignore */ }
 
+    // Collect unique doctors and services for filter dropdowns
+    const doctorsSet = new Set();
+    const servicesSet = new Set();
+    patients.forEach(p => {
+      if (p._doctor) doctorsSet.add(p._doctor);
+      if (p._service) servicesSet.add(p._service);
+    });
+
     // Filter by search
     if (search) {
       patients = patients.filter(
@@ -476,6 +484,18 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
       );
     }
 
+    // Filter by doctor
+    const doctorFilter = (req.query.doctor || '').trim();
+    if (doctorFilter) {
+      patients = patients.filter(p => p._doctor === doctorFilter);
+    }
+
+    // Filter by service
+    const serviceFilter = (req.query.service || '').trim();
+    if (serviceFilter) {
+      patients = patients.filter(p => p._service === serviceFilter);
+    }
+
     // Sort
     const sort = req.query.sort || 'recent';
     if (sort === 'name') {
@@ -483,7 +503,6 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
     } else if (sort === 'phone') {
       patients.sort((a, b) => (a.phone || '').localeCompare(b.phone || ''));
     }
-    // 'recent' keeps default order (most recent first from DB/cache)
 
     // Paginate
     const total = patients.length;
@@ -495,6 +514,8 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
       page,
       hasMore: start + pageSize < total,
       total,
+      doctors: Array.from(doctorsSet).sort(),
+      services: Array.from(servicesSet).sort(),
     });
   } catch (err) {
     logEvent('error', 'Patients list fetch failed', err.message);

@@ -109,6 +109,15 @@ function sendQuickMessage(agent) {
     .catch(function(err) { alert('Error: ' + err.message); });
 }
 
+// ===== CLEAR PATIENT FILTERS =====
+function clearPatientFilters() {
+  document.getElementById('patientSearch').value = '';
+  var docSel = document.getElementById('patientDoctorFilter'); if (docSel) docSel.value = '';
+  var svcSel = document.getElementById('patientServiceFilter'); if (svcSel) svcSel.value = '';
+  var sortSel = document.getElementById('patientSort'); if (sortSel) sortSel.value = 'recent';
+  loadPatients(1);
+}
+
 // ===== EDIT PATIENT =====
 function editPatient(id, name, phone, email) {
   var old = document.getElementById('editPatientModal'); if (old) old.remove();
@@ -875,7 +884,12 @@ async function loadPatients(page) {
 
   try {
     var sort = (document.getElementById('patientSort') || {}).value || 'recent';
-    var url = '/api/patients?page=' + page + '&pageSize=50&sort=' + sort + (search ? '&search=' + encodeURIComponent(search) : '');
+    var doctor = (document.getElementById('patientDoctorFilter') || {}).value || '';
+    var service = (document.getElementById('patientServiceFilter') || {}).value || '';
+    var url = '/api/patients?page=' + page + '&pageSize=50&sort=' + sort +
+      (search ? '&search=' + encodeURIComponent(search) : '') +
+      (doctor ? '&doctor=' + encodeURIComponent(doctor) : '') +
+      (service ? '&service=' + encodeURIComponent(service) : '');
     var res = await fetch(url);
     var data = await res.json();
 
@@ -900,32 +914,49 @@ async function loadPatients(page) {
     var totalPages = Math.ceil(total / 50);
     patientsPage = page;
 
-    countEl.textContent = total > 0 ? total + ' patients' : '';
+    countEl.textContent = total > 0 ? '(' + total + ')' : '';
+
+    // Populate filter dropdowns (preserve current selection)
+    var docSel = document.getElementById('patientDoctorFilter');
+    var svcSel = document.getElementById('patientServiceFilter');
+    if (docSel && data.doctors && data.doctors.length > 0) {
+      var curDoc = docSel.value;
+      docSel.innerHTML = '<option value="">All Doctors</option>' + data.doctors.map(function(d) { return '<option value="' + escapeHtml(d) + '">' + escapeHtml(d) + '</option>'; }).join('');
+      docSel.value = curDoc;
+    }
+    if (svcSel && data.services && data.services.length > 0) {
+      var curSvc = svcSel.value;
+      svcSel.innerHTML = '<option value="">All Services</option>' + data.services.map(function(s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>'; }).join('');
+      svcSel.value = curSvc;
+    }
 
     // Render patient table
     var html = '<div class="call-table"><table><thead><tr>' +
-      '<th>Patient</th><th>Phone</th><th>Email</th><th>Doctor</th><th>Service</th><th>Last Appt</th><th>Actions</th>' +
+      '<th>Patient</th><th>Doctor</th><th>Service</th><th>Last Appt</th><th>Actions</th>' +
       '</tr></thead><tbody>';
 
     patients.forEach(function(p) {
       var initials = getInitials(p.name);
-      var lastAppt = p._lastAppointment ? new Date(p._lastAppointment).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : (p.createdDate ? new Date(p.createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '-');
+      var lastAppt = p._lastAppointment ? new Date(p._lastAppointment).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : (p.createdDate ? new Date(p.createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '-');
       var localId = p._local ? p.patientID.replace('local-', '') : '';
+      var phoneLine = p.phone ? '<span style="font-family:monospace;font-size:11px;color:#64748b;">' + escapeHtml(p.phone) + '</span>' : '';
+      var emailLine = p.email ? '<span style="font-size:11px;color:#94a3b8;">' + escapeHtml(p.email) + '</span>' : '';
+      var subLine = [phoneLine, emailLine].filter(Boolean).join(' · ');
 
       html += '<tr style="cursor:pointer;" onclick="openProfileById(\'' + escapeHtml(String(p.patientID)) + '\',\'' + escapeHtml(p.name) + '\')">' +
         '<td><div style="display:flex;align-items:center;gap:10px;">' +
-          '<div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#475569;flex-shrink:0;">' + escapeHtml(initials) + '</div>' +
-          '<strong style="color:#0f172a;">' + escapeHtml(p.name) + '</strong>' +
+          '<div style="width:34px;height:34px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#475569;flex-shrink:0;">' + escapeHtml(initials) + '</div>' +
+          '<div><strong style="color:#0f172a;font-size:13px;">' + escapeHtml(p.name) + '</strong>' +
+            (subLine ? '<div style="margin-top:1px;">' + subLine + '</div>' : '') +
+          '</div>' +
         '</div></td>' +
-        '<td style="font-family:monospace;font-size:12px;color:#334155;">' + escapeHtml(p.phone || '-') + '</td>' +
-        '<td style="font-size:12px;color:#64748b;">' + escapeHtml(p.email || '-') + '</td>' +
         '<td style="font-size:12px;color:#334155;">' + escapeHtml(p._doctor || '-') + '</td>' +
         '<td style="font-size:12px;color:#334155;">' + escapeHtml(p._service || '-') + '</td>' +
-        '<td style="font-size:11px;color:#94a3b8;">' + lastAppt + '</td>' +
-        '<td style="display:flex;gap:4px;">' +
-          (localId ? '<button onclick="event.stopPropagation();editPatient(' + localId + ',\'' + escapeHtml(p.name) + '\',\'' + escapeHtml(p.phone || '') + '\',\'' + escapeHtml(p.email || '') + '\')" style="padding:2px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:10px;cursor:pointer;">Edit</button>' : '') +
-          (p.phone ? '<a href="https://wa.me/' + (p.phone || '').replace(/[^0-9]/g, '') + '" target="_blank" style="padding:2px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#16a34a;font-size:10px;text-decoration:none;cursor:pointer;">WA</a>' : '') +
-        '</td>' +
+        '<td style="font-size:12px;color:#94a3b8;">' + lastAppt + '</td>' +
+        '<td><div style="display:flex;gap:4px;">' +
+          (localId ? '<button onclick="event.stopPropagation();editPatient(' + localId + ',\'' + escapeHtml(p.name) + '\',\'' + escapeHtml(p.phone || '') + '\',\'' + escapeHtml(p.email || '') + '\')" style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:10px;cursor:pointer;">Edit</button>' : '') +
+          (p.phone ? '<a href="https://wa.me/' + (p.phone || '').replace(/[^0-9]/g, '') + '" target="_blank" onclick="event.stopPropagation();" style="padding:3px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#16a34a;font-size:10px;text-decoration:none;cursor:pointer;">WA</a>' : '') +
+        '</div></td>' +
       '</tr>';
     });
 
