@@ -476,6 +476,15 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
       );
     }
 
+    // Sort
+    const sort = req.query.sort || 'recent';
+    if (sort === 'name') {
+      patients.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    } else if (sort === 'phone') {
+      patients.sort((a, b) => (a.phone || '').localeCompare(b.phone || ''));
+    }
+    // 'recent' keeps default order (most recent first from DB/cache)
+
     // Paginate
     const total = patients.length;
     const start = (page - 1) * pageSize;
@@ -536,6 +545,21 @@ router.get(
     }
   }
 );
+
+// ---------------------------------------------------------------------------
+// POST /api/patients/edit — edit a local patient record
+// ---------------------------------------------------------------------------
+router.post('/api/patients/edit', requireAuth, (req, res) => {
+  const { id, name, phone, email, gender, doctor, notes } = req.body;
+  if (!id) return res.json({ error: 'id required' });
+  try {
+    const patientsRepo = require('../db/patients.repo');
+    patientsRepo.update(id, name, phone, email, gender, doctor, null, notes);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Exported helpers (used by call.routes.js for patient lookup)

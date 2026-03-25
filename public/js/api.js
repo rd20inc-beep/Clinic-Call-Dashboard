@@ -109,6 +109,40 @@ function sendQuickMessage(agent) {
     .catch(function(err) { alert('Error: ' + err.message); });
 }
 
+// ===== EDIT PATIENT =====
+function editPatient(id, name, phone, email) {
+  var old = document.getElementById('editPatientModal'); if (old) old.remove();
+  var ov = document.createElement('div');
+  ov.id = 'editPatientModal';
+  ov.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
+  ov.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:420px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.15);">' +
+    '<h3 style="margin:0 0 16px;font-size:16px;color:#0f172a;">Edit Patient</h3>' +
+    '<div style="display:grid;gap:10px;">' +
+      '<div><label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:3px;">Name</label><input id="epName" type="text" value="' + escapeHtml(name) + '" style="width:100%;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;"></div>' +
+      '<div><label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:3px;">Phone</label><input id="epPhone" type="text" value="' + escapeHtml(phone) + '" style="width:100%;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;"></div>' +
+      '<div><label style="font-size:12px;color:#64748b;font-weight:600;display:block;margin-bottom:3px;">Email</label><input id="epEmail" type="text" value="' + escapeHtml(email) + '" style="width:100%;padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;box-sizing:border-box;"></div>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">' +
+      '<button onclick="document.getElementById(\'editPatientModal\').remove()" style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>' +
+      '<button onclick="savePatientEdit(' + id + ')" style="padding:8px 16px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Save</button>' +
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+
+function savePatientEdit(id) {
+  var name = document.getElementById('epName').value.trim();
+  var phone = document.getElementById('epPhone').value.trim();
+  var email = document.getElementById('epEmail').value.trim();
+  if (!name) return alert('Name is required');
+  fetch('/api/patients/edit', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ id: id, name: name, phone: phone, email: email }) })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) { document.getElementById('editPatientModal').remove(); loadPatients(patientsPage); }
+      else alert('Error: ' + (d.error || 'Unknown'));
+    }).catch(function(e) { alert('Error: ' + e.message); });
+}
+
 // ===== TOGGLE CALL DIRECTION =====
 function toggleCallDirection(callId, newDirection) {
   fetch('/api/calls/' + callId + '/direction', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ direction: newDirection }) })
@@ -840,7 +874,8 @@ async function loadPatients(page) {
   paginationEl.style.display = 'none';
 
   try {
-    var url = '/api/patients?page=' + page + '&pageSize=50' + (search ? '&search=' + encodeURIComponent(search) : '');
+    var sort = (document.getElementById('patientSort') || {}).value || 'recent';
+    var url = '/api/patients?page=' + page + '&pageSize=50&sort=' + sort + (search ? '&search=' + encodeURIComponent(search) : '');
     var res = await fetch(url);
     var data = await res.json();
 
@@ -867,23 +902,35 @@ async function loadPatients(page) {
 
     countEl.textContent = total > 0 ? total + ' patients' : '';
 
-    // Render patient cards
+    // Render patient table
+    var html = '<div class="call-table"><table><thead><tr>' +
+      '<th>Patient</th><th>Phone</th><th>Email</th><th>Doctor</th><th>Service</th><th>Last Appt</th><th>Actions</th>' +
+      '</tr></thead><tbody>';
+
     patients.forEach(function(p) {
-      var card = document.createElement('div');
-      card.className = 'patient-card';
-      card.onclick = function() { openProfileById(p.patientID, p.name); };
-
       var initials = getInitials(p.name);
-      var contactLine = [p.phone, p.email].filter(Boolean).join(' | ') || 'No contact info';
+      var lastAppt = p._lastAppointment ? new Date(p._lastAppointment).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : (p.createdDate ? new Date(p.createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '-');
+      var localId = p._local ? p.patientID.replace('local-', '') : '';
 
-      card.innerHTML =
-        '<div class="patient-card-avatar">' + escapeHtml(initials) + '</div>' +
-        '<div class="patient-card-info">' +
-          '<h4>' + escapeHtml(p.name) + '</h4>' +
-          '<p>' + escapeHtml(contactLine) + '</p>' +
-        '</div>';
-      gridEl.appendChild(card);
+      html += '<tr style="cursor:pointer;" onclick="openProfileById(\'' + escapeHtml(String(p.patientID)) + '\',\'' + escapeHtml(p.name) + '\')">' +
+        '<td><div style="display:flex;align-items:center;gap:10px;">' +
+          '<div style="width:32px;height:32px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#475569;flex-shrink:0;">' + escapeHtml(initials) + '</div>' +
+          '<strong style="color:#0f172a;">' + escapeHtml(p.name) + '</strong>' +
+        '</div></td>' +
+        '<td style="font-family:monospace;font-size:12px;color:#334155;">' + escapeHtml(p.phone || '-') + '</td>' +
+        '<td style="font-size:12px;color:#64748b;">' + escapeHtml(p.email || '-') + '</td>' +
+        '<td style="font-size:12px;color:#334155;">' + escapeHtml(p._doctor || '-') + '</td>' +
+        '<td style="font-size:12px;color:#334155;">' + escapeHtml(p._service || '-') + '</td>' +
+        '<td style="font-size:11px;color:#94a3b8;">' + lastAppt + '</td>' +
+        '<td style="display:flex;gap:4px;">' +
+          (localId ? '<button onclick="event.stopPropagation();editPatient(' + localId + ',\'' + escapeHtml(p.name) + '\',\'' + escapeHtml(p.phone || '') + '\',\'' + escapeHtml(p.email || '') + '\')" style="padding:2px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:10px;cursor:pointer;">Edit</button>' : '') +
+          (p.phone ? '<a href="https://wa.me/' + (p.phone || '').replace(/[^0-9]/g, '') + '" target="_blank" style="padding:2px 8px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#16a34a;font-size:10px;text-decoration:none;cursor:pointer;">WA</a>' : '') +
+        '</td>' +
+      '</tr>';
     });
+
+    html += '</tbody></table></div>';
+    gridEl.innerHTML = html;
 
     loadingEl.style.display = 'none';
 
