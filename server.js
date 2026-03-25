@@ -65,6 +65,9 @@ db.exec(`
 try { db.exec('ALTER TABLE calls ADD COLUMN patient_name TEXT'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN patient_id TEXT'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN agent TEXT'); } catch (e) { /* already exists */ }
+try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* already exists */ }
+try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* already exists */ }
 
 // One-time migration: normalize all existing 03XXX numbers to +92XXX
 const oldNumbers = db.prepare("SELECT id, caller_number FROM calls WHERE caller_number LIKE '03%' AND length(caller_number) = 11").all();
@@ -84,6 +87,15 @@ const updateCallPatientName = db.prepare(
 );
 const updateCallPatientId = db.prepare(
   'UPDATE calls SET patient_id = ? WHERE id = ?'
+);
+const updateCallStatus = db.prepare(
+  'UPDATE calls SET call_status = ? WHERE id = ?'
+);
+const updateCallDuration = db.prepare(
+  'UPDATE calls SET duration = ? WHERE id = ?'
+);
+const updateCallStatusAndDuration = db.prepare(
+  'UPDATE calls SET call_status = ?, duration = ? WHERE id = ?'
 );
 const PAGE_SIZE = 10;
 
@@ -293,16 +305,21 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
 
   logEvent('info', `POST /incoming_call received`, `From: "${rawCaller}" | Agent: "${rawAgent}" | Resolved: ${agent || 'null'} | IP: ${req.ip || req.connection.remoteAddress} | CT: ${req.headers['content-type']} | Raw: "${req.rawBody || ''}" | Body: ${JSON.stringify(req.body).substring(0, 300)}`);
 
+  // Parse call metadata (direction, status, duration)
+  const direction = (req.body.Direction || 'inbound').toLowerCase() === 'outbound' ? 'outbound' : 'inbound';
+  const callStatus = (req.body.Status || 'unknown').toLowerCase();
+  const duration = parseInt(req.body.Duration) || null;
+
   // Build Clinicea patient lookup URL
   const cliniceaUrl = `${CLINICEA_BASE_URL}?tp=pat&m=${encodeURIComponent(caller)}`;
 
-  // Log to database with agent
+  // Log to database with agent and call metadata
   const result = db.prepare(
-    'INSERT INTO calls (caller_number, call_sid, clinicea_url, agent) VALUES (?, ?, ?, ?)'
-  ).run(caller, callSid, cliniceaUrl, agent);
+    'INSERT INTO calls (caller_number, call_sid, clinicea_url, agent, direction, call_status, duration) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(caller, callSid, cliniceaUrl, agent, direction, callStatus, duration);
   const callId = result.lastInsertRowid;
 
-  console.log('[incoming_call] DB INSERT', { callId, caller, callSid, agent, cliniceaUrl });
+  console.log('[incoming_call] DB INSERT', { callId, caller, callSid, agent, direction, callStatus, duration, cliniceaUrl });
 
   const callEvent = {
     caller,
@@ -310,6 +327,9 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
     cliniceaUrl,
     callId,
     agent: agent || null,
+    direction,
+    callStatus,
+    duration,
     timestamp: new Date().toISOString()
   };
 
@@ -358,7 +378,84 @@ app.post('/incoming_call', requireWebhookSecret, (req, res) => {
   }
 
   // Respond with OK
-  res.json({ status: 'ok', caller, cliniceaUrl });
+  res.json({ status: 'ok', caller, cliniceaUrl, direction, callStatus });
+});
+
+// --- Call Update (monitor reports duration/status after call ends) ---
+app.post('/api/call-update', requireWebhookSecret, (req, res) => {
+  const callSid = req.body.CallSid;
+  const status = (req.body.Status || '').toLowerCase();
+  const duration = parseInt(req.body.Duration) || null;
+
+  if (!callSid) return res.status(400).json({ error: 'CallSid required' });
+
+  const call = db.prepare('SELECT id, agent FROM calls WHERE call_sid = ?').get(callSid);
+  if (!call) return res.status(404).json({ error: 'Call not found' });
+
+  if (status && ['answered', 'missed', 'rejected'].includes(status)) {
+    updateCallStatus.run(status, call.id);
+  }
+  if (duration !== null) {
+    updateCallDuration.run(duration, call.id);
+  }
+
+  logEvent('info', `Call updated: ${callSid}`, `Status: ${status || 'unchanged'} | Duration: ${duration !== null ? duration + 's' : 'unchanged'}`);
+
+  // Emit update to dashboard
+  const updateEvent = { callId: call.id, callStatus: status || undefined, duration, agent: call.agent || null };
+  if (call.agent) {
+    io.to('agent:' + call.agent).emit('call_updated', updateEvent);
+    io.to('role:admin').emit('call_updated', updateEvent);
+  } else {
+    io.to('role:admin').emit('call_updated', updateEvent);
+  }
+
+  res.json({ status: 'ok' });
+});
+
+// --- Call Stats (summary counts for dashboard) ---
+app.get('/api/call-stats', requireAuth, (req, res) => {
+  const isAdmin = req.session.role === 'admin';
+  const agent = req.session.username;
+
+  function q(sql, ...params) {
+    return db.prepare(sql).get(...params);
+  }
+
+  let total, inbound, outbound, answered, missed, avgDuration;
+  let todayTotal, todayInbound, todayOutbound, todayAnswered, todayMissed;
+
+  if (isAdmin) {
+    total = q('SELECT COUNT(*) as c FROM calls').c;
+    inbound = q("SELECT COUNT(*) as c FROM calls WHERE direction = 'inbound'").c;
+    outbound = q("SELECT COUNT(*) as c FROM calls WHERE direction = 'outbound'").c;
+    answered = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'answered'").c;
+    missed = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'missed'").c;
+    avgDuration = q('SELECT AVG(duration) as a FROM calls WHERE duration IS NOT NULL').a;
+    todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now')").c;
+    todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND direction = 'inbound'").c;
+    todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND direction = 'outbound'").c;
+    todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'answered'").c;
+    todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'missed'").c;
+  } else {
+    total = q('SELECT COUNT(*) as c FROM calls WHERE agent = ?', agent).c;
+    inbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND direction = 'inbound'", agent).c;
+    outbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND direction = 'outbound'", agent).c;
+    answered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered'", agent).c;
+    missed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'missed'", agent).c;
+    avgDuration = q('SELECT AVG(duration) as a FROM calls WHERE agent = ? AND duration IS NOT NULL', agent).a;
+    todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now')", agent).c;
+    todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND direction = 'inbound'", agent).c;
+    todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND direction = 'outbound'", agent).c;
+    todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'answered'", agent).c;
+    todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'missed'", agent).c;
+  }
+
+  res.json({
+    total, inbound, outbound, answered, missed,
+    avgDuration: Math.round(avgDuration || 0),
+    today: { total: todayTotal, inbound: todayInbound, outbound: todayOutbound, answered: todayAnswered, missed: todayMissed }
+  });
 });
 
 // --- Test Call (simulate incoming call from dashboard) ---
@@ -367,13 +464,14 @@ app.post('/api/test-call', requireAuth, (req, res) => {
   const agent = req.session.username;
   const cliniceaUrl = `${CLINICEA_BASE_URL}?tp=pat&m=${encodeURIComponent(caller)}`;
   const callSid = 'test-' + Date.now();
+  const direction = (req.body.direction || 'inbound').toLowerCase() === 'outbound' ? 'outbound' : 'inbound';
 
   const result = db.prepare(
-    'INSERT INTO calls (caller_number, call_sid, clinicea_url, agent) VALUES (?, ?, ?, ?)'
-  ).run(caller, callSid, cliniceaUrl, agent);
+    'INSERT INTO calls (caller_number, call_sid, clinicea_url, agent, direction) VALUES (?, ?, ?, ?, ?)'
+  ).run(caller, callSid, cliniceaUrl, agent, direction);
   const callId = result.lastInsertRowid;
 
-  const callEvent = { caller, callSid, cliniceaUrl, callId, agent, timestamp: new Date().toISOString() };
+  const callEvent = { caller, callSid, cliniceaUrl, callId, agent, direction, callStatus: 'unknown', duration: null, timestamp: new Date().toISOString() };
 
   io.to('agent:' + agent).emit('incoming_call', callEvent);
   if (req.session.role === 'admin') {
@@ -745,6 +843,8 @@ function Start-Monitor {
     }
 
     $seenIds = @{}; $recentCalls = @{}
+    $activeCalls = @{}  # callSid -> @{ StartTime, NotifId, Phone } — for duration tracking
+    $callUpdateUrl = "${baseUrl}/api/call-update"
     $lastHeartbeat = [DateTimeOffset]::Now.ToUnixTimeSeconds() - 999
     $consecutiveErrors = 0
     $startTime = [DateTimeOffset]::Now.ToUnixTimeSeconds()
@@ -846,11 +946,28 @@ function Start-Monitor {
                     try {
                         Write-Log "=== CALL DETECTED [$appName]: $fullText ==="
 
+                        # Determine call direction and status
+                        $direction = "inbound"
+                        $callStatus = "unknown"
+                        if ($allTextLower -match "missed call|missed") {
+                            $callStatus = "missed"
+                            $direction = "inbound"
+                        } elseif ($allTextLower -match "outgoing|dialing|you called|calling\.\.\.|outbound") {
+                            $direction = "outbound"
+                            $callStatus = "answered"
+                        } elseif ($allTextLower -match "incoming|ringing") {
+                            $direction = "inbound"
+                            $callStatus = "answered"
+                        } elseif ($allTextLower -match "rejected|declined|busy") {
+                            $callStatus = "rejected"
+                        }
+                        Write-Log "Call direction=$direction status=$callStatus"
+
                         # Try to extract phone number from all available text
                         $phone = $null
 
                         # Method 1: strip call keywords then find number
-                        $stripped = $fullText -replace '(?i)(incoming\s*(voice\s*|video\s*|audio\s*)?(call)?|calling|ringing|answer|decline|voice\s*call|video\s*call|audio\s*call|missed call)', ''
+                        $stripped = $fullText -replace '(?i)(incoming\s*(voice\s*|video\s*|audio\s*)?(call)?|outgoing\s*call|calling|ringing|answer|decline|voice\s*call|video\s*call|audio\s*call|missed call|dialing)', ''
                         $stripped = $stripped -replace '\|', ' '
                         $stripped = $stripped.Trim()
                         if ($stripped -match '(\+?[\d][\d\s\-\(\)]{6,18}[\d])') {
@@ -894,8 +1011,9 @@ function Start-Monitor {
                             continue
                         }
                         $recentCalls[$phone] = $now
-                        $body = "From=$([uri]::EscapeDataString($phone))&CallSid=local-$now&Agent=$([uri]::EscapeDataString($agentName))"
-                        Write-Log "SENDING WEBHOOK: $phone -> $webhookUrl | Body: $body"
+                        $callSid = "local-$now"
+                        $body = "From=$([uri]::EscapeDataString($phone))&CallSid=$callSid&Agent=$([uri]::EscapeDataString($agentName))&Direction=$direction&Status=$callStatus"
+                        Write-Log "SENDING WEBHOOK: $phone -> $webhookUrl | Direction=$direction Status=$callStatus | Body: $body"
                         for ($wRetry = 1; $wRetry -le 3; $wRetry++) {
                             try {
                                 $resp = Invoke-RestMethod -Uri $webhookUrl -Method POST -Body $body -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 10
@@ -906,9 +1024,40 @@ function Start-Monitor {
                                 if ($wRetry -lt 3) { Start-Sleep -Seconds 2 }
                             }
                         }
+
+                        # Track active call for duration measurement
+                        if ($callStatus -ne "missed") {
+                            $activeCalls[$callSid] = @{ StartTime = [DateTimeOffset]::Now; NotifId = $nid; Phone = $phone }
+                            Write-Log "Tracking active call: $callSid (notif $nid)"
+                        }
                     } catch { Write-Log "Call processing error: $_" }
                 }
             }
+
+            # --- Duration tracking: detect ended calls by notification disappearance ---
+            if ($activeCalls.Count -gt 0) {
+                $currentNotifIds = @{}
+                foreach ($notif in $notifications) { $currentNotifIds[$notif.Id] = $true }
+                $endedCalls = @($activeCalls.Keys | Where-Object { -not $currentNotifIds.ContainsKey($activeCalls[$_].NotifId) })
+                foreach ($sid in $endedCalls) {
+                    $callInfo = $activeCalls[$sid]
+                    $durationSec = [math]::Round(([DateTimeOffset]::Now - $callInfo.StartTime).TotalSeconds)
+                    Write-Log "Call ended: $sid phone=$($callInfo.Phone) duration=${durationSec}s"
+                    try {
+                        $updateBody = "CallSid=$([uri]::EscapeDataString($sid))&Duration=$durationSec&Status=answered"
+                        Invoke-RestMethod -Uri $callUpdateUrl -Method POST -Body $updateBody -ContentType "application/x-www-form-urlencoded" -Headers @{ "X-Webhook-Secret" = $webhookSecret } -TimeoutSec 10 | Out-Null
+                        Write-Log "Call update sent OK: $sid duration=${durationSec}s"
+                    } catch { Write-Log "Call update failed: $_" }
+                    $activeCalls.Remove($sid)
+                }
+                # Timeout stale active calls (>1 hour)
+                $staleCalls = @($activeCalls.Keys | Where-Object { ([DateTimeOffset]::Now - $activeCalls[$_].StartTime).TotalSeconds -gt 3600 })
+                foreach ($sid in $staleCalls) {
+                    Write-Log "Removing stale active call: $sid (>1 hour)"
+                    $activeCalls.Remove($sid)
+                }
+            }
+
             if ($seenIds.Count -gt 1000) { $seenIds = @{} }
             $now = [DateTimeOffset]::Now.ToUnixTimeSeconds()
             $expired = @($recentCalls.Keys | Where-Object { ($now - $recentCalls[$_]) -gt 60 })
