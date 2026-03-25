@@ -1636,6 +1636,13 @@
           document.getElementById('callbackPager').innerHTML = '';
           return;
         }
+        // Build agent name lookup from overview data
+        var agentNames = {};
+        if (overviewData && overviewData.agentStats) {
+          overviewData.agentStats.forEach(function(a) { agentNames[a.username] = a.full_name || a.username; });
+        }
+        function getAgentName(username) { return agentNames[username] || username || '-'; }
+
         var html = '<table><thead><tr><th>Age</th><th>Number</th><th>Patient</th><th>Missed By</th><th>Status</th><th>Assigned</th><th>Notes</th><th>Actions</th></tr></thead><tbody>';
         data.callbacks.forEach(function(cb) {
           var statusBadge = { pending: 'badge-danger', assigned: 'badge-warning', in_progress: 'badge-info', called_back: 'badge-success', resolved: 'badge-active', unreachable: 'badge-disabled', no_callback_needed: 'badge-disabled' }[cb.callback_status] || '';
@@ -1648,7 +1655,7 @@
           html += '<td><span style="color:' + ageColor + ';font-weight:600;font-size:12px;">' + ageText + '</span><br><span class="meta">' + fmtDate(cb.call_time || cb.created_at) + '</span></td>';
           html += '<td style="font-family:monospace;font-size:12px;">' + esc(cb.caller_number) + '</td>';
           html += '<td>' + esc(cb.patient_name || '-') + '</td>';
-          html += '<td>' + esc(cb.original_agent || '-') + '</td>';
+          html += '<td>' + esc(getAgentName(cb.original_agent)) + '</td>';
           html += '<td><span class="badge ' + statusBadge + '">' + esc(cb.callback_status.replace(/_/g, ' ')) + '</span></td>';
           // Assign dropdown
           html += '<td>';
@@ -1656,11 +1663,11 @@
             html += '<select class="filter-select" style="font-size:11px;padding:3px 6px;" onchange="cbAssign(' + cb.id + ',this.value)">';
             html += '<option value="">Assign...</option>';
             if (overviewData && overviewData.agentStats) {
-              overviewData.agentStats.forEach(function(a) { html += '<option value="' + esc(a.username) + '"' + (cb.assigned_agent === a.username ? ' selected' : '') + '>' + esc(a.full_name || a.username) + '</option>'; });
+              overviewData.agentStats.forEach(function(a) { html += '<option value="' + esc(a.username) + '"' + (cb.assigned_agent === a.username ? ' selected' : '') + '>' + esc(getAgentName(a.username)) + '</option>'; });
             }
             html += '</select>';
           } else {
-            html += esc(cb.assigned_agent || '-');
+            html += esc(cb.assigned_agent ? getAgentName(cb.assigned_agent) : '-');
           }
           html += '</td>';
           // Notes
