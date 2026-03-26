@@ -24,18 +24,28 @@ const { config } = require('../config/env');
 const bcrypt = require('bcryptjs');
 
 // In-memory token → agent map with TTL (24 hours)
-const appTokens = {};
+const appTokens = new Map();
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_TOKENS = 100; // hard cap to prevent memory growth
 
 // Cleanup expired tokens every 30 minutes
 setInterval(() => {
   const now = Date.now();
-  for (const [token, entry] of Object.entries(appTokens)) {
+  for (const [token, entry] of appTokens) {
     if (now - entry.loginAt > TOKEN_TTL_MS) {
-      delete appTokens[token];
+      appTokens.delete(token);
     }
   }
 }, 30 * 60 * 1000);
+
+// Evict oldest tokens if over cap
+function evictOldestTokens() {
+  if (appTokens.size <= MAX_TOKENS) return;
+  const sorted = [...appTokens.entries()].sort((a, b) => a[1].loginAt - b[1].loginAt);
+  while (appTokens.size > MAX_TOKENS) {
+    appTokens.delete(sorted.shift()[0]);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // POST /api/agent/login — mobile app authentication (rate limited)
@@ -70,16 +80,17 @@ router.post('/api/agent/login', loginLimiter, (req, res) => {
   }
 
   // Single device enforcement: invalidate all previous tokens for this agent
-  for (const [existingToken, entry] of Object.entries(appTokens)) {
+  for (const [existingToken, entry] of appTokens) {
     if (entry.agent === agent_id) {
-      delete appTokens[existingToken];
+      appTokens.delete(existingToken);
       logEvent('info', 'Mobile session invalidated for ' + agent_id + ' (new login from ' + getClientIP(req) + ')');
     }
   }
 
   // Generate a new token
   const token = require('crypto').randomBytes(32).toString('hex');
-  appTokens[token] = { agent: agent_id, role: user.role, loginAt: Date.now(), ip: getClientIP(req) };
+  appTokens.set(token, { agent: agent_id, role: user.role, loginAt: Date.now(), ip: getClientIP(req) });
+  evictOldestTokens();
 
   // Record login in DB
   try {
@@ -111,11 +122,11 @@ function resolveAppAgent(req) {
   const authHeader = req.headers.authorization || '';
   if (authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
-    const entry = appTokens[token];
+    const entry = appTokens.get(token);
     if (entry) {
       // Check TTL
       if (Date.now() - entry.loginAt > TOKEN_TTL_MS) {
-        delete appTokens[token];
+        appTokens.delete(token);
         return null;
       }
       return entry.agent;

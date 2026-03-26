@@ -13,8 +13,8 @@ const callsRepo = require('../db/calls.repo');
 const auditRepo = require('../db/audit.repo');
 const bcrypt = require('bcryptjs');
 
-// In-memory monitor log storage: { agent: "log text" }
-const monitorLogs = {};
+// In-memory monitor log storage (bounded Map with LRU eviction)
+const monitorLogs = new Map();
 
 // Maximum log size per agent (50 KB), max 50 agents in memory
 const MAX_LOG_SIZE = 50 * 1024;
@@ -67,11 +67,13 @@ module.exports = function setupAdminRoutes(io) {
       logText = logText.slice(-MAX_LOG_SIZE);
     }
 
-    monitorLogs[agent] = logText;
-    // Enforce max agents in memory (LRU: drop oldest)
-    const keys = Object.keys(monitorLogs);
-    if (keys.length > MAX_LOG_AGENTS) {
-      delete monitorLogs[keys[0]];
+    // LRU: delete + re-set moves entry to end of Map insertion order
+    monitorLogs.delete(agent);
+    monitorLogs.set(agent, logText);
+    // Enforce max agents in memory (evict oldest = first entry)
+    while (monitorLogs.size > MAX_LOG_AGENTS) {
+      const oldest = monitorLogs.keys().next().value;
+      monitorLogs.delete(oldest);
     }
     res.json({ status: 'ok' });
   });
@@ -81,7 +83,7 @@ module.exports = function setupAdminRoutes(io) {
   // -------------------------------------------------------------------------
   router.get('/api/monitor-log/:agent', requireAuth, requireAdmin, (req, res) => {
     const agent = req.params.agent || '_default';
-    res.type('text/plain').send(monitorLogs[agent] || '(no log uploaded yet)');
+    res.type('text/plain').send(monitorLogs.get(agent) || '(no log uploaded yet)');
   });
 
   // -------------------------------------------------------------------------
@@ -89,9 +91,9 @@ module.exports = function setupAdminRoutes(io) {
   // -------------------------------------------------------------------------
   router.get('/api/monitor-log', requireAuth, requireAdmin, (req, res) => {
     res.json(
-      Object.keys(monitorLogs).map((k) => ({
+      [...monitorLogs.keys()].map((k) => ({
         agent: k,
-        lines: (monitorLogs[k] || '').split('\n').length,
+        lines: (monitorLogs.get(k) || '').split('\n').length,
       }))
     );
   });
@@ -823,10 +825,8 @@ module.exports = function setupAdminRoutes(io) {
     try {
       const mobileRoutes = require('./mobileApp.routes');
       const tokens = mobileRoutes.appTokens;
-      for (const token of Object.keys(tokens)) {
-        delete tokens[token];
-        mobileInvalidated++;
-      }
+      mobileInvalidated = tokens.size;
+      tokens.clear();
     } catch (e) { /* ignore */ }
 
     // 3. Set all agents to offline in DB

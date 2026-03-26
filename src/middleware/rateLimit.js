@@ -2,6 +2,8 @@
 // Options: { windowMs, max, message, keyFn }
 // keyFn defaults to IP-based
 
+const MAX_RATE_LIMIT_ENTRIES = 10000; // hard cap per limiter
+
 function createRateLimiter({ windowMs = 60000, max = 60, message = 'Too many requests', keyFn } = {}) {
   const hits = new Map();
 
@@ -19,6 +21,11 @@ function createRateLimiter({ windowMs = 60000, max = 60, message = 'Too many req
     const record = hits.get(key);
 
     if (!record || now - record.start > windowMs) {
+      // Evict oldest if at cap
+      if (hits.size >= MAX_RATE_LIMIT_ENTRIES) {
+        const oldest = hits.keys().next().value;
+        hits.delete(oldest);
+      }
       hits.set(key, { start: now, count: 1 });
       return next();
     }
