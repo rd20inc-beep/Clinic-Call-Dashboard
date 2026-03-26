@@ -21,12 +21,15 @@ const stmtInsertCall = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
+// Only update status if call hasn't already been finalized (prevents race condition)
+// "answered" can always overwrite any status (even a wrongly-finalized "missed")
 const stmtUpdateCallStatus = db.prepare(
-  'UPDATE calls SET call_status = ? WHERE id = ?'
+  "UPDATE calls SET call_status = ? WHERE id = ? AND (call_status = 'unknown' OR ? = 'answered')"
 );
 
+// Duration update also guards: only if still unknown OR upgrading to answered
 const stmtUpdateCallDuration = db.prepare(
-  'UPDATE calls SET duration = ?, call_status = ? WHERE id = ?'
+  "UPDATE calls SET duration = ?, call_status = ? WHERE id = ? AND (call_status = 'unknown' OR call_status = 'missed' OR ? = 'answered')"
 );
 
 const stmtUpdatePatientName = db.prepare(
@@ -138,27 +141,52 @@ module.exports = {
   },
 
   /**
-   * Update call status. Auto-creates callback if missed.
+   * Update call status. Guards against overwriting finalized status.
+   * "answered" can always overwrite (even correcting a wrongly-finalized "missed").
+   * Auto-creates callback if missed.
    */
   updateCallStatus(callId, status) {
-    stmtUpdateCallStatus.run(status, callId);
+    const result = stmtUpdateCallStatus.run(status, callId, status);
+    if (result.changes === 0) {
+      // Status was already finalized — check if we're correcting to "answered"
+      const existing = db.prepare('SELECT call_status FROM calls WHERE id = ?').get(callId);
+      if (existing && existing.call_status !== status) {
+        console.log('[calls] Skipped status update for call ' + callId + ': already ' + existing.call_status + ', tried to set ' + status);
+      }
+    }
     // Auto-create callback for missed calls
-    if (status === 'missed' || status === 'rejected' || status === 'no_answer') {
+    if (result.changes > 0 && (status === 'missed' || status === 'rejected' || status === 'no_answer')) {
       try {
         const call = db.prepare('SELECT caller_number, patient_name, agent, timestamp FROM calls WHERE id = ?').get(callId);
         if (call) {
           const cbRepo = require('./callbacks.repo');
           cbRepo.createFromMissedCall(callId, call.caller_number, call.patient_name, call.agent, call.timestamp);
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        console.error('[calls] Failed to create callback for call ' + callId + ':', e.message);
+      }
     }
+    return result.changes;
   },
 
   /**
    * Update call duration and mark as answered.
+   * Can overwrite "missed" status (correcting wrongly-finalized calls).
    */
   updateCallDuration(callId, duration) {
-    stmtUpdateCallDuration.run(duration, 'answered', callId);
+    const result = stmtUpdateCallDuration.run(duration, 'answered', callId, 'answered');
+    if (result.changes > 0) {
+      // If call was wrongly marked "missed", remove the callback
+      try {
+        const cbRepo = require('./callbacks.repo');
+        const cb = db.prepare("SELECT id FROM callbacks WHERE call_id = ? AND callback_status = 'pending'").get(callId);
+        if (cb) {
+          db.prepare("UPDATE callbacks SET callback_status = 'no_callback_needed', resolved_at = datetime('now') WHERE id = ?").run(cb.id);
+          console.log('[calls] Auto-resolved callback ' + cb.id + ' — call ' + callId + ' was actually answered');
+        }
+      } catch (e) { /* ignore */ }
+    }
+    return result.changes;
   },
 
   /**
@@ -212,16 +240,22 @@ module.exports = {
     // Get the calls that will be finalized (before updating them)
     const stale = db.prepare("SELECT id, caller_number, patient_name, agent, timestamp FROM calls WHERE call_status = 'unknown' AND timestamp < datetime('now', '-15 minutes')").all();
 
+    if (stale.length === 0) return 0;
+
     const changes = stmtFinalizeStale.run().changes;
 
+    if (changes > 0) {
+      console.log('[calls] Auto-finalized ' + changes + ' stale calls as missed: ' + stale.map(c => '#' + c.id + ' ' + (c.caller_number || '?')).join(', '));
+    }
+
     // Auto-create callbacks for newly missed calls
-    if (stale.length > 0) {
-      try {
-        const cbRepo = require('./callbacks.repo');
-        for (const call of stale) {
-          cbRepo.createFromMissedCall(call.id, call.caller_number, call.patient_name, call.agent, call.timestamp);
-        }
-      } catch (e) { /* callbacks repo may not be ready */ }
+    try {
+      const cbRepo = require('./callbacks.repo');
+      for (const call of stale) {
+        cbRepo.createFromMissedCall(call.id, call.caller_number, call.patient_name, call.agent, call.timestamp);
+      }
+    } catch (e) {
+      console.error('[calls] Failed to create callbacks from finalized calls:', e.message);
     }
 
     return changes;
