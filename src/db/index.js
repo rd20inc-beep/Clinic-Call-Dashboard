@@ -193,6 +193,24 @@ try { db.exec('ALTER TABLE users ADD COLUMN device_info TEXT'); } catch (e) { /*
 
 // Call dedup index + timing and source columns
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_sid ON calls(call_sid) WHERE call_sid IS NOT NULL'); } catch(e) {}
+
+// --- Performance indexes (prevents full table scans) ---
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_agent ON calls(agent)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_timestamp ON calls(timestamp DESC)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(call_status)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_direction ON calls(direction)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller_number)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_agent_ts ON calls(agent, timestamp DESC)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_status_ts ON calls(call_status, timestamp DESC)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_phone ON wa_messages(phone)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_status ON wa_messages(status)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_dir ON wa_messages(direction, created_at DESC)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_phone ON wa_appointment_tracking(patient_phone)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_status ON callbacks(callback_status)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_caller ON callbacks(caller_number)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name)'); } catch(e) {}
+
 // Call timing and source columns
 try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN call_ended_at DATETIME'); } catch (e) { /* exists */ }
