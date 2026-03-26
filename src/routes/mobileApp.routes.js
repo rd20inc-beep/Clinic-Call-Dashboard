@@ -193,7 +193,7 @@ router.post('/api/incoming-call', (req, res) => {
   const sourceIp = getClientIP(req);
 
   logEvent('info', 'Mobile call: ' + event + ' from ' + caller + ' (' + agent + ')',
-    'Status: ' + (call_status || '-') + ', Duration: ' + (duration || 0) + 's');
+    'Raw: ' + phone_number + ', Normalized: ' + caller + ', Status: ' + (call_status || '-') + ', Duration: ' + (duration || 0) + 's, Type: ' + (call_type || '-'));
 
   if (event === 'ringing') {
     // New call — insert to DB
@@ -263,10 +263,17 @@ router.post('/api/incoming-call', (req, res) => {
 
     try {
       const { db } = require('../db/index');
-      // Find matching recent call (within last 10 minutes for this agent + caller)
+      const { getPhoneVariants } = require('../utils/phone');
+      // Find matching recent call (within last 30 minutes for this agent + caller)
+      // Use phone variants to handle format differences between ringing and call_ended
+      const variants = [...getPhoneVariants(caller)];
+      if (!variants.includes(caller)) variants.unshift(caller);
+      const placeholders = variants.map(() => '?').join(',');
       const recent = db.prepare(
-        "SELECT id, direction FROM calls WHERE agent = ? AND caller_number = ? AND timestamp >= datetime('now', '-10 minutes') ORDER BY timestamp DESC LIMIT 1"
-      ).get(agent, caller);
+        `SELECT id, direction FROM calls WHERE agent = ? AND caller_number IN (${placeholders}) AND call_status = 'unknown' AND timestamp >= datetime('now', '-30 minutes') ORDER BY timestamp DESC LIMIT 1`
+      ).get(agent, ...variants);
+
+      logEvent('info', 'call_ended match: agent=' + agent + ', caller=' + caller + ', variants=' + variants.join('|') + ', matched=' + (recent ? recent.id : 'NONE'));
 
       if (recent) {
         // Always update status + duration together

@@ -44,8 +44,16 @@ function showPage(page) {
       frame.src = '/admin-console.html';
     }
     document.body.style.overflow = 'hidden';
+    // Hide parent chat widget so it doesn't duplicate over iframe
+    var chatFab = document.querySelector('.chat-fab');
+    var chatPanel = document.querySelector('.chat-panel');
+    if (chatFab) chatFab.style.display = 'none';
+    if (chatPanel) chatPanel.style.display = 'none';
   } else {
     document.body.style.overflow = '';
+    // Restore parent chat widget
+    var chatFab = document.querySelector('.chat-fab');
+    if (chatFab) chatFab.style.display = '';
   }
 }
 
