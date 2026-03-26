@@ -97,7 +97,7 @@ router.post('/api/agent/login', loginLimiter, (req, res) => {
     const usersRepo = require('../db/users.repo');
     usersRepo.recordLogin(agent_id);
     usersRepo.setStatus(agent_id, 'online');
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('[mobile] recordLogin failed for ' + agent_id + ':', e.message); }
 
   // Remember IP mapping
   const fakeReq = { headers: req.headers, ip: getClientIP(req), socket: { remoteAddress: req.ip } };
@@ -159,7 +159,7 @@ router.post('/api/app/heartbeat', (req, res) => {
     const usersRepo = require('../db/users.repo');
     usersRepo.updateLastSeen(agent);
     usersRepo.setStatus(agent, 'online');
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('[mobile] heartbeat DB update failed for ' + agent + ':', e.message); }
 
   // Remember IP mapping
   const fakeReq = { headers: req.headers, ip: getClientIP(req), socket: { remoteAddress: req.ip } };
@@ -230,7 +230,7 @@ router.post('/api/incoming-call', (req, res) => {
     try {
       const patientsRepo = require('../db/patients.repo');
       patientsRepo.upsertFromCall(caller_name, caller, null);
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[mobile] patient upsert failed for ' + caller + ':', e.message); }
 
     // Mark agent busy
     setOnCall(agent);
@@ -258,9 +258,9 @@ router.post('/api/incoming-call', (req, res) => {
             callsRepo.updatePatientName(callId, patient.name);
             if (patient.patientId) callsRepo.updatePatientId(callId, patient.patientId);
           }
-        }).catch(() => {});
+        }).catch((e) => { console.error('[mobile] Clinicea patient lookup failed for ' + caller + ':', e.message); });
       }
-    } catch (e) { /* clinicea not available */ }
+    } catch (e) { console.error('[mobile] Clinicea service not available:', e.message); }
 
     return res.json({ status: 'ok', callId });
 

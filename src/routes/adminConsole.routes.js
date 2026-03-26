@@ -49,7 +49,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
         });
         todayAppointments = aptRes.appointments || [];
       }
-    } catch (e) { /* appointments not available */ }
+    } catch (e) { console.error('[admin-console] Appointments fetch failed:', e.message); }
 
     // If direct fetch didn't work, try wa_appointment_tracking table
     let appointmentsTotal = 0;
@@ -57,7 +57,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
     try {
       appointmentsTotal = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking").get().c;
       appointmentsToday = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking WHERE date(appointment_date) = date('now')").get().c;
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
     // Match appointments to agents via phone numbers
     // An appointment is "attributed" to an agent if the agent handled a call from that phone
@@ -78,7 +78,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
           agentAppointments[match.agent] = (agentAppointments[match.agent] || 0) + 1;
         }
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
     const callsToday = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now')").c;
     const answeredToday = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'answered'").c;
@@ -112,7 +112,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
         todayMissed = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'missed'").get(username).c;
         todayTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL").get(username).s;
         weekCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days')").get(username).c;
-      } catch (e) { /* ignore */ }
+      } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
       // Get DB ID and last_seen
       let dbId = null, lastSeen = null, avgDur = 0;
@@ -120,7 +120,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
         const dbUser = usersRepo.getByUsername(username);
         if (dbUser) { dbId = dbUser.id; lastSeen = dbUser.last_seen; }
         avgDur = todayCalls > 0 ? db.prepare("SELECT COALESCE(AVG(duration),0) as a FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL AND duration > 0").get(username).a : 0;
-      } catch (e) { /* ignore */ }
+      } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
       agentStats.push({
         id: dbId,
@@ -152,7 +152,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
       callsMonth = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '-30 days')").c;
       inboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp) = date('now') AND direction = 'inbound' AND duration IS NOT NULL").s;
       outboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp) = date('now') AND direction = 'outbound' AND duration IS NOT NULL").s;
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
     // Response matches exact field names expected by remote_admin.html
     res.json({
@@ -365,7 +365,7 @@ router.get('/admin/agents/:id/performance', (req, res) => {
         "FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-14 days') " +
         "GROUP BY day ORDER BY day"
       ).all(u.username);
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
     // Calculate online time today (time since last_login if logged in today)
     let loggedInToday = 0;
@@ -377,7 +377,7 @@ router.get('/admin/agents/:id/performance', (req, res) => {
           loggedInToday = Math.round((Date.now() - loginDate.getTime()) / 1000);
         }
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
     // Appointments attributed to this agent (phone match)
     let agentAppointments = [];
@@ -397,7 +397,7 @@ router.get('/admin/agents/:id/performance', (req, res) => {
           });
         }
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
     res.json({
       agent: {
@@ -457,7 +457,7 @@ router.get('/admin/leaderboard', (req, res) => {
         const match = db.prepare("SELECT agent FROM calls WHERE caller_number LIKE ? AND agent IS NOT NULL ORDER BY timestamp DESC LIMIT 1").get('%' + phone.slice(-10) + '%');
         if (match && match.agent) agentAppts[match.agent] = (agentAppts[match.agent] || 0) + 1;
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
     const users = getUsers();
     const ranked = rows.map((r, i) => ({
@@ -797,7 +797,7 @@ router.get('/admin/appointments', (req, res) => {
     try {
       const agentRows = db.prepare("SELECT DISTINCT agent FROM calls WHERE agent IS NOT NULL ORDER BY agent").all();
       agentRows.forEach(r => agents.push(r.agent));
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
     res.json({ appointments, agents, services, doctors, total: appointments.length });
   } catch (err) {

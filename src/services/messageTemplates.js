@@ -138,7 +138,7 @@ function getAllTemplates() {
         };
       }
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('[templates] Failed to load custom templates:', e.message); }
   return result;
 }
 

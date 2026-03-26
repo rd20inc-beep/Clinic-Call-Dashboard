@@ -62,7 +62,7 @@ function persistAndBroadcast(username) {
     const usersRepo = require('../db/users.repo');
     usersRepo.setStatus(username, newStatus);
     if (newStatus === 'offline') usersRepo.updateLastSeen(username);
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('[presence] DB status update failed for ' + username + ':', e.message); }
 
   // Broadcast to admins (always, so dashboard stays fresh)
   if (_io) {
@@ -228,12 +228,12 @@ function setupSockets(io, sessionMiddleware) {
       persistAndBroadcast(username);
 
       // Record login in DB
-      try { require('../db/users.repo').recordLogin(username); } catch (e) { /* ignore */ }
+      try { require('../db/users.repo').recordLogin(username); } catch (e) { console.error('[socket] recordLogin failed for ' + username + ':', e.message); }
 
       // --- Activity ping from frontend (every 60s) ---
       socket.on('activity', () => {
         updateActivity(username);
-        try { require('../db/users.repo').updateLastSeen(username); } catch (e) { /* ignore */ }
+        try { require('../db/users.repo').updateLastSeen(username); } catch (e) { console.error('[socket] updateLastSeen failed for ' + username + ':', e.message); }
       });
 
       socket.emit('join_confirm', { username, role, rooms, socketId: socket.id });

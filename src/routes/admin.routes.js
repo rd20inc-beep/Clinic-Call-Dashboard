@@ -171,7 +171,7 @@ module.exports = function setupAdminRoutes(io) {
         // Recent calls (last 5)
         try {
           recentCalls = db.prepare("SELECT caller_number, agent, direction, call_status, timestamp FROM calls ORDER BY timestamp DESC LIMIT 5").all();
-        } catch (e) { /* ignore */ }
+        } catch (e) { console.error('[admin] Operation failed:', e.message); }
 
         // Alerts
         if (todayMissed > 5) alerts.push({ type: 'warn', text: todayMissed + ' missed calls today' });
@@ -270,7 +270,7 @@ module.exports = function setupAdminRoutes(io) {
         totalTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND duration IS NOT NULL").get(username).s;
         const lastRow = db.prepare("SELECT timestamp FROM calls WHERE agent = ? ORDER BY timestamp DESC LIMIT 1").get(username);
         lastCallAt = lastRow ? lastRow.timestamp : null;
-      } catch (e) { /* ignore */ }
+      } catch (e) { console.error('[admin] Operation failed:', e.message); }
 
       // Extra metrics
       let longestToday = 0, longestWeek = 0, todayAnswered = 0;
@@ -278,7 +278,7 @@ module.exports = function setupAdminRoutes(io) {
         longestToday = db.prepare("SELECT COALESCE(MAX(duration),0) as m FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL").get(username).m;
         longestWeek = db.prepare("SELECT COALESCE(MAX(duration),0) as m FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days') AND duration IS NOT NULL").get(username).m;
         todayAnswered = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'answered'").get(username).c;
-      } catch (e) { /* ignore */ }
+      } catch (e) { console.error('[admin] Operation failed:', e.message); }
 
       // Performance score: answered +2, missed -3, talk time bonus
       const score = Math.max(0, (answeredCalls * 2) - (missedCalls * 3) + Math.floor(totalTalkTime / 300));
@@ -298,7 +298,7 @@ module.exports = function setupAdminRoutes(io) {
           dbLastLogin = dbUser.last_login ? new Date(dbUser.last_login).getTime() : null;
           dbStatus = dbUser.status || 'offline';
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) { console.error('[admin] Operation failed:', e.message); }
 
       // Best available "last seen" — prefer live presence, fall back to DB, then heartbeat
       const lastSeenTs = pres.lastActivity || dbLastSeen || (hb ? hb.lastHeartbeat : null);
@@ -318,7 +318,7 @@ module.exports = function setupAdminRoutes(io) {
       try {
         const dbFull = usersRepo.getByUsername(username);
         if (dbFull) { phone = dbFull.phone; email = dbFull.email; notes = dbFull.notes; }
-      } catch (e) { /* ignore */ }
+      } catch (e) { console.error('[admin] Operation failed:', e.message); }
 
       agents.push({
         username,
@@ -827,13 +827,13 @@ module.exports = function setupAdminRoutes(io) {
       const tokens = mobileRoutes.appTokens;
       mobileInvalidated = tokens.size;
       tokens.clear();
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin] Operation failed:', e.message); }
 
     // 3. Set all agents to offline in DB
     try {
       const { db } = require('../db/index');
       db.prepare("UPDATE users SET status = 'offline' WHERE role = 'agent' AND deleted_at IS NULL").run();
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin] Operation failed:', e.message); }
 
     auditRepo.log('force_logout_all', null, dashboardDisconnected + ' dashboard, ' + mobileInvalidated + ' mobile', req.session.username);
     logEvent('warn', 'Force logout ALL by ' + req.session.username + ': ' + dashboardDisconnected + ' dashboard, ' + mobileInvalidated + ' mobile sessions');
@@ -850,7 +850,7 @@ module.exports = function setupAdminRoutes(io) {
       const clinicea = require('./clinicea.routes');
       if (typeof clinicea.clearPatientCache === 'function') { clinicea.clearPatientCache(); cleared.push('patients'); }
       if (typeof clinicea.clearAppointmentCache === 'function') { clinicea.clearAppointmentCache(); cleared.push('appointments'); }
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[admin] Operation failed:', e.message); }
     logEvent('info', 'Cache cleared by ' + req.session.username + ': ' + cleared.join(', '));
     res.json({ ok: true, cleared });
   });

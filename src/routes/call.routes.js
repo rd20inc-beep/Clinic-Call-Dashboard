@@ -145,8 +145,8 @@ router.post(
             );
           }
         })
-        .catch(() => {
-          // Silently ignore patient lookup failures
+        .catch((e) => {
+          console.error('[call] Patient lookup failed:', e.message);
         });
     }
 
@@ -341,7 +341,7 @@ router.post('/api/agent/set-status', requireAuth, (req, res) => {
     usersRepo.setStatus(req.session.username, status);
     const { updateActivity } = require('../sockets/index');
     updateActivity(req.session.username);
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.error('[call] setStatus failed for ' + req.session.username + ':', e.message); }
   res.json({ ok: true, status });
 });
 

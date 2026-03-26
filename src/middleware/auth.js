@@ -42,7 +42,7 @@ async function verifyPassword(username, password) {
         usersRepo.changePassword(dbUser.id, password);
         console.log(`[SECURITY] Auto-migrated "${username}" from plaintext to bcrypt`);
       }
-    } catch (e) { /* ignore if DB user doesn't exist */ }
+    } catch (e) { console.error('[auth] Bcrypt migration failed for ' + username + ':', e.message); }
     return true;
   }
   return false;

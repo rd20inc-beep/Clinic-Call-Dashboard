@@ -454,7 +454,7 @@ async function syncAppointmentsAndScheduleMessages() {
         try {
           const patientsRepo = require('../db/patients.repo');
           patientsRepo.upsertFromAppointment(patientId, patientName, phone, doctorName, service, aptDate);
-        } catch (e) { /* ignore */ }
+        } catch (e) { console.error('[wa-sync] Patient upsert failed for ' + phone + ':', e.message); }
       }
     }
 

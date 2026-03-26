@@ -319,7 +319,7 @@ function setupWhatsAppRoutes(io) {
         if (types.includes('review')) tracking[phone].reviewSent = true;
         if (types.includes('aftercare')) tracking[phone].aftercareSent = true;
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[whatsapp] Tracking query failed:', e.message); }
 
     return res.json({ tracking });
   });

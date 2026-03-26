@@ -43,7 +43,7 @@ router.post(
     try {
       const { recordHeartbeatPresence } = require('../sockets/index');
       recordHeartbeatPresence(agent);
-    } catch (e) { /* ignore during early init */ }
+    } catch (e) { console.error('[heartbeat] Presence update failed for ' + agent + ':', e.message); }
 
     // 4. Emit monitor status to appropriate rooms
     emitMonitorStatus(agent, true);

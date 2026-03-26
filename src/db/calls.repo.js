@@ -184,7 +184,7 @@ module.exports = {
           db.prepare("UPDATE callbacks SET callback_status = 'no_callback_needed', resolved_at = datetime('now') WHERE id = ?").run(cb.id);
           console.log('[calls] Auto-resolved callback ' + cb.id + ' — call ' + callId + ' was actually answered');
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) { console.error('[calls] Auto-resolve callback failed for call ' + callId + ':', e.message); }
     }
     return result.changes;
   },

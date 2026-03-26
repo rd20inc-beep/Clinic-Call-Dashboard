@@ -463,7 +463,7 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
           existingPhones.add(cleanPhone);
         }
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('[clinicea] Patient upsert from appointments failed:', e.message); }
 
     // Collect unique doctors and services for filter dropdowns
     const doctorsSet = new Set();

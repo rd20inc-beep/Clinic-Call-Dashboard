@@ -81,7 +81,7 @@ router.post('/login', loginLimiter, validateLoginMw, async (req, res) => {
   try {
     const usersRepo = require('../db/users.repo');
     usersRepo.recordLogin(username);
-  } catch (e) { /* DB user may not exist for env-based agents */ }
+  } catch (e) { console.error('[auth] recordLogin failed for ' + username + ':', e.message); }
 
   return res.redirect('/');
 });
