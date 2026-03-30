@@ -392,15 +392,14 @@ function formatTimePK(d) {
  */
 async function syncAppointmentsAndScheduleMessages() {
   if (!isClinicaConfigured() || !cliniceaService) return;
-  if (!isBotEnabled()) {
-    logEvent('info', 'Appointment sync skipped — WA bot globally disabled');
-    return;
-  }
-  // Business hours check (9 AM - 7 PM PKT)
+
+  // Business hours check (9 AM - 7 PM PKT) — only for message sending, not sync
   const pkHour = (new Date().getUTCHours() + 5) % 24;
-  if (pkHour < 9 || pkHour >= 19) {
-    logEvent('info', 'Appointment sync skipped — outside business hours (9 AM - 7 PM PKT)');
-    return;
+  const withinBusinessHours = pkHour >= 9 && pkHour < 19;
+  const botEnabled = isBotEnabled();
+
+  if (!withinBusinessHours) {
+    logEvent('info', 'Appointment sync — outside business hours, syncing data only (no messages)');
   }
 
   try {
@@ -459,6 +458,10 @@ async function syncAppointmentsAndScheduleMessages() {
     }
 
     // --- Send Confirmation Messages (grouped by patient phone) ---
+    if (!botEnabled || !withinBusinessHours) {
+      logEvent('info', 'Appointment sync complete (messages skipped — ' + (!botEnabled ? 'bot disabled' : 'outside business hours') + ')');
+      return;
+    }
     const unsent = waRepo.getUnsentConfirmations();
     const confirmByPhone = {};
     for (const apt of unsent) {
