@@ -40,8 +40,7 @@ router.get('/login', (req, res) => {
 </head><body>
   <div class="login-box">
     <div class="login-logo">
-      <div class="icon">🏥</div>
-      <h1>Dr. Nakhoda's Skin Institute</h1>
+      <img src="/logo.png" alt="Dr. Nakhoda's Skin Institute" style="max-width:240px;margin-bottom:12px;">
       <p>Call Management Dashboard</p>
     </div>
     ${error ? '<div class="error">' + error + '</div>' : ''}
