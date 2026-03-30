@@ -75,11 +75,8 @@ function setupWhatsAppRoutes(io) {
       logEvent('info', 'WA expired ' + expired + ' stale message(s)');
     }
 
-    // If bot is globally disabled, return nothing
-    if (!waService.isBotEnabled()) {
-      return res.json({ messages: [] });
-    }
-
+    // Bot toggle only controls AI auto-replies, not scheduled messages
+    // (confirmations, reminders, aftercare always send)
     const pending = waRepo.getPendingOutgoing();
     const messages = pending.map((m) => ({
       id: m.id,

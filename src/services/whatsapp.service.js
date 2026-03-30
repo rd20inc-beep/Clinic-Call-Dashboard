@@ -457,9 +457,11 @@ async function syncAppointmentsAndScheduleMessages() {
       }
     }
 
-    // --- Send Confirmation Messages (grouped by patient phone) ---
-    if (!botEnabled || !withinBusinessHours) {
-      logEvent('info', 'Appointment sync complete (messages skipped — ' + (!botEnabled ? 'bot disabled' : 'outside business hours') + ')');
+    // --- Send Confirmation & Reminder Messages ---
+    // Messages always send during business hours regardless of bot toggle.
+    // Bot toggle only controls AI auto-replies to incoming messages.
+    if (!withinBusinessHours) {
+      logEvent('info', 'Appointment sync complete (messages skipped — outside business hours)');
       return;
     }
     const unsent = waRepo.getUnsentConfirmations();
@@ -471,8 +473,19 @@ async function syncAppointmentsAndScheduleMessages() {
     }
 
     for (const [phone, apts] of Object.entries(confirmByPhone)) {
+      // Extra dedup: skip if a confirmation was already sent/queued for this phone today
+      const { db } = require('../db/index');
+      const existing = db.prepare(
+        "SELECT id FROM wa_messages WHERE phone = ? AND message_type = 'confirmation' AND date(created_at) = date('now') LIMIT 1"
+      ).get(phone);
+      if (existing) {
+        // Still mark tracking records so they aren't retried
+        for (const apt of apts) waRepo.markConfirmationSent(apt.id);
+        continue;
+      }
+
       const name = apts[0].patient_name;
-      // Build appointments list for template
+      // Build single message with ALL appointments for this patient
       let aptList = '';
       for (const apt of apts) {
         const aptDate = parseLocalDate(apt.appointment_date);
@@ -481,7 +494,6 @@ async function syncAppointmentsAndScheduleMessages() {
         if (apt.doctor_name) aptList += ` (${apt.doctor_name})`;
       }
 
-      // Use template system
       const templates = require('./messageTemplates');
       let msg = templates.applyTemplate('confirmation', {
         name,
@@ -518,6 +530,17 @@ async function syncAppointmentsAndScheduleMessages() {
 
     for (const [phone, group] of Object.entries(reminderByPhone)) {
       const { apts, daysUntil } = group;
+
+      // Extra dedup: skip if a reminder was already sent/queued for this phone today
+      const { db } = require('../db/index');
+      const existingReminder = db.prepare(
+        "SELECT id FROM wa_messages WHERE phone = ? AND message_type = 'reminder' AND date(created_at) = date('now') LIMIT 1"
+      ).get(phone);
+      if (existingReminder) {
+        for (const apt of apts) waRepo.markReminderSent(apt.id);
+        continue;
+      }
+
       const name = apts[0].patient_name;
 
       let dayWord = 'soon';
