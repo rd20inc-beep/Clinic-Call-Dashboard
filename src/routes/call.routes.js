@@ -296,6 +296,40 @@ router.get('/api/calls', requireAuth, apiLimiter, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/calls/check-appointment — look up upcoming appointment by phone
+// (must be before /api/calls/:id to avoid :id matching "check-appointment")
+// ---------------------------------------------------------------------------
+router.get('/api/calls/check-appointment', requireAuth, (req, res) => {
+  const phone = (req.query.phone || '').replace(/[\s\-()]/g, '');
+  if (!phone) return res.json({ appointment: null });
+  try {
+    const { db } = require('../db/index');
+    const apt = db.prepare(
+      "SELECT * FROM wa_appointment_tracking WHERE patient_phone LIKE ? AND appointment_date > datetime('now') ORDER BY appointment_date ASC LIMIT 1"
+    ).get('%' + phone.slice(-10) + '%');
+    res.json({ appointment: apt || null });
+  } catch (e) {
+    res.json({ appointment: null, error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/calls/:id — get single call details
+// ---------------------------------------------------------------------------
+router.get('/api/calls/:id', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.json({ error: 'id required' });
+  try {
+    const { db } = require('../db/index');
+    const call = db.prepare('SELECT * FROM calls WHERE id = ?').get(id);
+    if (!call) return res.status(404).json({ error: 'Call not found' });
+    res.json({ call });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/calls/:id/direction — fix call direction (admin)
 // ---------------------------------------------------------------------------
 router.post('/api/calls/:id/direction', requireAuth, (req, res) => {
@@ -359,23 +393,6 @@ router.post('/api/calls/:id/disposition', requireAuth, (req, res) => {
   }
 
   res.json({ ok: true });
-});
-
-// ---------------------------------------------------------------------------
-// GET /api/calls/check-appointment — look up upcoming appointment by phone
-// ---------------------------------------------------------------------------
-router.get('/api/calls/check-appointment', requireAuth, (req, res) => {
-  const phone = (req.query.phone || '').replace(/[\s\-()]/g, '');
-  if (!phone) return res.json({ appointment: null });
-  try {
-    const { db } = require('../db/index');
-    const apt = db.prepare(
-      "SELECT * FROM wa_appointment_tracking WHERE patient_phone LIKE ? AND appointment_date > datetime('now') ORDER BY appointment_date ASC LIMIT 1"
-    ).get('%' + phone.slice(-10) + '%');
-    res.json({ appointment: apt || null });
-  } catch (e) {
-    res.json({ appointment: null, error: e.message });
-  }
 });
 
 // ---------------------------------------------------------------------------

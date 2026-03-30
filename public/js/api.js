@@ -173,26 +173,21 @@ function setCallDisposition(callId, disposition) {
 }
 
 function showAppointmentBookedDialog(callId, disposition) {
-  // Find the call data from the current page
-  var callerNumber = '';
-  var patientName = '';
-  try {
-    var row = document.querySelector('tr[data-call-id="' + callId + '"]');
-    if (row) {
-      callerNumber = row.dataset.callerNumber || '';
-      patientName = row.dataset.patientName || '';
-    }
-  } catch(e) {}
-
-  // Save disposition first
+  // Save disposition and fetch call + appointment data from server
   fetch('/api/calls/' + callId + '/disposition', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
     body: JSON.stringify({ disposition: disposition })
-  }).then(function(r) { return r.json(); }).then(function(data) {
-    // Now check if there's an appointment for this patient
-    var phone = callerNumber.replace(/[\s\-()]/g, '');
+  }).then(function(r) { return r.json(); }).then(function() {
+    // Get the call details from server to find phone number
+    return safeFetch('/api/calls/' + callId);
+  }).then(function(callData) {
+    var call = callData.call || callData;
+    var phone = (call.caller_number || '').replace(/[\s\-()]/g, '');
+    var patientName = call.patient_name || '';
+    console.log('[Appt] Call data:', call.id, phone, patientName);
+
     if (!phone || phone === 'Unknown') {
-      showErrorToast('Appointment booked (no phone to send confirmation)', 'info');
+      showErrorToast('Appointment booked (no phone to send confirmation)');
       return;
     }
     // Fetch the patient's upcoming appointment
