@@ -506,16 +506,16 @@ function waUpdateBotToggle(enabled) {
   if (enabled) {
     bar.style.background = 'rgba(46,204,113,0.15)';
     bar.style.borderColor = 'rgba(46,204,113,0.3)';
-    statusText.textContent = 'ENABLED';
+    statusText.textContent = 'ACTIVE';
     statusText.style.color = '#2ecc71';
-    btn.textContent = 'Disable Bot';
+    btn.textContent = 'Pause Sending';
     btn.style.background = '#e74c3c';
   } else {
     bar.style.background = 'rgba(231,76,60,0.15)';
     bar.style.borderColor = 'rgba(231,76,60,0.3)';
-    statusText.textContent = 'DISABLED';
+    statusText.textContent = 'PAUSED';
     statusText.style.color = '#e74c3c';
-    btn.textContent = 'Enable Bot';
+    btn.textContent = 'Resume Sending';
     btn.style.background = '#2ecc71';
   }
 
@@ -524,8 +524,8 @@ function waUpdateBotToggle(enabled) {
 
 function waToggleBot() {
   var newState = !waBotEnabled;
-  var action = newState ? 'enable' : 'disable';
-  if (!confirm('Are you sure you want to ' + action + ' the WhatsApp bot globally?\n\nThis affects ALL chats, AI replies, and appointment messages.')) return;
+  var action = newState ? 'resume' : 'pause';
+  if (!confirm('Are you sure you want to ' + action + ' sending WhatsApp messages?\n\nThis controls reminders, confirmations, and aftercare messages.')) return;
 
   waFetch('/api/whatsapp/bot-toggle', { method: 'POST', body: JSON.stringify({ enabled: newState }) })
     .then(function(data) {
@@ -536,6 +536,53 @@ function waToggleBot() {
       }
     })
     .catch(function(err) { alert('Error: ' + err.message); });
+}
+
+// ===== BUSINESS HOURS =====
+
+function waFormatHour(h) {
+  var ampm = h >= 12 ? 'PM' : 'AM';
+  var h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return h12 + ':00 ' + ampm;
+}
+
+function waInitBusinessHours() {
+  var startSel = document.getElementById('waStartHour');
+  var endSel = document.getElementById('waEndHour');
+  if (!startSel || !endSel) return;
+  startSel.innerHTML = '';
+  endSel.innerHTML = '';
+  for (var i = 0; i < 24; i++) {
+    startSel.innerHTML += '<option value="' + i + '">' + waFormatHour(i) + '</option>';
+    endSel.innerHTML += '<option value="' + i + '">' + waFormatHour(i) + '</option>';
+  }
+  startSel.value = '9';
+  endSel.value = '19';
+}
+
+function waUpdateBusinessHours(start, end) {
+  var text = document.getElementById('waBusinessHoursText');
+  if (text) text.textContent = waFormatHour(start) + ' — ' + waFormatHour(end);
+  var startSel = document.getElementById('waStartHour');
+  var endSel = document.getElementById('waEndHour');
+  if (startSel) startSel.value = String(start);
+  if (endSel) endSel.value = String(end);
+}
+
+function waSaveBusinessHours() {
+  var start = parseInt(document.getElementById('waStartHour').value);
+  var end = parseInt(document.getElementById('waEndHour').value);
+  waFetch('/api/whatsapp/business-hours', {
+    method: 'POST',
+    body: JSON.stringify({ start: start, end: end })
+  }).then(function(data) {
+    if (data.ok) {
+      waUpdateBusinessHours(data.start, data.end);
+      alert('Business hours updated!');
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+    }
+  }).catch(function(err) { alert('Error: ' + err.message); });
 }
 
 // ===== FAILED MESSAGES =====

@@ -1026,6 +1026,14 @@ function loadWaStats() {
         waUpdateConnectionUI(data.waConnectionStatus);
       }
 
+      // Load business hours
+      if (typeof waInitBusinessHours === 'function') waInitBusinessHours();
+      waFetch('/api/whatsapp/bot-status').then(function(status) {
+        if (status.businessHoursStart !== undefined && typeof waUpdateBusinessHours === 'function') {
+          waUpdateBusinessHours(status.businessHoursStart, status.businessHoursEnd);
+        }
+      }).catch(function() {});
+
       // Load approval queue
       loadWaApprovalQueue();
     })
