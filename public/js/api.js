@@ -246,31 +246,73 @@ function showAppointmentBookedDialog(callId, disposition) {
 }
 
 // ===== CONFIRMATIONS PAGE =====
+var _allConfirmations = [];
+var _confFilter = 'all';
+
+function filterConfirmations(filter) {
+  _confFilter = filter;
+  var filterBar = document.getElementById('confActiveFilter');
+  var filterLabel = document.getElementById('confFilterLabel');
+  if (filter === 'all') {
+    filterBar.style.display = 'none';
+  } else {
+    filterBar.style.display = '';
+    filterLabel.textContent = filter === 'sent' ? 'Sent confirmations' : filter === 'pending' ? 'Pending / Approved' : 'With reminders';
+  }
+  renderConfirmations(_allConfirmations, filter);
+}
+
 function loadConfirmations() {
   var period = (document.getElementById('confirmationPeriod') || {}).value || 'today';
   var container = document.getElementById('confirmationList');
   if (!container) return;
   container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+  _confFilter = 'all';
+  var filterBar = document.getElementById('confActiveFilter');
+  if (filterBar) filterBar.style.display = 'none';
 
   safeFetch('/api/calls/confirmations?period=' + period).then(function(data) {
     var confs = data.confirmations || [];
-    document.getElementById('confSentCount').textContent = confs.length;
+    _allConfirmations = confs;
 
-    // Count pending and reminders
-    var pending = 0, reminders = 0;
+    // Count by type
+    var sent = 0, pending = 0, reminders = 0;
     confs.forEach(function(c) {
-      if (c.message_status === 'pending' || c.message_status === 'approved') pending++;
+      var ms = c.message_status || 'sent';
+      if (ms === 'sent') sent++;
+      if (ms === 'pending' || ms === 'approved') pending++;
       if (c.reminder_sent) reminders++;
     });
+    document.getElementById('confSentCount').textContent = sent;
     document.getElementById('confPendingCount').textContent = pending;
     document.getElementById('confReminderCount').textContent = reminders;
 
-    if (confs.length === 0) {
-      container.innerHTML = '<div class="empty-state"><p>No confirmations sent for this period.</p></div>';
-      return;
-    }
+    renderConfirmations(confs, 'all');
+  }).catch(function(e) {
+    container.innerHTML = '<div class="empty-state"><p style="color:#ef4444;">Failed to load: ' + (e.message || 'unknown error') + '</p></div>';
+  });
+}
 
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+function renderConfirmations(confs, filter) {
+  var container = document.getElementById('confirmationList');
+  if (!container) return;
+
+  // Apply filter
+  var filtered = confs;
+  if (filter === 'sent') {
+    filtered = confs.filter(function(c) { return (c.message_status || 'sent') === 'sent'; });
+  } else if (filter === 'pending') {
+    filtered = confs.filter(function(c) { var ms = c.message_status || ''; return ms === 'pending' || ms === 'approved'; });
+  } else if (filter === 'reminder') {
+    filtered = confs.filter(function(c) { return !!c.reminder_sent; });
+  }
+
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty-state"><p>No confirmations match this filter.</p></div>';
+    return;
+  }
+
+  var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
       '<thead><tr style="background:#f8fafc;text-align:left;">' +
         '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Patient</th>' +
         '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Phone</th>' +
@@ -281,7 +323,7 @@ function loadConfirmations() {
         '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Sent At</th>' +
       '</tr></thead><tbody>';
 
-    confs.forEach(function(c) {
+    filtered.forEach(function(c) {
       var aptDate = c.appointment_date || '';
       var formattedDate = aptDate;
       try {
@@ -323,9 +365,6 @@ function loadConfirmations() {
 
     html += '</tbody></table>';
     container.innerHTML = html;
-  }).catch(function(e) {
-    container.innerHTML = '<div class="empty-state"><p style="color:#ef4444;">Failed to load: ' + (e.message || 'unknown error') + '</p></div>';
-  });
 }
 
 // ===== CALL NOTES =====
