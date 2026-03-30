@@ -93,16 +93,24 @@ router.get('/admin/analytics/overview', async (req, res) => {
     const agentStats = [];
     let activeAgents = 0, portalOnline = 0, mobileOnline = 0;
 
+    const now = Date.now();
+    const STALE_MS = require('../config/constants').HEARTBEAT_STALE_MS;
+
     for (const [username, user] of Object.entries(users)) {
       if (user.role === 'admin') continue;
       const p = getPresence(username);
       const hb = heartbeats[username];
 
+      // Compute live freshness at query time (don't rely on cached booleans)
+      const mobileAlive = !!(p.mobileOnline && p.lastMobileHb && (now - p.lastMobileHb) < STALE_MS);
+      const monitorAlive = !!(hb && hb.alive && hb.lastHeartbeat && (now - hb.lastHeartbeat) < STALE_MS);
+      const portalAlive = !!p.portalOnline;
+
       let status = 'offline';
-      if (p.portalOnline) portalOnline++;
-      if (p.mobileOnline) mobileOnline++;
-      if (p.online) { status = p.onCall ? 'busy' : ((Date.now() - (p.lastActivity || 0)) < 120000 ? 'online' : 'idle'); }
-      else if (hb && hb.alive) { status = 'online'; }
+      if (portalAlive) portalOnline++;
+      if (mobileAlive) mobileOnline++;
+      if (portalAlive || mobileAlive) { status = p.onCall ? 'busy' : ((now - (p.lastActivity || 0)) < 120000 ? 'online' : 'idle'); }
+      else if (monitorAlive) { status = 'online'; }
       if (status !== 'offline') activeAgents++;
 
       let todayCalls = 0, todayAnswered = 0, todayMissed = 0, todayTalkTime = 0, weekCalls = 0;
@@ -127,9 +135,9 @@ router.get('/admin/analytics/overview', async (req, res) => {
         username,
         full_name: user.displayName || username,
         status: status,
-        portal_online: p.portalOnline || false,
-        mobile_online: p.mobileOnline || false,
-        monitor_online: !!(hb && hb.alive),
+        portal_online: portalAlive,
+        mobile_online: mobileAlive,
+        monitor_online: monitorAlive,
         today: todayCalls,
         answered_today: todayAnswered,
         missed_today: todayMissed,
@@ -402,7 +410,9 @@ router.get('/admin/agents/:id/performance', (req, res) => {
     res.json({
       agent: {
         username: u.username, full_name: u.display_name, role: u.role,
-        portal_online: pres.portalOnline || false, mobile_online: pres.mobileOnline || false, monitor_online: !!(hb && hb.alive),
+        portal_online: !!pres.portalOnline,
+        mobile_online: !!(pres.mobileOnline && pres.lastMobileHb && (Date.now() - pres.lastMobileHb) < require('../config/constants').HEARTBEAT_STALE_MS),
+        monitor_online: !!(hb && hb.alive && hb.lastHeartbeat && (Date.now() - hb.lastHeartbeat) < require('../config/constants').HEARTBEAT_STALE_MS),
         last_activity: pres.lastActivity, last_seen: u.last_seen,
       },
       stats: {
