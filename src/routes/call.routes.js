@@ -353,44 +353,7 @@ router.post('/api/calls/:id/disposition', requireAuth, (req, res) => {
   if (!valid.includes(disposition)) return res.json({ error: 'Invalid disposition' });
   callsRepo.updateDisposition(id, disposition);
 
-  // If appointment booked, alert agent to send instant confirmation
-  if (disposition === 'appointment_booked') {
-    try {
-      const { db } = require('../db/index');
-      const call = db.prepare('SELECT caller_number, patient_name, agent FROM calls WHERE id = ?').get(id);
-      console.log('[disposition] appointment_booked for call', id, 'agent:', call?.agent, 'number:', call?.caller_number);
-
-      if (call && call.caller_number) {
-        const phone = call.caller_number.replace(/[\s\-()]/g, '');
-        const apt = db.prepare(
-          "SELECT * FROM wa_appointment_tracking WHERE patient_phone LIKE ? AND appointment_date > datetime('now') ORDER BY appointment_date ASC LIMIT 1"
-        ).get('%' + phone.slice(-10) + '%');
-
-        console.log('[disposition] appointment match:', apt ? `${apt.patient_name} on ${apt.appointment_date}` : 'NONE');
-
-        const { getIO } = require('../sockets/index');
-        const io = getIO();
-        console.log('[disposition] IO:', io ? 'OK' : 'NULL', '| agent room: agent:' + call.agent);
-
-        if (io && call.agent) {
-          const payload = {
-            callId: id,
-            patientName: apt ? (apt.patient_name || call.patient_name) : (call.patient_name || call.caller_number),
-            patientPhone: apt ? apt.patient_phone : call.caller_number,
-            appointmentDate: apt ? apt.appointment_date : null,
-            doctorName: apt ? apt.doctor_name : null,
-            service: apt ? apt.service : null,
-            appointmentId: apt ? apt.id : null,
-            hasAppointment: !!apt,
-          };
-          io.to('agent:' + call.agent).emit('confirm_appointment', payload);
-          // Also emit to admin room so they see it
-          io.to('role:admin').emit('confirm_appointment', payload);
-          console.log('[disposition] confirm_appointment emitted to agent:' + call.agent, JSON.stringify(payload));
-        }
-      }
-    } catch (e) { console.error('[disposition] Appointment alert failed:', e.message); }
-  }
+  // Confirmation dialog is handled client-side (showAppointmentBookedDialog in api.js)
 
   res.json({ ok: true });
 });

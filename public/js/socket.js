@@ -225,50 +225,6 @@ socket.on('admin_message', function(data) {
   try { playBeep(); } catch(e) {}
 });
 
-// Instant confirmation prompt — when agent marks "Appt Booked"
-socket.on('confirm_appointment', function(data) {
-  console.log('[Dashboard] confirm_appointment:', data);
-  try { playBeep(); } catch(e) {}
-
-  // Format the appointment date
-  var dateStr = data.appointmentDate || '';
-  var formattedDate = dateStr;
-  try {
-    if (dateStr.indexOf('T') >= 0) {
-      var parts = dateStr.split('T');
-      var datePart = parts[0];
-      var timeParts = parts[1].split(':');
-      var h = parseInt(timeParts[0]);
-      var m = timeParts[1];
-      var ampm = h >= 12 ? 'PM' : 'AM';
-      var h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-      formattedDate = datePart + ' at ' + h12 + ':' + m + ' ' + ampm;
-    }
-  } catch(e) {}
-
-  var details = '<strong>' + escapeHtml(data.patientName || 'Patient') + '</strong><br>' +
-    '<span style="color:#3b82f6;font-weight:600;">' + escapeHtml(formattedDate) + '</span>';
-  if (data.service) details += '<br>' + escapeHtml(data.service);
-  if (data.doctorName) details += ' — ' + escapeHtml(data.doctorName);
-  details += '<br><span style="color:#94a3b8;font-size:12px;">' + escapeHtml(data.patientPhone || '') + '</span>';
-
-  // Build the popup
-  var popup = document.createElement('div');
-  popup.className = 'error-toast';
-  popup.style.cssText = 'background:#f0fdf4;border-color:#10b981;color:#064e3b;max-width:400px;';
-  popup.innerHTML =
-    '<strong style="display:block;margin-bottom:6px;font-size:14px;">📞 Appointment Booked!</strong>' +
-    '<div style="margin-bottom:10px;font-size:13px;line-height:1.5;">' + details + '</div>' +
-    '<div style="display:flex;gap:8px;">' +
-      '<button onclick="sendInstantConfirmation(this,' + (data.appointmentId || 0) + ',\'' + escapeHtml(data.patientPhone || '') + '\',\'' + escapeHtml(data.patientName || '') + '\',\'' + escapeHtml(data.appointmentDate || '') + '\',\'' + escapeHtml(data.doctorName || '') + '\',\'' + escapeHtml(data.service || '') + '\')" ' +
-        'style="padding:8px 16px;border:none;border-radius:6px;background:#10b981;color:white;font-weight:600;font-size:13px;cursor:pointer;">Send Confirmation</button>' +
-      '<button onclick="this.closest(\'.error-toast\').remove()" ' +
-        'style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:6px;background:white;color:#64748b;font-size:13px;cursor:pointer;">Dismiss</button>' +
-    '</div>' +
-    '<button class="error-toast-close" onclick="dismissToast(this)" style="color:#064e3b;">&times;</button>';
-  toastContainer.appendChild(popup);
-});
-
 function sendInstantConfirmation(btn, appointmentId, phone, name, date, doctor, service) {
   btn.disabled = true;
   btn.textContent = 'Sending...';
