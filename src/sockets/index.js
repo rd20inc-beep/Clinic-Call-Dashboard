@@ -3,7 +3,7 @@
 const { logEvent } = require('../services/logging.service');
 const { getClientIP } = require('../utils/security');
 const { rememberAgentIP } = require('../services/agentRegistry.service');
-const { IDLE_TIMEOUT_MS, IDLE_CHECK_INTERVAL, HEARTBEAT_STALE_MS } = require('../config/constants');
+const { IDLE_TIMEOUT_MS, IDLE_CHECK_INTERVAL, HEARTBEAT_STALE_MS, ON_CALL_TIMEOUT_MS } = require('../config/constants');
 
 // ---------------------------------------------------------------------------
 // Agent presence engine
@@ -41,9 +41,10 @@ function computeStatus(username) {
     if (p && p.onCall) p.onCall = false;
     return 'offline';
   }
-  // Auto-clear onCall if stuck for more than 5 minutes (call_ended never received)
-  if (p.onCall && p.onCallSince && (Date.now() - p.onCallSince) > 300000) {
+  // Auto-clear onCall if stuck (call_ended never received)
+  if (p.onCall && p.onCallSince && (Date.now() - p.onCallSince) > ON_CALL_TIMEOUT_MS) {
     p.onCall = false;
+    p.onCallSince = null;
   }
   if (p.onCall) return 'busy';
   if (p.lastActivity && (Date.now() - p.lastActivity) > IDLE_TIMEOUT_MS) return 'idle';
@@ -92,9 +93,13 @@ function getAllPresence() {
 function setOnCall(username) {
   if (!username) return;
   ensurePresence(username);
-  agentPresence[username].onCall = true;
-  agentPresence[username].onCallSince = Date.now();
-  agentPresence[username].lastActivity = Date.now();
+  const p = agentPresence[username];
+  // Don't reset the timer if already on a call (prevents duplicate ringing from extending busy)
+  if (!p.onCall) {
+    p.onCall = true;
+    p.onCallSince = Date.now();
+  }
+  p.lastActivity = Date.now();
   persistAndBroadcast(username);
   logEvent('info', 'Agent ' + username + ' → busy (on call)');
 }

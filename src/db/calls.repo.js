@@ -112,10 +112,10 @@ const stmtAgentHourly = db.prepare(`
   GROUP BY hour ORDER BY hour
 `);
 
-// Auto-finalize stale unknown calls (older than 5 minutes, still unknown → missed)
+// Auto-finalize stale unknown calls (older than 2 minutes, still unknown → missed)
 const stmtFinalizeStale = db.prepare(`
   UPDATE calls SET call_status = 'missed'
-  WHERE call_status = 'unknown' AND timestamp < datetime('now', '-15 minutes')
+  WHERE call_status = 'unknown' AND timestamp < datetime('now', '-2 minutes')
 `);
 
 const DEFAULT_PAGE_SIZE = 10;

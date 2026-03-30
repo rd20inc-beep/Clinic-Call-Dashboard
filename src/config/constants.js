@@ -39,4 +39,7 @@ module.exports = Object.freeze({
 
   /** How often (ms) to sweep for idle agents. */
   IDLE_CHECK_INTERVAL: 30_000,
+
+  /** Auto-clear "on call" status after this many ms if no call_ended received (2 minutes). */
+  ON_CALL_TIMEOUT_MS: 120_000,
 });

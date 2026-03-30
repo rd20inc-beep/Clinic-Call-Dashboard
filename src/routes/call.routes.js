@@ -13,7 +13,7 @@ const callsRepo = require('../db/calls.repo');
 const { normalizePKPhone } = require('../utils/phone');
 const { getClientIP } = require('../utils/security');
 const { config, isClinicaConfigured } = require('../config/env');
-const { setOnCall, updateActivity } = require('../sockets/index');
+const { setOnCall, clearOnCall, updateActivity } = require('../sockets/index');
 
 // Clinicea service is loaded lazily to avoid circular deps or missing-module
 // errors when the service has not been extracted yet.
@@ -75,7 +75,10 @@ router.post(
     );
 
     // 6b. Mark agent as busy (on call)
+    // PC monitor can't signal call end, so clear any previous call first
+    // (a new incoming call means the previous one must have ended)
     if (agent) {
+      clearOnCall(agent);
       setOnCall(agent);
     }
 
