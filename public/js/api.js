@@ -162,7 +162,88 @@ function toggleCallDirection(callId, newDirection) {
 // ===== CALL DISPOSITION =====
 function setCallDisposition(callId, disposition) {
   if (!disposition) return;
+
+  // If appointment booked, show confirmation dialog FIRST
+  if (disposition === 'appointment_booked') {
+    showAppointmentBookedDialog(callId, disposition);
+    return;
+  }
+
   fetch('/api/calls/' + callId + '/disposition', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ disposition: disposition }) }).catch(function() {});
+}
+
+function showAppointmentBookedDialog(callId, disposition) {
+  // Find the call data from the current page
+  var callerNumber = '';
+  var patientName = '';
+  try {
+    var row = document.querySelector('tr[data-call-id="' + callId + '"]');
+    if (row) {
+      callerNumber = row.dataset.callerNumber || '';
+      patientName = row.dataset.patientName || '';
+    }
+  } catch(e) {}
+
+  // Save disposition first
+  fetch('/api/calls/' + callId + '/disposition', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ disposition: disposition })
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    // Now check if there's an appointment for this patient
+    var phone = callerNumber.replace(/[\s\-()]/g, '');
+    if (!phone || phone === 'Unknown') {
+      showToast('Appointment booked (no phone to send confirmation)', 'info');
+      return;
+    }
+    // Fetch the patient's upcoming appointment
+    fetch('/api/calls/check-appointment?phone=' + encodeURIComponent(phone), {
+      headers: { 'Accept': 'application/json' }
+    }).then(function(r) { return r.json(); }).then(function(aptData) {
+      if (!aptData || !aptData.appointment) {
+        showToast('Appointment booked! No upcoming appointment found to confirm.', 'info');
+        return;
+      }
+      var apt = aptData.appointment;
+      var dateStr = apt.appointment_date || '';
+      var formattedDate = dateStr;
+      try {
+        if (dateStr.indexOf('T') >= 0) {
+          var parts = dateStr.split('T');
+          var timeParts = parts[1].split(':');
+          var h = parseInt(timeParts[0]);
+          var m = timeParts[1];
+          var ampm = h >= 12 ? 'PM' : 'AM';
+          var h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+          formattedDate = parts[0] + ' at ' + h12 + ':' + m + ' ' + ampm;
+        }
+      } catch(e) {}
+
+      // Show confirmation dialog
+      var popup = document.createElement('div');
+      popup.className = 'error-toast';
+      popup.style.cssText = 'background:#f0fdf4;border:2px solid #10b981;color:#064e3b;max-width:420px;box-shadow:0 8px 30px rgba(0,0,0,0.15);';
+      popup.innerHTML =
+        '<strong style="display:block;margin-bottom:8px;font-size:15px;">Appointment Booked</strong>' +
+        '<div style="margin-bottom:12px;font-size:13px;line-height:1.6;">' +
+          '<div style="font-weight:700;font-size:15px;">' + escapeHtml(apt.patient_name || patientName || 'Patient') + '</div>' +
+          '<div style="color:#3b82f6;font-weight:600;">' + escapeHtml(formattedDate) + '</div>' +
+          (apt.service ? '<div>' + escapeHtml(apt.service) + '</div>' : '') +
+          (apt.doctor_name ? '<div style="color:#64748b;">' + escapeHtml(apt.doctor_name) + '</div>' : '') +
+          '<div style="color:#94a3b8;font-size:12px;">' + escapeHtml(apt.patient_phone || phone) + '</div>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;">' +
+          '<button id="confirmSendBtn_' + callId + '" onclick="sendInstantConfirmation(this,' + (apt.id || 0) + ',\'' + escapeHtml(apt.patient_phone || phone) + '\',\'' + escapeHtml(apt.patient_name || patientName || '') + '\',\'' + escapeHtml(apt.appointment_date || '') + '\',\'' + escapeHtml(apt.doctor_name || '') + '\',\'' + escapeHtml(apt.service || '') + '\')" ' +
+            'style="flex:1;padding:10px 16px;border:none;border-radius:8px;background:#10b981;color:white;font-weight:700;font-size:14px;cursor:pointer;">Send Confirmation</button>' +
+          '<button onclick="this.closest(\'.error-toast\').remove()" ' +
+            'style="padding:10px 16px;border:1px solid #e2e8f0;border-radius:8px;background:white;color:#64748b;font-size:13px;cursor:pointer;">Skip</button>' +
+        '</div>' +
+        '<button class="error-toast-close" onclick="dismissToast(this)" style="color:#064e3b;">&times;</button>';
+      toastContainer.appendChild(popup);
+      try { playBeep(); } catch(e) {}
+    }).catch(function() {
+      showToast('Appointment booked!', 'success');
+    });
+  }).catch(function() {});
 }
 
 // ===== CALL NOTES =====
@@ -480,7 +561,7 @@ async function loadCallHistory(page) {
       // Duration
       var durDisplay = formatCallDuration(call.duration);
 
-      html += '<tr data-call-id="' + call.id + '">' +
+      html += '<tr data-call-id="' + call.id + '" data-caller-number="' + escapeHtml(call.caller_number || '') + '" data-patient-name="' + escapeHtml(call.patient_name || '') + '">' +
         '<td>' + call.id + '</td>' +
         '<td>' + dirBadge + '</td>' +
         '<td>' +

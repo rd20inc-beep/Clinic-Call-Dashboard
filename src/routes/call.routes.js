@@ -362,6 +362,23 @@ router.post('/api/calls/:id/disposition', requireAuth, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/calls/check-appointment — look up upcoming appointment by phone
+// ---------------------------------------------------------------------------
+router.get('/api/calls/check-appointment', requireAuth, (req, res) => {
+  const phone = (req.query.phone || '').replace(/[\s\-()]/g, '');
+  if (!phone) return res.json({ appointment: null });
+  try {
+    const { db } = require('../db/index');
+    const apt = db.prepare(
+      "SELECT * FROM wa_appointment_tracking WHERE patient_phone LIKE ? AND appointment_date > datetime('now') ORDER BY appointment_date ASC LIMIT 1"
+    ).get('%' + phone.slice(-10) + '%');
+    res.json({ appointment: apt || null });
+  } catch (e) {
+    res.json({ appointment: null, error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/calls/send-confirmation — agent sends instant confirmation (no approval queue)
 // ---------------------------------------------------------------------------
 router.post('/api/calls/send-confirmation', requireAuth, (req, res) => {
