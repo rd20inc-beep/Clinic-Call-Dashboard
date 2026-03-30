@@ -43,10 +43,12 @@ fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {
     // Update agent info display
     var el = document.getElementById('agentInfo');
     if (el) el.textContent = data.role === 'admin' ? 'Admin' : data.username.charAt(0).toUpperCase() + data.username.slice(1);
-    // Show admin-only nav items
+    // Show admin-only elements
     if (data.role === 'admin') {
       var items = document.querySelectorAll('.admin-only');
-      for (var i = 0; i < items.length; i++) items[i].style.display = '';
+      for (var i = 0; i < items.length; i++) {
+        items[i].style.display = items[i].dataset.display || '';
+      }
     }
   }
 }).catch(function() { console.warn('[Dashboard] Failed to load /api/me'); });
