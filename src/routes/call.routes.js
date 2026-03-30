@@ -296,6 +296,45 @@ router.get('/api/calls', requireAuth, apiLimiter, (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/calls/confirmations — list sent confirmations (today by default)
+// ---------------------------------------------------------------------------
+router.get('/api/calls/confirmations', requireAuth, (req, res) => {
+  try {
+    const { db } = require('../db/index');
+    const period = req.query.period || 'today';
+    let dateFilter = "date(t.confirmation_sent_at) = date('now')";
+    if (period === 'week') dateFilter = "t.confirmation_sent_at >= datetime('now', '-7 days')";
+    else if (period === 'all') dateFilter = '1=1';
+
+    const rows = db.prepare(
+      `SELECT t.id, t.patient_name, t.patient_phone, t.appointment_date, t.doctor_name, t.service,
+              t.confirmation_sent, t.confirmation_sent_at, t.reminder_sent, t.reminder_sent_at,
+              m.agent as sent_by, m.status as message_status, m.created_at as message_queued_at
+       FROM wa_appointment_tracking t
+       LEFT JOIN wa_messages m ON m.phone = t.patient_phone AND m.message_type = 'confirmation'
+         AND date(m.created_at) = date(t.confirmation_sent_at)
+       WHERE t.confirmation_sent = 1 AND ${dateFilter}
+       ORDER BY t.confirmation_sent_at DESC
+       LIMIT 100`
+    ).all();
+
+    // Dedup by patient_phone (one row per patient)
+    const seen = new Set();
+    const confirmations = [];
+    for (const row of rows) {
+      const key = row.patient_phone + '|' + (row.confirmation_sent_at || '').slice(0, 10);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      confirmations.push(row);
+    }
+
+    res.json({ confirmations, total: confirmations.length });
+  } catch (e) {
+    res.json({ confirmations: [], error: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/calls/check-appointment — look up upcoming appointment by phone
 // (must be before /api/calls/:id to avoid :id matching "check-appointment")
 // ---------------------------------------------------------------------------
@@ -307,7 +346,9 @@ router.get('/api/calls/check-appointment', requireAuth, (req, res) => {
     const apt = db.prepare(
       "SELECT * FROM wa_appointment_tracking WHERE patient_phone LIKE ? AND appointment_date > datetime('now') ORDER BY appointment_date ASC LIMIT 1"
     ).get('%' + phone.slice(-10) + '%');
-    res.json({ appointment: apt || null });
+    // Check if confirmation already sent today for this phone
+    const alreadySent = apt && apt.confirmation_sent === 1;
+    res.json({ appointment: apt || null, confirmationAlreadySent: !!alreadySent });
   } catch (e) {
     res.json({ appointment: null, error: e.message });
   }

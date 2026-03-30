@@ -34,6 +34,9 @@ function showPage(page) {
     if (typeof loadDashCharts === 'function') loadDashCharts();
     if (typeof loadAgentFilterOptions === 'function') loadAgentFilterOptions();
   }
+  if (page === 'confirmations') {
+    loadConfirmations();
+  }
   if (page === 'whatsapp') {
     loadWaStats();
     loadWaConversations();
@@ -67,7 +70,7 @@ function toggleSidebar() {
 // Hash-based routing
 function handleRoute() {
   var hash = window.location.hash.replace('#', '') || 'dashboard';
-  var validPages = ['dashboard', 'calendar', 'patients', 'whatsapp', 'admin-console'];
+  var validPages = ['dashboard', 'calendar', 'patients', 'confirmations', 'whatsapp', 'admin-console'];
   showPage(validPages.includes(hash) ? hash : 'dashboard');
 }
 

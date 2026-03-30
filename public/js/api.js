@@ -193,10 +193,11 @@ function showAppointmentBookedDialog(callId, disposition) {
     // Fetch the patient's upcoming appointment
     safeFetch('/api/calls/check-appointment?phone=' + encodeURIComponent(phone)).then(function(aptData) {
       if (!aptData || !aptData.appointment) {
-        showErrorToast('Appointment booked! No upcoming appointment found to confirm.', 'info');
+        showErrorToast('Appointment booked! No upcoming appointment found to confirm.');
         return;
       }
       var apt = aptData.appointment;
+      var alreadySent = aptData.confirmationAlreadySent;
       var dateStr = apt.appointment_date || '';
       var formattedDate = dateStr;
       try {
@@ -224,12 +225,17 @@ function showAppointmentBookedDialog(callId, disposition) {
           (apt.doctor_name ? '<div style="color:#64748b;">' + escapeHtml(apt.doctor_name) + '</div>' : '') +
           '<div style="color:#94a3b8;font-size:12px;">' + escapeHtml(apt.patient_phone || phone) + '</div>' +
         '</div>' +
-        '<div style="display:flex;gap:8px;">' +
-          '<button id="confirmSendBtn_' + callId + '" onclick="sendInstantConfirmation(this,' + (apt.id || 0) + ',\'' + escapeHtml(apt.patient_phone || phone) + '\',\'' + escapeHtml(apt.patient_name || patientName || '') + '\',\'' + escapeHtml(apt.appointment_date || '') + '\',\'' + escapeHtml(apt.doctor_name || '') + '\',\'' + escapeHtml(apt.service || '') + '\')" ' +
-            'style="flex:1;padding:10px 16px;border:none;border-radius:8px;background:#10b981;color:white;font-weight:700;font-size:14px;cursor:pointer;">Send Confirmation</button>' +
-          '<button onclick="this.closest(\'.error-toast\').remove()" ' +
-            'style="padding:10px 16px;border:1px solid #e2e8f0;border-radius:8px;background:white;color:#64748b;font-size:13px;cursor:pointer;">Skip</button>' +
-        '</div>' +
+        (alreadySent
+          ? '<div style="display:flex;gap:8px;align-items:center;">' +
+              '<span style="flex:1;padding:10px 16px;border-radius:8px;background:#64748b;color:white;font-weight:700;font-size:14px;text-align:center;">Confirmation Already Sent</span>' +
+              '<button onclick="this.closest(\'.error-toast\').remove()" style="padding:10px 16px;border:1px solid #e2e8f0;border-radius:8px;background:white;color:#64748b;font-size:13px;cursor:pointer;">OK</button>' +
+            '</div>'
+          : '<div style="display:flex;gap:8px;">' +
+              '<button id="confirmSendBtn_' + callId + '" onclick="sendInstantConfirmation(this,' + (apt.id || 0) + ',\'' + escapeHtml(apt.patient_phone || phone) + '\',\'' + escapeHtml(apt.patient_name || patientName || '') + '\',\'' + escapeHtml(apt.appointment_date || '') + '\',\'' + escapeHtml(apt.doctor_name || '') + '\',\'' + escapeHtml(apt.service || '') + '\')" ' +
+                'style="flex:1;padding:10px 16px;border:none;border-radius:8px;background:#10b981;color:white;font-weight:700;font-size:14px;cursor:pointer;">Send Confirmation</button>' +
+              '<button onclick="this.closest(\'.error-toast\').remove()" style="padding:10px 16px;border:1px solid #e2e8f0;border-radius:8px;background:white;color:#64748b;font-size:13px;cursor:pointer;">Skip</button>' +
+            '</div>'
+        ) +
         '<button class="error-toast-close" onclick="dismissToast(this)" style="color:#064e3b;">&times;</button>';
       toastContainer.appendChild(popup);
       try { playBeep(); } catch(e) {}
@@ -237,6 +243,89 @@ function showAppointmentBookedDialog(callId, disposition) {
       showErrorToast('Appointment booked!', 'success');
     });
   }).catch(function() {});
+}
+
+// ===== CONFIRMATIONS PAGE =====
+function loadConfirmations() {
+  var period = (document.getElementById('confirmationPeriod') || {}).value || 'today';
+  var container = document.getElementById('confirmationList');
+  if (!container) return;
+  container.innerHTML = '<div class="empty-state"><p>Loading...</p></div>';
+
+  safeFetch('/api/calls/confirmations?period=' + period).then(function(data) {
+    var confs = data.confirmations || [];
+    document.getElementById('confSentCount').textContent = confs.length;
+
+    // Count pending and reminders
+    var pending = 0, reminders = 0;
+    confs.forEach(function(c) {
+      if (c.message_status === 'pending' || c.message_status === 'approved') pending++;
+      if (c.reminder_sent) reminders++;
+    });
+    document.getElementById('confPendingCount').textContent = pending;
+    document.getElementById('confReminderCount').textContent = reminders;
+
+    if (confs.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No confirmations sent for this period.</p></div>';
+      return;
+    }
+
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+      '<thead><tr style="background:#f8fafc;text-align:left;">' +
+        '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Patient</th>' +
+        '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Phone</th>' +
+        '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Appointment</th>' +
+        '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Service</th>' +
+        '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Sent By</th>' +
+        '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Status</th>' +
+        '<th style="padding:10px 8px;border-bottom:1px solid #e2e8f0;">Sent At</th>' +
+      '</tr></thead><tbody>';
+
+    confs.forEach(function(c) {
+      var aptDate = c.appointment_date || '';
+      var formattedDate = aptDate;
+      try {
+        if (aptDate.indexOf('T') >= 0) {
+          var parts = aptDate.split('T');
+          var tp = parts[1].split(':');
+          var h = parseInt(tp[0]); var m = tp[1];
+          var ampm = h >= 12 ? 'PM' : 'AM';
+          var h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+          formattedDate = parts[0] + ' ' + h12 + ':' + m + ' ' + ampm;
+        }
+      } catch(e) {}
+
+      var sentAt = c.confirmation_sent_at || '';
+      if (sentAt.length > 16) sentAt = sentAt.substring(0, 16).replace('T', ' ');
+
+      var statusBadge = '';
+      var ms = c.message_status || (c.confirmation_sent ? 'sent' : 'unknown');
+      if (ms === 'sent') statusBadge = '<span style="background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">Sent</span>';
+      else if (ms === 'approved') statusBadge = '<span style="background:#dbeafe;color:#2563eb;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">Approved</span>';
+      else if (ms === 'pending') statusBadge = '<span style="background:#fef3c7;color:#d97706;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">Pending</span>';
+      else if (ms === 'failed') statusBadge = '<span style="background:#fecaca;color:#dc2626;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">Failed</span>';
+      else statusBadge = '<span style="background:#e2e8f0;color:#64748b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + escapeHtml(ms) + '</span>';
+
+      var reminderBadge = c.reminder_sent
+        ? '<span style="background:#dbeafe;color:#2563eb;padding:1px 6px;border-radius:8px;font-size:10px;margin-left:4px;">Reminder</span>'
+        : '';
+
+      html += '<tr style="border-bottom:1px solid #f1f5f9;">' +
+        '<td style="padding:8px;">' + escapeHtml(c.patient_name || '-') + '</td>' +
+        '<td style="padding:8px;color:#64748b;">' + escapeHtml(c.patient_phone || '-') + '</td>' +
+        '<td style="padding:8px;font-weight:600;color:#3b82f6;">' + escapeHtml(formattedDate) + '</td>' +
+        '<td style="padding:8px;">' + escapeHtml(c.service || '-') + '</td>' +
+        '<td style="padding:8px;">' + escapeHtml(c.sent_by || 'System') + '</td>' +
+        '<td style="padding:8px;">' + statusBadge + reminderBadge + '</td>' +
+        '<td style="padding:8px;color:#94a3b8;font-size:12px;">' + escapeHtml(sentAt) + '</td>' +
+      '</tr>';
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }).catch(function(e) {
+    container.innerHTML = '<div class="empty-state"><p style="color:#ef4444;">Failed to load: ' + (e.message || 'unknown error') + '</p></div>';
+  });
 }
 
 // ===== CALL NOTES =====
