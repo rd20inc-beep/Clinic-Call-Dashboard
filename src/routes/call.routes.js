@@ -318,7 +318,76 @@ router.post('/api/calls/:id/disposition', requireAuth, (req, res) => {
   const valid = ['appointment_booked', 'follow_up_needed', 'wrong_number', 'no_answer', 'existing_patient', 'inquiry_only', 'other'];
   if (!valid.includes(disposition)) return res.json({ error: 'Invalid disposition' });
   callsRepo.updateDisposition(id, disposition);
+
+  // If appointment booked, alert agent to send instant confirmation
+  if (disposition === 'appointment_booked') {
+    try {
+      const { db } = require('../db/index');
+      const call = db.prepare('SELECT caller_number, patient_name, agent FROM calls WHERE id = ?').get(id);
+      if (call && call.caller_number) {
+        const phone = call.caller_number.replace(/[\s\-()]/g, '');
+        // Find this patient's upcoming appointment (synced from Clinicea)
+        const apt = db.prepare(
+          "SELECT * FROM wa_appointment_tracking WHERE patient_phone LIKE ? AND appointment_date > datetime('now') ORDER BY appointment_date ASC LIMIT 1"
+        ).get('%' + phone.slice(-10) + '%');
+
+        if (apt) {
+          // Emit to agent's socket room — prompt them to send confirmation
+          const { getIO } = require('../sockets/index');
+          const io = getIO();
+          if (io && call.agent) {
+            io.to('agent:' + call.agent).emit('confirm_appointment', {
+              callId: id,
+              patientName: apt.patient_name || call.patient_name || call.caller_number,
+              patientPhone: apt.patient_phone,
+              appointmentDate: apt.appointment_date,
+              doctorName: apt.doctor_name,
+              service: apt.service,
+              appointmentId: apt.id,
+            });
+          }
+        }
+      }
+    } catch (e) { console.error('[disposition] Appointment alert failed:', e.message); }
+  }
+
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/calls/send-confirmation — agent sends instant confirmation (no approval queue)
+// ---------------------------------------------------------------------------
+router.post('/api/calls/send-confirmation', requireAuth, (req, res) => {
+  const { appointmentId, patientPhone, patientName, appointmentDate, doctorName, service } = req.body;
+  if (!appointmentId || !patientPhone) return res.json({ error: 'appointmentId and patientPhone required' });
+
+  try {
+    const waRepo = require('../db/whatsapp.repo');
+    const templates = require('../services/messageTemplates');
+    const { parseLocalDate, formatDatePK, formatTimePK } = require('../services/whatsapp.service');
+
+    const aptDate = parseLocalDate ? parseLocalDate(appointmentDate) : new Date(appointmentDate);
+    const aptLine = `${formatDatePK ? formatDatePK(aptDate) : aptDate.toDateString()} at ${formatTimePK ? formatTimePK(aptDate) : aptDate.toTimeString().slice(0,5)}`;
+    const fullLine = aptLine + (service ? ` — ${service}` : '') + (doctorName ? ` (${doctorName})` : '');
+
+    const msg = templates.applyTemplate('confirmation', {
+      name: patientName || 'Patient',
+      appointments: fullLine,
+    });
+
+    // Insert as 'approved' so it sends immediately (skip pending approval)
+    waRepo.insertMessage(patientPhone, null, 'out', msg, 'confirmation', 'approved', req.session.username || null);
+
+    // Mark the appointment tracking record as confirmation sent
+    const { db } = require('../db/index');
+    db.prepare("UPDATE wa_appointment_tracking SET confirmation_sent = 1, confirmation_sent_at = datetime('now') WHERE id = ?").run(appointmentId);
+
+    logEvent('info', `Instant confirmation sent by ${req.session.username} for ${patientName} (${patientPhone})`);
+    res.json({ ok: true, message: 'Confirmation sent' });
+  } catch (e) {
+    console.error('[send-confirmation]', e.message);
+    res.json({ error: e.message });
+  }
 });
 
 // ---------------------------------------------------------------------------

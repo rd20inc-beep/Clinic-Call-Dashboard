@@ -121,12 +121,16 @@ const stmtUpsertAppointment = db.prepare(`
     service = excluded.service
 `);
 
+// Skip walk-in/same-day bookings: if appointment is less than 1 hour after
+// the tracking record was created, it's a walk-in — no confirmation or reminder needed.
+const WALKIN_CLAUSE = "AND (strftime('%s', appointment_date) - strftime('%s', created_at)) > 3600";
+
 const stmtGetUnsentConfirmations = db.prepare(
-  "SELECT * FROM wa_appointment_tracking WHERE confirmation_sent = 0 AND patient_phone IS NOT NULL AND patient_phone != ''"
+  "SELECT * FROM wa_appointment_tracking WHERE confirmation_sent = 0 AND patient_phone IS NOT NULL AND patient_phone != '' " + WALKIN_CLAUSE
 );
 
 const stmtGetUnsentReminders = db.prepare(
-  "SELECT * FROM wa_appointment_tracking WHERE reminder_sent = 0 AND confirmation_sent = 1 AND patient_phone IS NOT NULL AND patient_phone != ''"
+  "SELECT * FROM wa_appointment_tracking WHERE reminder_sent = 0 AND confirmation_sent = 1 AND patient_phone IS NOT NULL AND patient_phone != '' " + WALKIN_CLAUSE
 );
 
 const stmtMarkConfirmationSent = db.prepare(

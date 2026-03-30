@@ -592,4 +592,7 @@ module.exports = {
   isBotEnabled,
   setBotEnabled,
   setClinicaService,
+  parseLocalDate,
+  formatDatePK,
+  formatTimePK,
 };

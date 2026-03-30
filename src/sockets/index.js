@@ -273,6 +273,7 @@ module.exports = {
   setupSockets,
   getPresence,
   getAllPresence,
+  getIO: () => _io,
   updateActivity,
   setOnCall,
   clearOnCall,
