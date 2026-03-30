@@ -7,13 +7,14 @@ const waRepo = require('../db/whatsapp.repo');
 const waService = require('./whatsapp.service');
 
 // ---------------------------------------------------------------------------
-// Business hours check (9 AM - 7 PM Pakistan time)
+// Business hours check (configurable, default 9 AM - 7 PM Pakistan time)
 // ---------------------------------------------------------------------------
 function isWithinBusinessHours() {
   const now = new Date();
-  // Convert to Pakistan time (UTC+5)
   const pkHour = (now.getUTCHours() + 5) % 24;
-  return pkHour >= 9 && pkHour < 19; // 9 AM to 7 PM
+  const startHour = parseInt(waRepo.getSetting('business_hour_start') || '9', 10);
+  const endHour = parseInt(waRepo.getSetting('business_hour_end') || '19', 10);
+  return pkHour >= startHour && pkHour < endHour;
 }
 
 // ---------------------------------------------------------------------------

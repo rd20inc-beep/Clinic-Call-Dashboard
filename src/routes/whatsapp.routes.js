@@ -1,7 +1,7 @@
 'use strict';
 
 const express = require('express');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { config } = require('../config/env');
 const { logEvent } = require('../services/logging.service');
 const waRepo = require('../db/whatsapp.repo');
@@ -170,10 +170,32 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
-  // GET /api/whatsapp/bot-status - get global bot status
+  // GET /api/whatsapp/bot-status - get sending status + business hours
   // -----------------------------------------------------------------------
   router.get('/api/whatsapp/bot-status', requireAuth, (req, res) => {
-    return res.json({ enabled: waService.isBotEnabled() });
+    const startHour = parseInt(waRepo.getSetting('business_hour_start') || '9', 10);
+    const endHour = parseInt(waRepo.getSetting('business_hour_end') || '19', 10);
+    return res.json({
+      enabled: waService.isBotEnabled(),
+      businessHoursStart: startHour,
+      businessHoursEnd: endHour,
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/business-hours - set business hours (admin only)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/business-hours', requireAuth, requireAdmin, (req, res) => {
+    const { start, end } = req.body;
+    const startH = parseInt(start, 10);
+    const endH = parseInt(end, 10);
+    if (isNaN(startH) || isNaN(endH) || startH < 0 || startH > 23 || endH < 0 || endH > 23) {
+      return res.json({ error: 'Invalid hours (0-23)' });
+    }
+    waRepo.setSetting('business_hour_start', String(startH));
+    waRepo.setSetting('business_hour_end', String(endH));
+    logEvent('info', `WA business hours set to ${startH}:00 - ${endH}:00 PKT by ${req.session.username}`);
+    return res.json({ ok: true, start: startH, end: endH });
   });
 
   // -----------------------------------------------------------------------
@@ -220,7 +242,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/approve - approve a single message for sending
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/approve', requireAuth, (req, res) => {
+  router.post('/api/whatsapp/approve', requireAuth, requireAdmin, (req, res) => {
     const { id } = req.body;
     if (!id) return res.json({ error: 'id required' });
     waRepo.approveMessage(id);
@@ -231,7 +253,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/approve-all - approve all pending messages
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/approve-all', requireAuth, (req, res) => {
+  router.post('/api/whatsapp/approve-all', requireAuth, requireAdmin, (req, res) => {
     const result = waRepo.approveAll();
     logEvent('info', 'WA approve-all: ' + result.changes + ' message(s) approved by ' + req.session.username);
     return res.json({ ok: true, count: result.changes });
@@ -240,7 +262,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/reject - reject a pending message
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/reject', requireAuth, (req, res) => {
+  router.post('/api/whatsapp/reject', requireAuth, requireAdmin, (req, res) => {
     const { id } = req.body;
     if (!id) return res.json({ error: 'id required' });
     waRepo.rejectMessage(id);

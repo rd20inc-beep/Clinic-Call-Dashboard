@@ -79,4 +79,26 @@ server.listen(PORT, () => {
   initWhatsAppClient().catch((err) => {
     logEvent('error', 'WhatsApp client init failed: ' + err.message);
   });
+
+  // Midnight cleanup: clear stale pending/expired messages every hour,
+  // full cleanup at midnight PKT (UTC+5 → 19:00 UTC)
+  setInterval(() => {
+    try {
+      const pkHour = (new Date().getUTCHours() + 5) % 24;
+      if (pkHour === 0) {
+        const { db } = require('./db/index');
+        // Clear all pending (unapproved) messages from previous days
+        const cleared = db.prepare(
+          "DELETE FROM wa_messages WHERE status = 'pending' AND date(created_at) < date('now')"
+        ).run();
+        // Also clear expired messages
+        const expired = db.prepare(
+          "DELETE FROM wa_messages WHERE status = 'expired' AND date(created_at) < date('now')"
+        ).run();
+        if (cleared.changes > 0 || expired.changes > 0) {
+          logEvent('info', `Midnight cleanup: cleared ${cleared.changes} pending + ${expired.changes} expired messages`);
+        }
+      }
+    } catch (e) { console.error('[cleanup] Midnight cleanup failed:', e.message); }
+  }, 60 * 60 * 1000); // check every hour
 });

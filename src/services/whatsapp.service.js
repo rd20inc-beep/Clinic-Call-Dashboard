@@ -393,9 +393,11 @@ function formatTimePK(d) {
 async function syncAppointmentsAndScheduleMessages() {
   if (!isClinicaConfigured() || !cliniceaService) return;
 
-  // Business hours check (9 AM - 7 PM PKT) — only for message sending, not sync
+  // Business hours check (configurable, default 9 AM - 7 PM PKT) — only for message queuing, not sync
   const pkHour = (new Date().getUTCHours() + 5) % 24;
-  const withinBusinessHours = pkHour >= 9 && pkHour < 19;
+  const startHour = parseInt(waRepo.getSetting('business_hour_start') || '9', 10);
+  const endHour = parseInt(waRepo.getSetting('business_hour_end') || '19', 10);
+  const withinBusinessHours = pkHour >= startHour && pkHour < endHour;
   const botEnabled = isBotEnabled();
 
   if (!withinBusinessHours) {
