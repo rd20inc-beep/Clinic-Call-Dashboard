@@ -117,6 +117,7 @@ app.use(setupWhatsAppRoutes(io));
 // 5a. Public assets — no auth required
 app.use('/downloads', express.static(path.join(__dirname, '..', 'public', 'downloads')));
 app.get('/favicon.png', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'favicon.png')));
+app.get('/favicon-white.png', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'favicon-white.png')));
 app.get('/logo.png', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'logo.png')));
 
 // 5b. Protected static files — the root and all files under /public require
