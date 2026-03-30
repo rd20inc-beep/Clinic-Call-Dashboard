@@ -114,7 +114,10 @@ app.use(installerRoutes);
 //    the static-files middleware so /api/whatsapp/* is not caught by it
 app.use(setupWhatsAppRoutes(io));
 
-// 5. Protected static files — the root and all files under /public require
+// 5a. Public APK downloads — no auth required
+app.use('/downloads', express.static(path.join(__dirname, '..', 'public', 'downloads')));
+
+// 5b. Protected static files — the root and all files under /public require
 //    an authenticated session
 app.get('/', requireAuth, (req, res, next) => next());
 app.use(requireAuth, express.static(path.join(__dirname, '..', 'public')));
