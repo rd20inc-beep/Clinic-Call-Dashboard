@@ -55,7 +55,7 @@ function startSendLoop() {
   if (sendInterval) clearInterval(sendInterval);
   sendInterval = setInterval(async () => {
     if (connectionStatus !== 'ready' || !client) return;
-    // Bot toggle only controls AI auto-replies; scheduled messages always send
+    if (!waService.isBotEnabled()) return; // Admin can pause all message sending
     if (!isWithinBusinessHours()) return; // Only send during 9 AM - 7 PM PKT
 
     try {

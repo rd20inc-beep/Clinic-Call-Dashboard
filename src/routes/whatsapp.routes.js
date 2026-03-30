@@ -45,18 +45,8 @@ function setupWhatsAppRoutes(io) {
     // Store incoming message (with WA messageId for dedup)
     waRepo.insertMessage(contactId, chatName || null, 'in', text, 'chat', 'sent', null, messageId || null);
 
-    // --- Global kill switch ---
-    if (!waService.isBotEnabled()) {
-      logEvent('info', 'WA bot globally disabled, skipping reply for ' + (chatName || phone));
-      io.to('role:admin').emit('wa_message', {
-        phone: contactId, chatName, direction: 'in', text,
-        reply: null, timestamp: new Date().toISOString(),
-      });
-      return res.json({ reply: null });
-    }
-
-    // No auto-reply — system only sends queued messages (confirmations, reminders, manual)
-    // Incoming messages are stored and shown to admin, but no AI reply is generated
+    // No auto-reply — system only sends scheduled messages (confirmations, reminders, aftercare)
+    // Incoming messages are stored and shown to admin for reference
     io.to('role:admin').emit('wa_message', {
       phone: contactId, chatName, direction: 'in', text,
       reply: null, timestamp: new Date().toISOString(),
@@ -75,8 +65,11 @@ function setupWhatsAppRoutes(io) {
       logEvent('info', 'WA expired ' + expired + ' stale message(s)');
     }
 
-    // Bot toggle only controls AI auto-replies, not scheduled messages
-    // (confirmations, reminders, aftercare always send)
+    // Toggle controls all outgoing message sending (confirmations, reminders, aftercare)
+    if (!waService.isBotEnabled()) {
+      return res.json({ messages: [] });
+    }
+
     const pending = waRepo.getPendingOutgoing();
     const messages = pending.map((m) => ({
       id: m.id,
@@ -164,7 +157,7 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
-  // POST /api/whatsapp/bot-toggle - global enable/disable bot
+  // POST /api/whatsapp/bot-toggle - enable/disable sending reminders/confirmations (admin only)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/bot-toggle', requireAuth, (req, res) => {
     if (req.session.role !== 'admin') {
@@ -172,7 +165,7 @@ function setupWhatsAppRoutes(io) {
     }
     const { enabled } = req.body;
     waService.setBotEnabled(!!enabled);
-    logEvent('info', 'WA bot globally ' + (enabled ? 'ENABLED' : 'DISABLED') + ' by ' + req.session.username);
+    logEvent('info', 'WA messaging ' + (enabled ? 'ENABLED' : 'PAUSED') + ' by ' + req.session.username);
     return res.json({ ok: true, enabled: !!enabled });
   });
 

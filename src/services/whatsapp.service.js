@@ -457,11 +457,12 @@ async function syncAppointmentsAndScheduleMessages() {
       }
     }
 
-    // --- Send Confirmation & Reminder Messages ---
-    // Messages always send during business hours regardless of bot toggle.
-    // Bot toggle only controls AI auto-replies to incoming messages.
-    if (!withinBusinessHours) {
-      logEvent('info', 'Appointment sync complete (messages skipped — outside business hours)');
+    // --- Queue Confirmation & Reminder Messages ---
+    // Only queue new messages during business hours and when sending is enabled.
+    // Toggle controls whether messages get queued; already-queued messages
+    // are controlled by the toggle in the send loop.
+    if (!withinBusinessHours || !botEnabled) {
+      logEvent('info', 'Appointment sync complete (messages skipped — ' + (!withinBusinessHours ? 'outside business hours' : 'sending paused') + ')');
       return;
     }
     const unsent = waRepo.getUnsentConfirmations();
