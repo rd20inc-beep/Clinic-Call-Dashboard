@@ -192,15 +192,13 @@ function showAppointmentBookedDialog(callId, disposition) {
     // Now check if there's an appointment for this patient
     var phone = callerNumber.replace(/[\s\-()]/g, '');
     if (!phone || phone === 'Unknown') {
-      showToast('Appointment booked (no phone to send confirmation)', 'info');
+      showErrorToast('Appointment booked (no phone to send confirmation)', 'info');
       return;
     }
     // Fetch the patient's upcoming appointment
-    fetch('/api/calls/check-appointment?phone=' + encodeURIComponent(phone), {
-      headers: { 'Accept': 'application/json' }
-    }).then(function(r) { return r.json(); }).then(function(aptData) {
+    safeFetch('/api/calls/check-appointment?phone=' + encodeURIComponent(phone)).then(function(aptData) {
       if (!aptData || !aptData.appointment) {
-        showToast('Appointment booked! No upcoming appointment found to confirm.', 'info');
+        showErrorToast('Appointment booked! No upcoming appointment found to confirm.', 'info');
         return;
       }
       var apt = aptData.appointment;
@@ -241,7 +239,7 @@ function showAppointmentBookedDialog(callId, disposition) {
       toastContainer.appendChild(popup);
       try { playBeep(); } catch(e) {}
     }).catch(function() {
-      showToast('Appointment booked!', 'success');
+      showErrorToast('Appointment booked!', 'success');
     });
   }).catch(function() {});
 }
