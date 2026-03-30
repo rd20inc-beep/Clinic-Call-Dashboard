@@ -18,9 +18,14 @@ const auditRepo = require('../db/audit.repo');
 const { logEvent } = require('../services/logging.service');
 const bcrypt = require('bcryptjs');
 
-// Most admin routes require admin auth; appointments also allow doctors
-router.use('/admin/appointments', requireAuth, requireAdminOrDoctor);
-router.use('/admin', requireAuth, requireAdmin);
+// All /admin routes require auth; most require admin role, appointments also allow doctors
+router.use('/admin', requireAuth, (req, res, next) => {
+  // Allow doctors to access appointments endpoint
+  if (req.path.startsWith('/appointments') && req.session && req.session.role === 'doctor') {
+    return next();
+  }
+  return requireAdmin(req, res, next);
+});
 
 // -------------------------------------------------------------------------
 // GET /admin/analytics/overview
