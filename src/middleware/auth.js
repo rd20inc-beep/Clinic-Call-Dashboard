@@ -1,10 +1,41 @@
 const { getUsers } = require('../config/env');
 const bcrypt = require('bcryptjs');
 
-// requireAuth - checks session.loggedIn, redirects to /login or returns 401 for JSON
+// Resolve agent from mobile app bearer token (lazy-loaded to avoid circular deps)
+function resolveFromBearerToken(req) {
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.slice(7);
+  try {
+    const mobileRoutes = require('../routes/mobileApp.routes');
+    const appTokens = mobileRoutes.appTokens;
+    if (!appTokens) return null;
+    const entry = appTokens.get(token);
+    if (!entry) return null;
+    // Check TTL (7 days)
+    if (Date.now() - entry.loginAt > 7 * 24 * 60 * 60 * 1000) {
+      appTokens.delete(token);
+      return null;
+    }
+    return entry;
+  } catch (e) { return null; }
+}
+
+// requireAuth - checks session.loggedIn OR valid bearer token
 function requireAuth(req, res, next) {
   if (req.session && req.session.loggedIn) return next();
-  // Return JSON 401 for API calls (detected by Accept header, Content-Type, or /api/ path)
+
+  // Try bearer token (mobile app)
+  const tokenEntry = resolveFromBearerToken(req);
+  if (tokenEntry) {
+    // Populate session-like properties so downstream code works
+    req.session = req.session || {};
+    req.session.loggedIn = true;
+    req.session.username = tokenEntry.agent;
+    req.session.role = tokenEntry.role || 'agent';
+    return next();
+  }
+
   if (
     (req.headers.accept && req.headers.accept.includes('application/json')) ||
     (req.headers['content-type'] && req.headers['content-type'].includes('application/json')) ||
@@ -15,7 +46,7 @@ function requireAuth(req, res, next) {
   return res.redirect('/login');
 }
 
-// requireAdmin - checks session.role === 'admin'
+// requireAdmin - checks session.role === 'admin' (works with both session and bearer token)
 function requireAdmin(req, res, next) {
   if (req.session && req.session.role === 'admin') return next();
   return res.status(403).json({ error: 'Admin only' });
@@ -48,4 +79,10 @@ async function verifyPassword(username, password) {
   return false;
 }
 
-module.exports = { requireAuth, requireAdmin, verifyPassword };
+// requireAdminOrDoctor - allows admin or doctor role
+function requireAdminOrDoctor(req, res, next) {
+  if (req.session && (req.session.role === 'admin' || req.session.role === 'doctor')) return next();
+  return res.status(403).json({ error: 'Admin or Doctor only' });
+}
+
+module.exports = { requireAuth, requireAdmin, requireAdminOrDoctor, verifyPassword };

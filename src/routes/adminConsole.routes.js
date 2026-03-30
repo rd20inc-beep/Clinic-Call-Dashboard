@@ -8,7 +8,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { requireAuth, requireAdmin, requireAdminOrDoctor } = require('../middleware/auth');
 const { getUsers } = require('../config/env');
 const { getAllHeartbeats } = require('../services/agentRegistry.service');
 const { getAllPresence, getPresence } = require('../sockets/index');
@@ -18,7 +18,8 @@ const auditRepo = require('../db/audit.repo');
 const { logEvent } = require('../services/logging.service');
 const bcrypt = require('bcryptjs');
 
-// All routes require admin auth
+// Most admin routes require admin auth; appointments also allow doctors
+router.use('/admin/appointments', requireAuth, requireAdminOrDoctor);
 router.use('/admin', requireAuth, requireAdmin);
 
 // -------------------------------------------------------------------------
