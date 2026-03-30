@@ -71,7 +71,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
     const agentAppointments = {};
     try {
       const trackingRows = db.prepare(
-        "SELECT patient_phone FROM wa_appointment_tracking WHERE confirmation_sent = 1"
+        "SELECT DISTINCT patient_phone FROM wa_appointment_tracking WHERE patient_phone IS NOT NULL AND patient_phone != ''"
       ).all();
       for (const row of trackingRows) {
         if (!row.patient_phone) continue;
@@ -396,7 +396,7 @@ router.get('/admin/agents/:id/performance', (req, res) => {
     // Appointments attributed to this agent (phone match)
     let agentAppointments = [];
     try {
-      const trackingRows = db.prepare("SELECT * FROM wa_appointment_tracking WHERE confirmation_sent = 1 ORDER BY appointment_date DESC").all();
+      const trackingRows = db.prepare("SELECT * FROM wa_appointment_tracking WHERE patient_phone IS NOT NULL AND patient_phone != '' ORDER BY appointment_date DESC").all();
       for (const row of trackingRows) {
         if (!row.patient_phone) continue;
         const phone = row.patient_phone.replace(/[\s\-()]/g, '');
@@ -800,9 +800,24 @@ router.get('/admin/appointments', (req, res) => {
     const doctor = req.query.doctor || '';
     if (doctor) { where += ' AND doctor_name LIKE ?'; params.push('%' + doctor + '%'); }
 
-    const appointments = db.prepare(
+    const rawAppointments = db.prepare(
       'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 200'
     ).all(...params);
+
+    // Enrich each appointment with the agent who handled the patient's call
+    const appointments = rawAppointments.map(apt => {
+      let attributed_agent = null;
+      if (apt.patient_phone) {
+        const phone = apt.patient_phone.replace(/[\s\-()]/g, '');
+        try {
+          const match = db.prepare(
+            "SELECT agent FROM calls WHERE caller_number LIKE ? AND agent IS NOT NULL ORDER BY timestamp DESC LIMIT 1"
+          ).get('%' + phone.slice(-10) + '%');
+          if (match) attributed_agent = match.agent;
+        } catch (e) { /* ignore */ }
+      }
+      return { ...apt, attributed_agent };
+    });
 
     // Get unique values for filter dropdowns
     const services = db.prepare("SELECT DISTINCT service FROM wa_appointment_tracking WHERE service IS NOT NULL AND service != '' ORDER BY service").all().map(r => r.service);
