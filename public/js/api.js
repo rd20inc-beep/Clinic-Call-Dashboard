@@ -257,7 +257,7 @@ function filterConfirmations(filter) {
     filterBar.style.display = 'none';
   } else {
     filterBar.style.display = '';
-    filterLabel.textContent = filter === 'sent' ? 'Sent confirmations' : filter === 'pending' ? 'Pending / Approved' : 'With reminders';
+    filterLabel.textContent = filter === 'sent' ? 'Delivered by WhatsApp' : filter === 'pending' ? 'Awaiting delivery' : 'With reminders';
   }
   renderConfirmations(_allConfirmations, filter);
 }
@@ -276,15 +276,18 @@ function loadConfirmations() {
     _allConfirmations = confs;
 
     // Count by type
-    var sent = 0, pending = 0, reminders = 0;
+    // "Confirmed" = confirmation was queued/sent (confirmation_sent=1 in tracking)
+    // "Awaiting Delivery" = message queued but not yet delivered by WhatsApp
+    // "Reminders" = also got a reminder
+    var confirmed = 0, awaitingDelivery = 0, reminders = 0;
     confs.forEach(function(c) {
-      var ms = c.message_status || 'sent';
-      if (ms === 'sent') sent++;
-      if (ms === 'pending' || ms === 'approved') pending++;
+      var ms = c.message_status || '';
+      if (ms === 'sent') confirmed++;
+      else awaitingDelivery++; // pending, approved, or unknown = not yet delivered
       if (c.reminder_sent) reminders++;
     });
-    document.getElementById('confSentCount').textContent = sent;
-    document.getElementById('confPendingCount').textContent = pending;
+    document.getElementById('confSentCount').textContent = confs.length; // total confirmations queued
+    document.getElementById('confPendingCount').textContent = awaitingDelivery;
     document.getElementById('confReminderCount').textContent = reminders;
 
     renderConfirmations(confs, 'all');
