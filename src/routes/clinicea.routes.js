@@ -9,11 +9,10 @@ const { logEvent } = require('../services/logging.service');
 const { extractLocalNumber, getPhoneVariants } = require('../utils/phone');
 
 // ---------------------------------------------------------------------------
-// Clinicea API internals (token management, caching, fetch helper)
+// Clinicea API — use shared service (single token, single cache, hardened fetch)
 // ---------------------------------------------------------------------------
-
-let cliniceaToken = null;
-let tokenExpiry = 0;
+const cliniceaService = require('../services/clinicea.service');
+const cliniceaFetch = cliniceaService.cliniceaFetch;
 
 const meetingCache = new Map();       // phone -> { data, expiry }
 const appointmentDateCache = new Map(); // date -> { data, expiry }
@@ -21,73 +20,6 @@ const profileCache = new Map();       // patientID -> { data, expiry }
 
 const CACHE_TTL = 5 * 60 * 1000;     // 5 minutes
 const PATIENT_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
-
-// Patient list cache
-let patientCache = { patients: [], expiry: 0, loading: false, pages: 0 };
-
-// ---------------------------------------------------------------------------
-// Auth + fetch helpers
-// ---------------------------------------------------------------------------
-
-async function cliniceaLogin() {
-  const url =
-    config.CLINICEA_API_BASE +
-    '/api/v2/login/getTokenByStaffUsernamePwd' +
-    '?apiKey=' + encodeURIComponent(config.CLINICEA_API_KEY) +
-    '&loginUserName=' + encodeURIComponent(config.CLINICEA_STAFF_USERNAME) +
-    '&pwd=' + encodeURIComponent(config.CLINICEA_STAFF_PASSWORD);
-
-  const res = await fetch(url);
-  if (!res.ok) {
-    logEvent('error', 'Clinicea API login failed', 'HTTP ' + res.status);
-    throw new Error('Clinicea login failed: ' + res.status);
-  }
-  const data = await res.json();
-  cliniceaToken =
-    typeof data === 'string'
-      ? data
-      : data.Token || data.token || data.sessionId;
-  tokenExpiry = Date.now() + 55 * 60 * 1000;
-  logEvent('info', 'Clinicea API login successful');
-  return cliniceaToken;
-}
-
-async function getClinicaToken() {
-  if (!cliniceaToken || Date.now() > tokenExpiry) {
-    await cliniceaLogin();
-  }
-  return cliniceaToken;
-}
-
-async function cliniceaFetch(endpoint) {
-  const token = await getClinicaToken();
-  const separator = endpoint.includes('?') ? '&' : '?';
-  const url = config.CLINICEA_API_BASE + endpoint + separator + 'api_key=' + token;
-
-  const res = await fetch(url);
-  if (res.status === 401) {
-    // Token expired — re-login and retry once
-    await cliniceaLogin();
-    const retryUrl =
-      config.CLINICEA_API_BASE + endpoint + separator + 'api_key=' + cliniceaToken;
-    const retryRes = await fetch(retryUrl);
-    if (retryRes.status === 204) return [];
-    const retryText = await retryRes.text();
-    try {
-      return JSON.parse(retryText);
-    } catch {
-      return [];
-    }
-  }
-  if (res.status === 204) return [];
-  const text = await res.text();
-  try {
-    return JSON.parse(text);
-  } catch {
-    logEvent('warn', 'Clinicea API returned non-JSON', text.substring(0, 100));
-    return [];
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Patient helpers
@@ -284,37 +216,12 @@ function mapPatientFields(p) {
   };
 }
 
-async function loadAllPatients() {
-  if (patientCache.loading) return;
-  patientCache.loading = true;
-  const allPatients = [];
-  let pageNo = 1;
-  try {
-    while (true) {
-      const data = await cliniceaFetch(
-        '/api/v1/patients?lastSyncDate=2000-01-01T00:00:00&intPageNo=' + pageNo
-      );
-      const batch = Array.isArray(data) ? data : [];
-      allPatients.push(...batch.map(mapPatientFields));
-      if (batch.length < 100) break; // last page
-      pageNo++;
-      if (pageNo > 200) break; // safety limit (20000 patients max)
-    }
-    patientCache = {
-      patients: allPatients,
-      expiry: Date.now() + PATIENT_CACHE_TTL,
-      loading: false,
-      pages: pageNo,
-    };
-    logEvent(
-      'info',
-      'Patient cache loaded: ' + allPatients.length + ' patients (' + pageNo + ' pages)'
-    );
-  } catch (err) {
-    patientCache.loading = false;
-    logEvent('error', 'Patient cache load failed', err.message);
-    throw err;
-  }
+// Use shared loadAllPatients from service (parallel fetch, fail-safe cache)
+const loadAllPatients = cliniceaService.loadAllPatients;
+
+// Get live patient cache state from service (single source of truth)
+function getPatientCache() {
+  return cliniceaService.getPatientCacheState();
 }
 
 function mapAppointmentFields(a) {
@@ -429,14 +336,13 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
   }
 
   try {
-    // Load / refresh cache if stale
-    if (Date.now() > patientCache.expiry && !patientCache.loading) {
+    // Load / refresh cache if stale — uses shared service cache
+    const pc = getPatientCache();
+    if (Date.now() > pc.expiry && !pc.loading) {
       await loadAllPatients();
-    } else if (patientCache.loading) {
-      return res.json({ patients: [], page: 1, hasMore: false, loading: true });
     }
-
-    let patients = patientCache.patients;
+    // Serve previous cache while loading (never return empty during refresh)
+    let patients = getPatientCache().patients || [];
 
     // Merge local DB patients (from appointments/calls) that aren't in Clinicea
     try {
@@ -593,7 +499,7 @@ module.exports.fetchProfileByPatientId = fetchProfileByPatientId;
 module.exports.cliniceaFetch = cliniceaFetch;
 module.exports.extractPatientId = extractPatientId;
 module.exports.mapAppointmentFields = mapAppointmentFields;
-module.exports.patientCache = patientCache;
+module.exports.getPatientCache = getPatientCache;
 module.exports.appointmentDateCache = appointmentDateCache;
-module.exports.clearPatientCache = function() { patientCache = { patients: [], expiry: 0, loading: false, pages: 0 }; };
+module.exports.clearPatientCache = function() { try { cliniceaService.clearPatientCache && cliniceaService.clearPatientCache(); } catch(e) {} };
 module.exports.clearAppointmentCache = function() { appointmentDateCache.clear(); };

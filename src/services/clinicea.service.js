@@ -570,6 +570,10 @@ function getPatientCacheState() {
   return patientCache;
 }
 
+function clearPatientCache() {
+  patientCache = { patients: [], expiry: 0, loading: false, pages: 0 };
+}
+
 // ---------------------------------------------------------------------------
 // Startup preloader
 // ---------------------------------------------------------------------------
@@ -617,6 +621,7 @@ module.exports = {
   extractPatientId,
   getMeetingCache,
   getPatientCacheState,
+  clearPatientCache,
   // For startup preloading
   cliniceaFetch,
   preloadCaches,
