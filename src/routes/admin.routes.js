@@ -855,5 +855,64 @@ module.exports = function setupAdminRoutes(io) {
     res.json({ ok: true, cleared });
   });
 
+  // -----------------------------------------------------------------------
+  // GET /api/health — system health dashboard (admin only)
+  // -----------------------------------------------------------------------
+  router.get('/api/health', requireAuth, requireAdmin, (req, res) => {
+    try {
+      const cliniceaService = require('../services/clinicea.service');
+      const waClient = require('../services/whatsappClient.service');
+      const waService = require('../services/whatsapp.service');
+      const waRepo = require('../db/whatsapp.repo');
+      const { db } = require('../db/index');
+
+      const patientCache = cliniceaService.getPatientCacheState();
+      const heartbeats = getAllHeartbeats();
+      const presence = getAllPresence();
+
+      // Agent connection summary
+      const agents = {};
+      for (const [username, p] of Object.entries(presence)) {
+        agents[username] = { status: p.status, portal: p.portalOnline, mobile: p.mobileOnline, onCall: p.onCall };
+      }
+
+      res.json({
+        server: {
+          uptime: Math.round(process.uptime()),
+          memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+          nodeVersion: process.version,
+        },
+        clinicea: {
+          configured: require('../config/env').isClinicaConfigured(),
+          patientCache: {
+            count: patientCache.patients ? patientCache.patients.length : 0,
+            loading: patientCache.loading,
+            stale: patientCache.expiry ? Date.now() > patientCache.expiry : true,
+            ageMinutes: patientCache.expiry ? Math.round((Date.now() - (patientCache.expiry - 10 * 60 * 1000)) / 60000) : null,
+            lastSync: patientCache.lastSync || null,
+            pages: patientCache.pages || 0,
+          },
+        },
+        whatsapp: {
+          connectionStatus: waClient.getStatus ? waClient.getStatus() : 'unknown',
+          sendingEnabled: waService.isBotEnabled(),
+          businessHoursStart: parseInt(waRepo.getSetting('business_hour_start') || '9', 10),
+          businessHoursEnd: parseInt(waRepo.getSetting('business_hour_end') || '19', 10),
+          pendingMessages: db.prepare("SELECT COUNT(*) as c FROM wa_messages WHERE status IN ('pending','approved')").get().c,
+          failedMessages: db.prepare("SELECT COUNT(*) as c FROM wa_messages WHERE status = 'failed'").get().c,
+        },
+        agents,
+        database: {
+          calls: db.prepare("SELECT COUNT(*) as c FROM calls").get().c,
+          patients: db.prepare("SELECT COUNT(*) as c FROM patients").get().c,
+          appointments: db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking").get().c,
+          tokens: db.prepare("SELECT COUNT(*) as c FROM app_tokens").get().c,
+        },
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return router;
 };
