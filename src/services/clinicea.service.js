@@ -80,30 +80,47 @@ async function cliniceaFetch(endpoint) {
   const separator = endpoint.includes('?') ? '&' : '?';
   const url = `${config.CLINICEA_API_BASE}${endpoint}${separator}api_key=${token}`;
 
-  const res = await fetch(url);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+  let res;
+  try {
+    res = await fetch(url, { signal: controller.signal });
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e.name === 'AbortError') throw new Error('Clinicea API timeout (15s): ' + endpoint);
+    throw e;
+  }
+  clearTimeout(timeout);
 
   if (res.status === 401) {
     // Token expired — re-login and retry once
     await cliniceaLogin();
     const retryUrl = `${config.CLINICEA_API_BASE}${endpoint}${separator}api_key=${cliniceaToken}`;
-    const retryRes = await fetch(retryUrl);
+    const retryRes = await fetch(retryUrl, { signal: AbortSignal.timeout(15000) });
     if (retryRes.status === 204) return [];
-    const retryText = await retryRes.text();
-    try {
-      return JSON.parse(retryText);
-    } catch {
-      return [];
-    }
+    if (!retryRes.ok) throw new Error(`Clinicea API error ${retryRes.status} on retry: ${endpoint}`);
+    return parseJsonSafe(await retryRes.text(), endpoint);
   }
 
   if (res.status === 204) return [];
 
-  const text = await res.text();
+  // Fail closed: non-OK responses are errors, not empty data
+  if (!res.ok) {
+    const preview = (await res.text().catch(() => '')).substring(0, 150);
+    logEvent('error', `Clinicea API HTTP ${res.status}`, `${endpoint} | ${preview}`);
+    throw new Error(`Clinicea API error ${res.status}: ${endpoint}`);
+  }
+
+  return parseJsonSafe(await res.text(), endpoint);
+}
+
+function parseJsonSafe(text, endpoint) {
   try {
     return JSON.parse(text);
   } catch {
-    logEvent('warn', 'Clinicea API returned non-JSON', text.substring(0, 100));
-    return [];
+    logEvent('warn', 'Clinicea API non-JSON response', `${endpoint} | ${text.substring(0, 100)}`);
+    throw new Error('Clinicea API returned non-JSON: ' + endpoint);
   }
 }
 
@@ -220,11 +237,21 @@ async function findPatientByPhone(phone) {
     const syncDate = thirtyDaysAgo.toISOString().split('.')[0];
     const variants = getPhoneVariants(cleanPhone);
 
+    // Time-budgeted paginated search: stop after match, empty page, or 5 seconds
     let match = null;
-    for (let pageNo = 1; pageNo <= 10 && !match; pageNo++) {
-      const data = await cliniceaFetch(
-        `/api/v2/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
-      );
+    const searchStart = Date.now();
+    const SEARCH_BUDGET_MS = 5000;
+    for (let pageNo = 1; !match; pageNo++) {
+      if (Date.now() - searchStart > SEARCH_BUDGET_MS) {
+        logEvent('warn', 'Phone lookup time budget exceeded at page ' + pageNo);
+        break;
+      }
+      let data;
+      try {
+        data = await cliniceaFetch(
+          `/api/v2/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
+        );
+      } catch (e) { break; } // API error — stop searching
       if (!Array.isArray(data) || data.length === 0) break;
 
       match = data.find((a) => {
@@ -432,12 +459,23 @@ async function loadAllPatients() {
       );
 
       let lastBatchSize = 0;
+      let anyFailed = false;
       for (const result of results) {
         if (result.status === 'fulfilled') {
           const batch = Array.isArray(result.value) ? result.value : [];
           allPatients.push(...batch.map(mapPatientFields));
           lastBatchSize = batch.length;
+        } else {
+          anyFailed = true;
+          logEvent('warn', 'Patient cache page failed', result.reason?.message || 'unknown');
         }
+      }
+
+      // If any page in the batch failed, abort and keep previous cache
+      if (anyFailed) {
+        logEvent('error', 'Patient cache aborted — partial data discarded, keeping previous cache');
+        patientCache.loading = false;
+        return;
       }
 
       // Stop if last batch was incomplete (end of data)
