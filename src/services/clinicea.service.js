@@ -213,36 +213,39 @@ async function findPatientByPhone(phone) {
     logEvent('warn', 'v2/getPatient error', e.message);
   }
 
-  // Method 2: appointment-based matching with phone variants
+  // Method 2: appointment-based matching with phone variants (paginated)
   try {
     const today = new Date();
     const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
     const syncDate = thirtyDaysAgo.toISOString().split('.')[0];
+    const variants = getPhoneVariants(cleanPhone);
 
-    const data = await cliniceaFetch(
-      `/api/v2/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=1&pageSize=100`
-    );
+    let match = null;
+    for (let pageNo = 1; pageNo <= 10 && !match; pageNo++) {
+      const data = await cliniceaFetch(
+        `/api/v2/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
+      );
+      if (!Array.isArray(data) || data.length === 0) break;
 
-    if (Array.isArray(data)) {
-      const variants = getPhoneVariants(cleanPhone);
-
-      const match = data.find((a) => {
+      match = data.find((a) => {
         const p1 = (a.AppointmentWithPhone || '').replace(/[\s\-()]/g, '');
         const p2 = (a.PatientMobile || '').replace(/[\s\-()]/g, '');
         return variants.has(p1) || variants.has(p2);
       });
 
-      if (match) {
-        let patientName =
-          match.AppointmentWithName || match.PatientName || null;
-        if (!patientName) {
-          const first = match.PatientFirstName || match.FirstName || '';
-          const last = match.PatientLastName || match.LastName || '';
-          patientName = [first, last].filter(Boolean).join(' ') || null;
-        }
-        logEvent('info', 'Patient found via appointments: ' + patientName, 'ID: ' + match.PatientID);
-        return { patientID: match.PatientID, patientName };
+      if (data.length < 100) break; // last page
+    }
+
+    if (match) {
+      let patientName =
+        match.AppointmentWithName || match.PatientName || null;
+      if (!patientName) {
+        const first = match.PatientFirstName || match.FirstName || '';
+        const last = match.PatientLastName || match.LastName || '';
+        patientName = [first, last].filter(Boolean).join(' ') || null;
       }
+      logEvent('info', 'Patient found via appointments: ' + patientName, 'ID: ' + match.PatientID);
+      return { patientID: match.PatientID, patientName };
     }
   } catch (e) {
     logEvent('warn', 'getChanges error', e.message);
@@ -411,25 +414,42 @@ async function loadAllPatients() {
 
   const allPatients = [];
   let pageNo = 1;
+  const MAX_PAGES = 200; // support up to ~20,000 patients
+  const CONCURRENT_BATCH = 5; // fetch 5 pages in parallel
 
   try {
-    while (true) {
-      const data = await cliniceaFetch(
-        `/api/v1/patients?lastSyncDate=2000-01-01T00:00:00&intPageNo=${pageNo}`
+    while (pageNo <= MAX_PAGES) {
+      // Fetch pages in parallel batches for faster loading
+      const pageNos = [];
+      for (let i = 0; i < CONCURRENT_BATCH && pageNo <= MAX_PAGES; i++, pageNo++) {
+        pageNos.push(pageNo);
+      }
+
+      const results = await Promise.allSettled(
+        pageNos.map(pn => cliniceaFetch(
+          `/api/v1/patients?lastSyncDate=2000-01-01T00:00:00&intPageNo=${pn}`
+        ))
       );
-      const batch = Array.isArray(data) ? data : [];
-      allPatients.push(...batch.map(mapPatientFields));
-      if (batch.length < 100) break; // last page
-      pageNo++;
-      if (pageNo > 50) break; // safety limit (~5000 patients)
+
+      let lastBatchSize = 0;
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          const batch = Array.isArray(result.value) ? result.value : [];
+          allPatients.push(...batch.map(mapPatientFields));
+          lastBatchSize = batch.length;
+        }
+      }
+
+      // Stop if last batch was incomplete (end of data)
+      if (lastBatchSize < 100) break;
     }
     patientCache = {
       patients: allPatients,
       expiry: Date.now() + PATIENT_CACHE_TTL,
       loading: false,
-      pages: pageNo,
+      pages: pageNo - 1,
     };
-    logEvent('info', `Patient cache loaded: ${allPatients.length} patients (${pageNo} pages)`);
+    logEvent('info', `Patient cache loaded: ${allPatients.length} patients (${pageNo - 1} pages, parallel batches of ${CONCURRENT_BATCH})`);
   } catch (err) {
     patientCache.loading = false;
     logEvent('error', 'Patient cache load failed', err.message);
@@ -523,10 +543,10 @@ function getPatientCacheState() {
 async function preloadCaches() {
   if (!isClinicaConfigured()) return;
 
-  // Preload today's appointments
+  // Preload today's appointments (non-blocking — don't delay server startup)
   try {
     const today = new Date().toISOString().split('T')[0];
-    await getAppointmentsByDate(today);
+    getAppointmentsByDate(today).catch(() => {});
     const cached = appointmentDateCache.get(today);
     const count = cached ? cached.data.length : 0;
     logEvent('info', `Preloaded ${count} appointments for today`);

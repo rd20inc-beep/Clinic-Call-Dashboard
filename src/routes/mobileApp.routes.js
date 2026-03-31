@@ -23,28 +23,50 @@ const callsRepo = require('../db/calls.repo');
 const { config } = require('../config/env');
 const bcrypt = require('bcryptjs');
 
-// In-memory token → agent map with TTL (24 hours)
-const appTokens = new Map();
-const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const MAX_TOKENS = 100; // hard cap to prevent memory growth
+// DB-backed token store (survives restarts, works with multiple instances)
+const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// Thin wrapper around the app_tokens table
+const appTokens = {
+  get(token) {
+    try {
+      const { db } = require('../db/index');
+      return db.prepare('SELECT token, agent, role, login_at AS loginAt, ip FROM app_tokens WHERE token = ?').get(token) || undefined;
+    } catch (e) { return undefined; }
+  },
+  set(token, entry) {
+    try {
+      const { db } = require('../db/index');
+      db.prepare('INSERT OR REPLACE INTO app_tokens (token, agent, role, login_at, ip) VALUES (?, ?, ?, ?, ?)').run(
+        token, entry.agent, entry.role || 'agent', entry.loginAt, entry.ip || null
+      );
+    } catch (e) { console.error('[app-tokens] set failed:', e.message); }
+  },
+  delete(token) {
+    try {
+      const { db } = require('../db/index');
+      db.prepare('DELETE FROM app_tokens WHERE token = ?').run(token);
+    } catch (e) {}
+  },
+  deleteByAgent(agent) {
+    try {
+      const { db } = require('../db/index');
+      db.prepare('DELETE FROM app_tokens WHERE agent = ?').run(agent);
+    } catch (e) {}
+  },
+};
 
 // Cleanup expired tokens every 30 minutes
 setInterval(() => {
-  const now = Date.now();
-  for (const [token, entry] of appTokens) {
-    if (now - entry.loginAt > TOKEN_TTL_MS) {
-      appTokens.delete(token);
-    }
-  }
+  try {
+    const { db } = require('../db/index');
+    const cutoff = Date.now() - TOKEN_TTL_MS;
+    db.prepare('DELETE FROM app_tokens WHERE login_at < ?').run(cutoff);
+  } catch (e) {}
 }, 30 * 60 * 1000);
 
-// Evict oldest tokens if over cap
 function evictOldestTokens() {
-  if (appTokens.size <= MAX_TOKENS) return;
-  const sorted = [...appTokens.entries()].sort((a, b) => a[1].loginAt - b[1].loginAt);
-  while (appTokens.size > MAX_TOKENS) {
-    appTokens.delete(sorted.shift()[0]);
-  }
+  // DB handles this — no memory cap needed
 }
 
 // ---------------------------------------------------------------------------
@@ -80,12 +102,8 @@ router.post('/api/agent/login', loginLimiter, (req, res) => {
   }
 
   // Single device enforcement: invalidate all previous tokens for this agent
-  for (const [existingToken, entry] of appTokens) {
-    if (entry.agent === agent_id) {
-      appTokens.delete(existingToken);
-      logEvent('info', 'Mobile session invalidated for ' + agent_id + ' (new login from ' + getClientIP(req) + ')');
-    }
-  }
+  appTokens.deleteByAgent(agent_id);
+  logEvent('info', 'Mobile sessions invalidated for ' + agent_id + ' (new login from ' + getClientIP(req) + ')');
 
   // Generate a new token
   const token = require('crypto').randomBytes(32).toString('hex');

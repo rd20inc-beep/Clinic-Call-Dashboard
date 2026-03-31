@@ -207,6 +207,19 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_status ON wa_messages(statu
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_dir ON wa_messages(direction, created_at DESC)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_phone ON wa_appointment_tracking(patient_phone)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_status ON callbacks(callback_status)'); } catch(e) {}
+
+// --- Mobile app tokens (persisted across restarts) ---
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_tokens (
+      token TEXT PRIMARY KEY,
+      agent TEXT NOT NULL,
+      role TEXT DEFAULT 'agent',
+      login_at INTEGER NOT NULL,
+      ip TEXT
+    )
+  `);
+} catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_caller ON callbacks(caller_number)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name)'); } catch(e) {}
