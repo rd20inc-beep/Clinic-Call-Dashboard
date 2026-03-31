@@ -435,63 +435,124 @@ function mapPatientFields(p) {
  * Load the entire patient list from Clinicea (paginated), map each record, and
  * store in an in-memory cache. Skips if a load is already in progress.
  */
+// Circuit breaker: track consecutive Clinicea failures
+let cliniceaFailures = 0;
+let cliniceaCircuitOpen = false;
+let cliniceaCircuitResetAt = 0;
+const CIRCUIT_THRESHOLD = 3;
+const CIRCUIT_RESET_MS = 60_000; // 1 minute cooldown
+
+function checkCircuitBreaker() {
+  if (cliniceaCircuitOpen && Date.now() > cliniceaCircuitResetAt) {
+    cliniceaCircuitOpen = false;
+    cliniceaFailures = 0;
+    logEvent('info', 'Clinicea circuit breaker reset — retrying');
+  }
+  if (cliniceaCircuitOpen) {
+    throw new Error('Clinicea circuit breaker open — too many failures, cooling down');
+  }
+}
+
+function recordClinicaSuccess() { cliniceaFailures = 0; cliniceaCircuitOpen = false; }
+function recordClinicaFailure() {
+  cliniceaFailures++;
+  if (cliniceaFailures >= CIRCUIT_THRESHOLD) {
+    cliniceaCircuitOpen = true;
+    cliniceaCircuitResetAt = Date.now() + CIRCUIT_RESET_MS;
+    logEvent('error', `Clinicea circuit breaker OPEN after ${cliniceaFailures} failures — pausing for ${CIRCUIT_RESET_MS / 1000}s`);
+  }
+}
+
 async function loadAllPatients() {
   if (patientCache.loading) return;
+  checkCircuitBreaker();
   patientCache.loading = true;
 
   const allPatients = [];
   let pageNo = 1;
-  const MAX_PAGES = 200; // support up to ~20,000 patients
-  const CONCURRENT_BATCH = 5; // fetch 5 pages in parallel
+  const MAX_PAGES = 200;
+  const CONCURRENT_BATCH = 5;
+  const startTime = Date.now();
+
+  // Incremental sync: if we have a previous cache, only fetch changes since last load
+  const lastSync = patientCache.lastSync || '2000-01-01T00:00:00';
+  const isIncremental = patientCache.patients.length > 0 && lastSync !== '2000-01-01T00:00:00';
 
   try {
-    while (pageNo <= MAX_PAGES) {
-      // Fetch pages in parallel batches for faster loading
-      const pageNos = [];
-      for (let i = 0; i < CONCURRENT_BATCH && pageNo <= MAX_PAGES; i++, pageNo++) {
-        pageNos.push(pageNo);
-      }
-
-      const results = await Promise.allSettled(
-        pageNos.map(pn => cliniceaFetch(
-          `/api/v1/patients?lastSyncDate=2000-01-01T00:00:00&intPageNo=${pn}`
-        ))
+    if (isIncremental) {
+      // Incremental: fetch only changes since last sync
+      const data = await cliniceaFetch(
+        `/api/v1/patients?lastSyncDate=${encodeURIComponent(lastSync)}&intPageNo=1`
       );
-
-      let lastBatchSize = 0;
-      let anyFailed = false;
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          const batch = Array.isArray(result.value) ? result.value : [];
-          allPatients.push(...batch.map(mapPatientFields));
-          lastBatchSize = batch.length;
-        } else {
-          anyFailed = true;
-          logEvent('warn', 'Patient cache page failed', result.reason?.message || 'unknown');
+      const changes = Array.isArray(data) ? data.map(mapPatientFields) : [];
+      if (changes.length > 0) {
+        // Merge changes into existing cache
+        const phoneMap = new Map(patientCache.patients.map(p => [p.phone, p]));
+        for (const p of changes) {
+          if (p.phone) phoneMap.set(p.phone, p);
         }
-      }
-
-      // If any page in the batch failed, abort and keep previous cache
-      if (anyFailed) {
-        logEvent('error', 'Patient cache aborted — partial data discarded, keeping previous cache');
+        allPatients.push(...phoneMap.values());
+        logEvent('info', `Patient cache incremental: ${changes.length} changes merged (${allPatients.length} total, ${Date.now() - startTime}ms)`);
+      } else {
+        // No changes — extend expiry
+        patientCache.expiry = Date.now() + PATIENT_CACHE_TTL;
         patientCache.loading = false;
+        logEvent('info', 'Patient cache still fresh — no changes');
+        recordClinicaSuccess();
         return;
       }
+    } else {
+      // Full load
+      while (pageNo <= MAX_PAGES) {
+        const pageNos = [];
+        for (let i = 0; i < CONCURRENT_BATCH && pageNo <= MAX_PAGES; i++, pageNo++) {
+          pageNos.push(pageNo);
+        }
 
-      // Stop if last batch was incomplete (end of data)
-      if (lastBatchSize < 100) break;
+        const results = await Promise.allSettled(
+          pageNos.map(pn => cliniceaFetch(
+            `/api/v1/patients?lastSyncDate=2000-01-01T00:00:00&intPageNo=${pn}`
+          ))
+        );
+
+        let lastBatchSize = 0;
+        let anyFailed = false;
+        for (const result of results) {
+          if (result.status === 'fulfilled') {
+            const batch = Array.isArray(result.value) ? result.value : [];
+            allPatients.push(...batch.map(mapPatientFields));
+            lastBatchSize = batch.length;
+          } else {
+            anyFailed = true;
+            logEvent('warn', 'Patient cache page failed', result.reason?.message || 'unknown');
+          }
+        }
+
+        if (anyFailed) {
+          logEvent('error', `Patient cache aborted at page ${pageNo} — keeping previous cache (${patientCache.patients.length} patients)`);
+          patientCache.loading = false;
+          recordClinicaFailure();
+          return;
+        }
+
+        if (lastBatchSize < 100) break;
+      }
     }
+
+    const duration = Date.now() - startTime;
     patientCache = {
       patients: allPatients,
       expiry: Date.now() + PATIENT_CACHE_TTL,
       loading: false,
-      pages: pageNo - 1,
+      pages: isIncremental ? patientCache.pages : pageNo - 1,
+      lastSync: new Date().toISOString(),
     };
-    logEvent('info', `Patient cache loaded: ${allPatients.length} patients (${pageNo - 1} pages, parallel batches of ${CONCURRENT_BATCH})`);
+    recordClinicaSuccess();
+    logEvent('info', `Patient cache ${isIncremental ? 'incremental' : 'full'}: ${allPatients.length} patients (${duration}ms)`);
   } catch (err) {
     patientCache.loading = false;
-    logEvent('error', 'Patient cache load failed', err.message);
-    throw err;
+    recordClinicaFailure();
+    logEvent('error', `Patient cache load failed (${Date.now() - startTime}ms): ${err.message}`);
   }
 }
 
@@ -566,12 +627,22 @@ function getMeetingCache() {
   return meetingCache;
 }
 
+/**
+ * Get patient cache with stale-while-revalidate:
+ * - If fresh: return cache
+ * - If stale but has data: return stale data AND trigger background refresh
+ * - If empty: trigger load (caller should await loadAllPatients)
+ */
 function getPatientCacheState() {
+  // Trigger background revalidation if stale but has data
+  if (patientCache.patients.length > 0 && Date.now() > patientCache.expiry && !patientCache.loading) {
+    loadAllPatients().catch(() => {}); // background refresh
+  }
   return patientCache;
 }
 
 function clearPatientCache() {
-  patientCache = { patients: [], expiry: 0, loading: false, pages: 0 };
+  patientCache = { patients: [], expiry: 0, loading: false, pages: 0, lastSync: null };
 }
 
 // ---------------------------------------------------------------------------
