@@ -109,9 +109,10 @@ socket.on('incoming_call', function(data) {
     }
   }
 
-  // Auto-open Clinicea profile — only for the assigned agent, not admin
+  // Auto-open Clinicea profile — only for phone calls, not WhatsApp
   if (isMyCall || myRole !== 'admin') {
-    var shouldAutoOpen = !isOutbound;
+    var isWhatsApp = data.source === 'whatsapp' || (data.caller && data.caller.indexOf('whatsapp:') === 0);
+    var shouldAutoOpen = !isOutbound && !isWhatsApp;
     var lockKey = 'call_opened_' + data.callId;
     if (shouldAutoOpen && !localStorage.getItem(lockKey)) {
       localStorage.setItem(lockKey, '1');
