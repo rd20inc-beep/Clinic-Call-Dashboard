@@ -431,6 +431,15 @@ router.post('/api/calls/send-confirmation', requireAuth, (req, res) => {
     // SECURITY: Load appointment from DB — never trust client-supplied fields
     const apt = db.prepare('SELECT * FROM wa_appointment_tracking WHERE id = ?').get(appointmentId);
     if (!apt) return res.status(404).json({ error: 'Appointment not found' });
+
+    // SECURITY: Non-admin agents can only confirm appointments for patients they handled
+    if (req.session.role !== 'admin') {
+      const phone = (apt.patient_phone || '').replace(/[\s\-()]/g, '');
+      const handled = db.prepare(
+        "SELECT id FROM calls WHERE caller_number LIKE ? AND agent = ? LIMIT 1"
+      ).get('%' + phone.slice(-10) + '%', req.session.username);
+      if (!handled) return res.status(403).json({ error: 'You have not handled any calls from this patient' });
+    }
     if (!apt.patient_phone) return res.status(400).json({ error: 'Appointment has no phone number' });
     if (apt.confirmation_sent === 1) return res.json({ ok: true, message: 'Already sent', alreadySent: true });
 
