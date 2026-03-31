@@ -231,7 +231,7 @@ function showAppointmentBookedDialog(callId, disposition) {
               '<button onclick="this.closest(\'.error-toast\').remove()" style="padding:10px 16px;border:1px solid #e2e8f0;border-radius:8px;background:white;color:#64748b;font-size:13px;cursor:pointer;">OK</button>' +
             '</div>'
           : '<div style="display:flex;gap:8px;">' +
-              '<button id="confirmSendBtn_' + callId + '" onclick="sendInstantConfirmation(this,' + (apt.id || 0) + ',\'' + escapeHtml(apt.patient_phone || phone) + '\',\'' + escapeHtml(apt.patient_name || patientName || '') + '\',\'' + escapeHtml(apt.appointment_date || '') + '\',\'' + escapeHtml(apt.doctor_name || '') + '\',\'' + escapeHtml(apt.service || '') + '\')" ' +
+              '<button id="confirmSendBtn_' + callId + '" onclick="sendInstantConfirmation(this,' + (apt.id || 0) + ')" ' +
                 'style="flex:1;padding:10px 16px;border:none;border-radius:8px;background:#10b981;color:white;font-weight:700;font-size:14px;cursor:pointer;">Send Confirmation</button>' +
               '<button onclick="this.closest(\'.error-toast\').remove()" style="padding:10px 16px;border:1px solid #e2e8f0;border-radius:8px;background:white;color:#64748b;font-size:13px;cursor:pointer;">Skip</button>' +
             '</div>'

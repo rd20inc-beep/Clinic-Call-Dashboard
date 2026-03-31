@@ -28,8 +28,10 @@ const stmtUpdateCallStatus = db.prepare(
 );
 
 // Duration update also guards: only if still unknown OR upgrading to answered
+// SECURITY: Only update duration. Status is set separately via updateCallStatus.
+// Never silently overwrite missed/rejected with answered.
 const stmtUpdateCallDuration = db.prepare(
-  "UPDATE calls SET duration = ?, call_status = ? WHERE id = ? AND (call_status = 'unknown' OR call_status = 'missed' OR ? = 'answered')"
+  "UPDATE calls SET duration = ? WHERE id = ?"
 );
 
 const stmtUpdatePatientName = db.prepare(
@@ -170,18 +172,18 @@ module.exports = {
   },
 
   /**
-   * Update call duration and mark as answered.
-   * Can overwrite "missed" status (correcting wrongly-finalized calls).
+   * Update call duration only. Does NOT change call_status.
+   * Status must be set explicitly via updateCallStatus.
    */
   updateCallDuration(callId, duration) {
-    const result = stmtUpdateCallDuration.run(duration, 'answered', callId, 'answered');
+    const result = stmtUpdateCallDuration.run(duration, callId);
     if (result.changes > 0) {
-      // If call was wrongly marked "missed", remove the callback
+      // If duration > 0 and call was previously marked "missed", auto-resolve callback
       try {
-        const cbRepo = require('./callbacks.repo');
-        const cb = db.prepare("SELECT id FROM callbacks WHERE call_id = ? AND callback_status = 'pending'").get(callId);
-        if (cb) {
-          db.prepare("UPDATE callbacks SET callback_status = 'no_callback_needed', resolved_at = datetime('now') WHERE id = ?").run(cb.id);
+        if (duration > 0) {
+          const cb = db.prepare("SELECT id FROM callbacks WHERE call_id = ? AND callback_status = 'pending'").get(callId);
+          if (cb) {
+            db.prepare("UPDATE callbacks SET callback_status = 'no_callback_needed', resolved_at = datetime('now') WHERE id = ?").run(cb.id);
           console.log('[calls] Auto-resolved callback ' + cb.id + ' — call ' + callId + ' was actually answered');
         }
       } catch (e) { console.error('[calls] Auto-resolve callback failed for call ' + callId + ':', e.message); }

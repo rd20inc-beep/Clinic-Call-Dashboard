@@ -443,7 +443,7 @@ router.get('/admin/agents/:id/performance', (req, res) => {
 // -------------------------------------------------------------------------
 // GET /admin/audit-log
 // -------------------------------------------------------------------------
-router.get('/admin/audit-log', (req, res) => {
+router.get('/admin/audit-log', requireAuth, requireAdmin, (req, res) => {
   const entries = auditRepo.getRecent(100);
   // Map to old format
   res.json({ entries: entries.map(e => ({ id: e.id, admin_username: e.performed_by, action: e.action, target_username: e.target, details: e.details, created_at: e.created_at })) });
@@ -452,7 +452,7 @@ router.get('/admin/audit-log', (req, res) => {
 // -------------------------------------------------------------------------
 // GET /admin/leaderboard
 // -------------------------------------------------------------------------
-router.get('/admin/leaderboard', (req, res) => {
+router.get('/admin/leaderboard', requireAuth, requireAdmin, (req, res) => {
   try {
     callsRepo.finalizeStale();
     const period = req.query.period || 'week';

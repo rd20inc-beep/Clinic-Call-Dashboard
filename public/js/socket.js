@@ -225,20 +225,13 @@ socket.on('admin_message', function(data) {
   try { playBeep(); } catch(e) {}
 });
 
-function sendInstantConfirmation(btn, appointmentId, phone, name, date, doctor, service) {
+function sendInstantConfirmation(btn, appointmentId) {
   btn.disabled = true;
   btn.textContent = 'Sending...';
   fetch('/api/calls/send-confirmation', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      appointmentId: appointmentId,
-      patientPhone: phone,
-      patientName: name,
-      appointmentDate: date,
-      doctorName: doctor,
-      service: service
-    })
+    body: JSON.stringify({ appointmentId: appointmentId })
   }).then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.ok) {

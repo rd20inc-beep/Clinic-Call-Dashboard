@@ -15,6 +15,22 @@ const { getClientIP } = require('../utils/security');
 const { config, isClinicaConfigured } = require('../config/env');
 const { setOnCall, clearOnCall, updateActivity } = require('../sockets/index');
 
+// SECURITY: Check call ownership — agents can only access their own calls, admins can access any
+function requireCallOwnership(req, res, next) {
+  const id = parseInt(req.params.id);
+  if (!id) return res.status(400).json({ error: 'id required' });
+  if (req.session.role === 'admin') return next();
+  try {
+    const { db } = require('../db/index');
+    const call = db.prepare('SELECT agent FROM calls WHERE id = ?').get(id);
+    if (!call) return res.status(404).json({ error: 'Call not found' });
+    if (call.agent !== req.session.username) {
+      return res.status(403).json({ error: 'Access denied — not your call' });
+    }
+    next();
+  } catch (e) { res.status(500).json({ error: e.message }); }
+}
+
 // Clinicea service is loaded lazily to avoid circular deps or missing-module
 // errors when the service has not been extracted yet.
 let _clinicea = null;
@@ -357,7 +373,7 @@ router.get('/api/calls/check-appointment', requireAuth, (req, res) => {
 // ---------------------------------------------------------------------------
 // GET /api/calls/:id — get single call details
 // ---------------------------------------------------------------------------
-router.get('/api/calls/:id', requireAuth, (req, res) => {
+router.get('/api/calls/:id', requireAuth, requireCallOwnership, (req, res) => {
   const id = parseInt(req.params.id);
   if (!id) return res.json({ error: 'id required' });
   try {
@@ -373,7 +389,7 @@ router.get('/api/calls/:id', requireAuth, (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/calls/:id/direction — fix call direction (admin)
 // ---------------------------------------------------------------------------
-router.post('/api/calls/:id/direction', requireAuth, (req, res) => {
+router.post('/api/calls/:id/direction', requireAuth, requireCallOwnership, (req, res) => {
   const id = parseInt(req.params.id);
   const { direction } = req.body;
   if (!id || !direction) return res.json({ error: 'id and direction required' });
@@ -386,7 +402,7 @@ router.post('/api/calls/:id/direction', requireAuth, (req, res) => {
 // ---------------------------------------------------------------------------
 // POST /api/calls/:id/disposition — set call outcome
 // ---------------------------------------------------------------------------
-router.post('/api/calls/:id/disposition', requireAuth, (req, res) => {
+router.post('/api/calls/:id/disposition', requireAuth, requireCallOwnership, (req, res) => {
   const id = parseInt(req.params.id);
   const { disposition } = req.body;
   if (!id || !disposition) return res.json({ error: 'id and disposition required' });
@@ -403,42 +419,45 @@ router.post('/api/calls/:id/disposition', requireAuth, (req, res) => {
 // POST /api/calls/send-confirmation — agent sends instant confirmation (no approval queue)
 // ---------------------------------------------------------------------------
 router.post('/api/calls/send-confirmation', requireAuth, (req, res) => {
-  const { appointmentId, patientPhone, patientName, appointmentDate, doctorName, service } = req.body;
-  if (!appointmentId || !patientPhone) return res.json({ error: 'appointmentId and patientPhone required' });
+  const { appointmentId } = req.body;
+  if (!appointmentId) return res.status(400).json({ error: 'appointmentId required' });
 
   try {
+    const { db } = require('../db/index');
     const waRepo = require('../db/whatsapp.repo');
     const templates = require('../services/messageTemplates');
     const { parseLocalDate, formatDatePK, formatTimePK } = require('../services/whatsapp.service');
 
-    const aptDate = parseLocalDate ? parseLocalDate(appointmentDate) : new Date(appointmentDate);
+    // SECURITY: Load appointment from DB — never trust client-supplied fields
+    const apt = db.prepare('SELECT * FROM wa_appointment_tracking WHERE id = ?').get(appointmentId);
+    if (!apt) return res.status(404).json({ error: 'Appointment not found' });
+    if (!apt.patient_phone) return res.status(400).json({ error: 'Appointment has no phone number' });
+    if (apt.confirmation_sent === 1) return res.json({ ok: true, message: 'Already sent', alreadySent: true });
+
+    const aptDate = parseLocalDate ? parseLocalDate(apt.appointment_date) : new Date(apt.appointment_date);
     const aptLine = `${formatDatePK ? formatDatePK(aptDate) : aptDate.toDateString()} at ${formatTimePK ? formatTimePK(aptDate) : aptDate.toTimeString().slice(0,5)}`;
-    const fullLine = aptLine + (service ? ` — ${service}` : '') + (doctorName ? ` (${doctorName})` : '');
+    const fullLine = aptLine + (apt.service ? ` — ${apt.service}` : '') + (apt.doctor_name ? ` (${apt.doctor_name})` : '');
 
     const msg = templates.applyTemplate('confirmation', {
-      name: patientName || 'Patient',
+      name: apt.patient_name || 'Patient',
       appointments: fullLine,
     });
 
-    // Insert as 'approved' so it sends immediately (skip pending approval)
-    waRepo.insertMessage(patientPhone, null, 'out', msg, 'confirmation', 'approved', req.session.username || null);
-
-    // Mark the appointment tracking record as confirmation sent
-    const { db } = require('../db/index');
+    waRepo.insertMessage(apt.patient_phone, null, 'out', msg, 'confirmation', 'approved', req.session.username || null);
     db.prepare("UPDATE wa_appointment_tracking SET confirmation_sent = 1, confirmation_sent_at = datetime('now') WHERE id = ?").run(appointmentId);
 
-    logEvent('info', `Instant confirmation sent by ${req.session.username} for ${patientName} (${patientPhone})`);
+    logEvent('info', `Instant confirmation sent by ${req.session.username} for ${apt.patient_name} (${apt.patient_phone})`);
     res.json({ ok: true, message: 'Confirmation sent' });
   } catch (e) {
     console.error('[send-confirmation]', e.message);
-    res.json({ error: e.message });
+    res.status(500).json({ error: e.message });
   }
 });
 
 // ---------------------------------------------------------------------------
 // POST /api/calls/:id/notes — add/update agent notes on a call
 // ---------------------------------------------------------------------------
-router.post('/api/calls/:id/notes', requireAuth, (req, res) => {
+router.post('/api/calls/:id/notes', requireAuth, requireCallOwnership, (req, res) => {
   const id = parseInt(req.params.id);
   const { notes } = req.body;
   if (!id) return res.json({ error: 'id required' });

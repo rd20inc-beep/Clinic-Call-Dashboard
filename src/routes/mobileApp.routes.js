@@ -118,13 +118,12 @@ router.post('/api/agent/login', loginLimiter, (req, res) => {
 // Middleware: resolve agent from Bearer token or agent_id in body
 // ---------------------------------------------------------------------------
 function resolveAppAgent(req) {
-  // Try Bearer token first
+  // SECURITY: Only accept Bearer token — never trust agent_id from body
   const authHeader = req.headers.authorization || '';
   if (authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
     const entry = appTokens.get(token);
     if (entry) {
-      // Check TTL
       if (Date.now() - entry.loginAt > TOKEN_TTL_MS) {
         appTokens.delete(token);
         return null;
@@ -132,8 +131,7 @@ function resolveAppAgent(req) {
       return entry.agent;
     }
   }
-  // Fall back to agent_id in body
-  return req.body.agent_id || null;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
