@@ -458,9 +458,11 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     statusText.textContent = 'SCAN QR CODE';
     statusText.style.color = '#f39c12';
     logoutBtn.style.display = 'none';
-    reconnectBtn.style.display = 'none';
+    reconnectBtn.style.display = '';  // always show reconnect as fallback
     qrSection.style.display = '';
     if (qrDataUrl) qrImage.src = qrDataUrl;
+    var expiredMsg = document.getElementById('waQRExpired');
+    if (expiredMsg) expiredMsg.remove();
   } else if (status === 'authenticated') {
     dot.style.background = '#3498db';
     bar.style.background = 'rgba(52,152,219,0.15)';
@@ -479,6 +481,20 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     logoutBtn.style.display = 'none';
     reconnectBtn.style.display = '';
     qrSection.style.display = 'none';
+
+    // If QR was showing and we got disconnected, keep the last QR visible
+    // and show a message to click Reconnect
+    if (qrImage && qrImage.src && qrImage.src !== window.location.href) {
+      qrSection.style.display = '';
+      var expiredMsg = document.getElementById('waQRExpired');
+      if (!expiredMsg) {
+        var msg = document.createElement('p');
+        msg.id = 'waQRExpired';
+        msg.style.cssText = 'color:#e74c3c;font-weight:600;margin-top:8px;';
+        msg.textContent = 'QR code expired — click Reconnect to generate a new one';
+        qrSection.appendChild(msg);
+      }
+    }
   }
 }
 
