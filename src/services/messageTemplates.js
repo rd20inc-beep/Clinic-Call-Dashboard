@@ -326,7 +326,13 @@ function applyTemplate(templateKey, vars) {
   // Fall back to default
   if (!text) text = getTemplate(templateKey);
   if (!text) return '';
-  for (const [k, v] of Object.entries(vars || {})) {
+  // Built-in variables that are always available
+  const builtIn = {
+    location: 'GPC 11, Rojhan Street, Block 5, Clifton, Karachi',
+    mappin: 'https://maps.app.goo.gl/YadKKdh4911HmxKL9',
+  };
+  const allVars = Object.assign({}, builtIn, vars || {});
+  for (const [k, v] of Object.entries(allVars)) {
     text = text.replace(new RegExp('\\{' + k + '\\}', 'g'), v || '');
   }
   // Clean up any remaining placeholders

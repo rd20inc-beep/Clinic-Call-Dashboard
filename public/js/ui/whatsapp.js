@@ -101,6 +101,37 @@ function previewTemplate(key) {
     }).catch(function() {});
 }
 
+// ===== TEMPLATE VARIABLE BUTTONS =====
+var _tplVarButtons = [
+  { tag: '{name}', label: 'Patient Name' },
+  { tag: '{date}', label: 'Date' },
+  { tag: '{time}', label: 'Time' },
+  { tag: '{service}', label: 'Service' },
+  { tag: '{appointments}', label: 'Appointment Details' },
+  { tag: '{location}', label: 'Location' },
+  { tag: '{mappin}', label: 'Map Link' },
+];
+
+function buildVarButtons(textareaId) {
+  return '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">' +
+    '<span style="font-size:11px;color:#94a3b8;line-height:26px;margin-right:4px;">Insert:</span>' +
+    _tplVarButtons.map(function(v) {
+      return '<button onclick="insertVarTag(\'' + textareaId + '\',\'' + v.tag + '\')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;color:#3b82f6;font-size:11px;font-weight:600;cursor:pointer;font-family:monospace;">' + v.tag + '<span style="font-family:inherit;color:#94a3b8;font-weight:400;margin-left:4px;font-size:10px;">' + v.label + '</span></button>';
+    }).join('') +
+  '</div>';
+}
+
+function insertVarTag(textareaId, tag) {
+  var ta = document.getElementById(textareaId);
+  if (!ta) return;
+  var start = ta.selectionStart;
+  var end = ta.selectionEnd;
+  var text = ta.value;
+  ta.value = text.substring(0, start) + tag + text.substring(end);
+  ta.selectionStart = ta.selectionEnd = start + tag.length;
+  ta.focus();
+}
+
 // ===== SERVICE & DOCTOR TEMPLATE MANAGER =====
 
 var _tplServices = [];
@@ -239,9 +270,9 @@ function editServiceTemplate(type, service) {
     modal.id = 'svcTplModal';
     modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
     modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
-    modal.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:560px;width:100%;padding:24px;max-height:90vh;overflow-y:auto;">' +
-      '<h3 style="margin:0 0 4px;font-size:16px;">' + escapeHtml(title) + '</h3>' +
-      '<p style="margin:0 0 12px;font-size:11px;color:#94a3b8;">Variables: {name} {date} {time} {service} {doctor} {day_word} {appointments} {location} {phone}</p>' +
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:600px;width:100%;padding:24px;max-height:90vh;overflow-y:auto;">' +
+      '<h3 style="margin:0 0 8px;font-size:16px;">' + escapeHtml(title) + '</h3>' +
+      buildVarButtons('svcTplText') +
       '<textarea id="svcTplText" rows="10" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;">' + escapeHtml(text) + '</textarea>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">' +
         (info.template ? '<button onclick="deleteServiceTpl(\'' + type + '\',\'' + service.replace(/'/g, "\\'") + '\')" style="padding:8px 16px;border:1px solid #fecaca;border-radius:6px;background:#fef2f2;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;margin-right:auto;">Reset to Default</button>' : '') +
@@ -279,9 +310,9 @@ function editDoctorTemplate(type, doctor) {
     modal.id = 'svcTplModal';
     modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
     modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
-    modal.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:560px;width:100%;padding:24px;max-height:90vh;overflow-y:auto;">' +
-      '<h3 style="margin:0 0 4px;font-size:16px;">' + escapeHtml(title) + '</h3>' +
-      '<p style="margin:0 0 12px;font-size:11px;color:#94a3b8;">Variables: {name} {date} {time} {service} {doctor} {day_word} {appointments} {location} {phone}</p>' +
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:600px;width:100%;padding:24px;max-height:90vh;overflow-y:auto;">' +
+      '<h3 style="margin:0 0 8px;font-size:16px;">' + escapeHtml(title) + '</h3>' +
+      buildVarButtons('svcTplText') +
       '<textarea id="svcTplText" rows="10" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;">' + escapeHtml(text) + '</textarea>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">' +
         (info.template ? '<button onclick="deleteDoctorTpl(\'' + type + '\',\'' + doctor.replace(/'/g, "\\'") + '\')" style="padding:8px 16px;border:1px solid #fecaca;border-radius:6px;background:#fef2f2;color:#dc2626;font-size:13px;font-weight:600;cursor:pointer;margin-right:auto;">Reset to Default</button>' : '') +
