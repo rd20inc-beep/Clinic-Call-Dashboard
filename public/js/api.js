@@ -711,11 +711,12 @@ async function loadCallHistory(page) {
       var time = new Date(call.timestamp + 'Z').toLocaleString();
       // Strip "contact:" prefix for display
       var rawNumber = call.caller_number || '';
+      var dir = call.direction || 'inbound';
       var displayNumber = rawNumber.indexOf('contact:') === 0
         ? rawNumber.slice(8)
-        : (rawNumber === 'Unknown' || !rawNumber) && call.patient_name
-          ? call.patient_name
-          : rawNumber || 'Unknown';
+        : (rawNumber === 'Unknown' || !rawNumber)
+          ? (call.patient_name || (dir === 'outbound' ? 'Outbound Call' : 'Unknown'))
+          : rawNumber;
       var waUrl = getWhatsappUrl(call.caller_number);
       var nameDisplay = call.patient_name
         ? '<span class="meeting-badge upcoming" id="name-' + call.id + '">' + escapeHtml(call.patient_name) + '</span>'
