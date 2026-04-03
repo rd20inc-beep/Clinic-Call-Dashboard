@@ -797,6 +797,8 @@ router.get('/admin/appointments', (req, res) => {
     if (service) { where += ' AND service LIKE ?'; params.push('%' + service + '%'); }
     const doctor = req.query.doctor || '';
     if (doctor) { where += ' AND doctor_name LIKE ?'; params.push('%' + doctor + '%'); }
+    const staff = req.query.staff || '';
+    if (staff) { where += ' AND created_by LIKE ?'; params.push('%' + staff + '%'); }
 
     const rawAppointments = db.prepare(
       'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 200'
@@ -825,6 +827,7 @@ router.get('/admin/appointments', (req, res) => {
     // Get unique values for filter dropdowns
     const services = db.prepare("SELECT DISTINCT service FROM wa_appointment_tracking WHERE service IS NOT NULL AND service != '' ORDER BY service").all().map(r => r.service);
     const doctors = db.prepare("SELECT DISTINCT doctor_name FROM wa_appointment_tracking WHERE doctor_name IS NOT NULL AND doctor_name != '' ORDER BY doctor_name").all().map(r => r.doctor_name);
+    const staffList = db.prepare("SELECT DISTINCT created_by FROM wa_appointment_tracking WHERE created_by IS NOT NULL AND created_by != '' ORDER BY created_by").all().map(r => r.created_by);
 
     // Get agents who handled these patients' calls
     const agents = [];
@@ -833,7 +836,7 @@ router.get('/admin/appointments', (req, res) => {
       agentRows.forEach(r => agents.push(r.agent));
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
-    res.json({ appointments, agents, services, doctors, total: appointments.length });
+    res.json({ appointments, agents, services, doctors, staffList, total: appointments.length });
   } catch (err) {
     res.status(500).json({ error: err.message, appointments: [] });
   }
