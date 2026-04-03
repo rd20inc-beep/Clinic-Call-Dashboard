@@ -398,11 +398,20 @@
           </div>
         </div>
 
-        <!-- Message Templates (admin only) -->
+        <!-- Service & Doctor Templates (admin only) -->
         <div class="admin-only" style="display:none;margin-bottom:20px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <h3 style="margin:0;font-size:16px;font-weight:600;">Message Templates</h3>
-            <button onclick="loadWaTemplates()" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;font-size:11px;cursor:pointer;">Edit Templates</button>
+            <h3 style="margin:0;font-size:16px;font-weight:600;">Service &amp; Doctor Templates</h3>
+            <button onclick="loadServiceTemplateUI()" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;font-size:11px;cursor:pointer;">Manage Templates</button>
+          </div>
+          <div id="waServiceTemplatesSection" style="display:none;"></div>
+        </div>
+
+        <!-- Default Message Templates (admin only) -->
+        <div class="admin-only" style="display:none;margin-bottom:20px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <h3 style="margin:0;font-size:16px;font-weight:600;">Default Templates</h3>
+            <button onclick="loadWaTemplates()" style="padding:4px 10px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#64748b;font-size:11px;cursor:pointer;">Edit Defaults</button>
           </div>
           <div id="waTemplatesSection" style="display:none;"></div>
         </div>

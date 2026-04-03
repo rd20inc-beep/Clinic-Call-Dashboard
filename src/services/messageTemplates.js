@@ -255,13 +255,76 @@ function getAllServices() {
 }
 
 /**
+ * Get all known doctors from appointment tracking.
+ */
+function getAllDoctors() {
+  try {
+    const { db } = require('../db/index');
+    return db.prepare("SELECT DISTINCT doctor_name FROM wa_appointment_tracking WHERE doctor_name IS NOT NULL AND doctor_name != '' ORDER BY doctor_name").all().map(r => r.doctor_name);
+  } catch (e) { return []; }
+}
+
+/**
+ * Get a doctor-specific consultation template if it exists.
+ * Key format: consultation_<doctor_key>_<type>
+ */
+function getDoctorTemplate(templateKey, doctor) {
+  if (doctor) {
+    const doctorKey = 'doctor_' + serviceToKey(doctor) + '_' + templateKey;
+    const specific = waRepo.getSetting('template_' + doctorKey);
+    if (specific) return specific;
+  }
+  return getTemplate(templateKey);
+}
+
+function setDoctorTemplate(templateKey, doctor, text) {
+  const doctorKey = 'doctor_' + serviceToKey(doctor) + '_' + templateKey;
+  waRepo.setSetting('template_' + doctorKey, text);
+}
+
+function deleteDoctorTemplate(templateKey, doctor) {
+  const doctorKey = 'doctor_' + serviceToKey(doctor) + '_' + templateKey;
+  try {
+    const { db } = require('../db/index');
+    db.prepare("DELETE FROM wa_settings WHERE key = ?").run('template_' + doctorKey);
+    return true;
+  } catch (e) { return false; }
+}
+
+function getDoctorTemplates(templateKey) {
+  const prefix = 'template_doctor_';
+  const suffix = '_' + templateKey;
+  try {
+    const { db } = require('../db/index');
+    const rows = db.prepare("SELECT key, value FROM wa_settings WHERE key LIKE ? AND key LIKE ?").all(prefix + '%', '%' + suffix);
+    const result = {};
+    for (const row of rows) {
+      // Extract doctor key: template_doctor_<doctorkey>_<type>
+      const inner = row.key.replace('template_doctor_', '').replace(suffix, '');
+      result[inner] = row.value;
+    }
+    return result;
+  } catch (e) { return {}; }
+}
+
+/**
  * Apply variables to a template string, with service-specific override.
  * If vars.service is set, checks for a service-specific template first.
  */
 function applyTemplate(templateKey, vars) {
-  let text = vars && vars.service
-    ? getServiceTemplate(templateKey, vars.service)
-    : getTemplate(templateKey);
+  let text;
+  // Check doctor-specific template first (for consultations)
+  if (vars && vars.doctor) {
+    const doctorKey = 'doctor_' + serviceToKey(vars.doctor) + '_' + templateKey;
+    const doctorSpecific = waRepo.getSetting('template_' + doctorKey);
+    if (doctorSpecific) { text = doctorSpecific; }
+  }
+  // Then check service-specific template
+  if (!text && vars && vars.service) {
+    text = getServiceTemplate(templateKey, vars.service);
+  }
+  // Fall back to default
+  if (!text) text = getTemplate(templateKey);
   if (!text) return '';
   for (const [k, v] of Object.entries(vars || {})) {
     text = text.replace(new RegExp('\\{' + k + '\\}', 'g'), v || '');
@@ -285,6 +348,11 @@ module.exports = {
   deleteServiceTemplate,
   getServiceTemplates,
   getAllServices,
+  getAllDoctors,
+  getDoctorTemplate,
+  setDoctorTemplate,
+  deleteDoctorTemplate,
+  getDoctorTemplates,
   serviceToKey,
   DEFAULT_TEMPLATES,
 };

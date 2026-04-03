@@ -506,11 +506,11 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
-  // GET /api/whatsapp/services — list all known services from Clinicea
+  // GET /api/whatsapp/services — list all known services and doctors
   // -----------------------------------------------------------------------
   router.get('/api/whatsapp/services', requireAuth, (req, res) => {
     const templates = require('../services/messageTemplates');
-    res.json({ services: templates.getAllServices() });
+    res.json({ services: templates.getAllServices(), doctors: templates.getAllDoctors() });
   });
 
   // -----------------------------------------------------------------------
@@ -557,6 +557,47 @@ function setupWhatsAppRoutes(io) {
     const templates = require('../services/messageTemplates');
     templates.deleteServiceTemplate(type, service);
     logEvent('info', 'Service template deleted: ' + type + '/' + service + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/whatsapp/doctor-templates/:type — doctor-specific templates
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/doctor-templates/:type', requireAuth, (req, res) => {
+    const templates = require('../services/messageTemplates');
+    const type = req.params.type;
+    const doctors = templates.getAllDoctors();
+    const doctorTemplates = templates.getDoctorTemplates(type);
+    const defaultTemplate = templates.getTemplate(type);
+
+    const result = doctors.map(doc => {
+      const key = templates.serviceToKey(doc);
+      return { doctor: doc, key, template: doctorTemplates[key] || null, usingDefault: !doctorTemplates[key], defaultTemplate };
+    });
+    res.json({ type, doctors: result, defaultTemplate });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/doctor-templates — save doctor-specific template
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/doctor-templates', requireAuth, requireAdmin, (req, res) => {
+    const { type, doctor, text } = req.body;
+    if (!type || !doctor || !text) return res.json({ error: 'type, doctor, and text required' });
+    const templates = require('../services/messageTemplates');
+    templates.setDoctorTemplate(type, doctor, text);
+    logEvent('info', 'Doctor template saved: ' + type + '/' + doctor + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -----------------------------------------------------------------------
+  // DELETE /api/whatsapp/doctor-templates — delete doctor-specific template
+  // -----------------------------------------------------------------------
+  router.delete('/api/whatsapp/doctor-templates', requireAuth, requireAdmin, (req, res) => {
+    const { type, doctor } = req.body;
+    if (!type || !doctor) return res.json({ error: 'type and doctor required' });
+    const templates = require('../services/messageTemplates');
+    templates.deleteDoctorTemplate(type, doctor);
+    logEvent('info', 'Doctor template deleted: ' + type + '/' + doctor + ' by ' + req.session.username);
     res.json({ ok: true });
   });
 
