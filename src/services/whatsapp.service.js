@@ -424,6 +424,11 @@ async function syncAppointmentsAndScheduleMessages() {
       );
       const appointments = Array.isArray(data) ? data : [];
 
+      // Log first appointment's raw fields once per sync for debugging
+      if (appointments.length > 0 && dates.indexOf(date) === 0) {
+        logEvent('debug', 'Clinicea appointment sample fields', Object.keys(appointments[0]).join(', '));
+      }
+
       for (const apt of appointments) {
         const appointmentId = String(apt.AppointmentID || apt.ID || apt.Id || '');
         if (!appointmentId) continue;
@@ -440,8 +445,9 @@ async function syncAppointmentsAndScheduleMessages() {
           'Patient';
         const patientPhone = apt.AppointmentWithPhone || apt.PatientMobile || apt.Mobile || '';
         const patientId = String(apt.PatientID || apt.patientID || '');
-        const doctorName = apt.DoctorName || apt.Doctor || 'Dr. Nakhoda';
-        const service = apt.ServiceName || apt.Service || '';
+        const doctorName = apt.DoctorName || apt.Doctor || apt.ResourceName || apt.ProviderName ||
+          apt.DoctorFirstName || apt.StaffName || apt.PractitionerName || '';
+        const service = apt.ServiceName || apt.Service || apt.TreatmentName || apt.ProcedureName || '';
         const aptDate = apt.StartDateTime || apt.AppointmentDateTime || date;
 
         // Normalize phone

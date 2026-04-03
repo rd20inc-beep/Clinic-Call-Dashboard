@@ -626,8 +626,8 @@ function mapAppointmentFields(a) {
     endTime: a.EndDateTime || a.EndTime || '',
     duration: a.Duration || null,
     status: a.AppointmentStatus || a.Status || 'Unknown',
-    service: a.ServiceName || a.Service || '',
-    doctor: a.DoctorName || a.Doctor || '',
+    service: a.ServiceName || a.Service || a.TreatmentName || a.ProcedureName || '',
+    doctor: a.DoctorName || a.Doctor || a.ResourceName || a.ProviderName || a.DoctorFirstName || a.StaffName || a.PractitionerName || '',
     phone: a.AppointmentWithPhone || a.PatientMobile || a.Mobile || '',
     notes: a.Notes || a.AppointmentNotes || '',
   };
