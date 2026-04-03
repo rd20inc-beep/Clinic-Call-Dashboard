@@ -538,14 +538,16 @@
       <!-- Patient Retention & Recurring -->
       <div class="card" style="margin-bottom:16px;">
         <h2>Patient Retention &amp; Recurring Appointments</h2>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;" class="ov-grid-3">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;" class="ov-grid-4">
           <div class="stat-card green" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="totalPatientsVal">-</div><div class="stat-label">Unique Patients</div></div>
-          <div class="stat-card blue" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="recurringPatientsVal">-</div><div class="stat-label">Recurring Patients</div></div>
-          <div class="stat-card teal" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="recurringPctVal">-</div><div class="stat-label">Retention Rate</div></div>
+          <div class="stat-card blue" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="clinicRecurringVal">-</div><div class="stat-label">Clinic Repeats</div></div>
+          <div class="stat-card teal" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="clinicRecurringPctVal">-</div><div class="stat-label">Clinic Retention</div></div>
+          <div class="stat-card purple" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="svcRecurringPctVal">-</div><div class="stat-label">Same-Service Retention</div></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="ov-grid-2">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;" class="ov-grid-3">
           <div id="recurringServicesTable"></div>
-          <div id="patientLoyaltyTable"></div>
+          <div id="clinicRepeatsTable"></div>
+          <div id="sameServiceRepeatsTable"></div>
         </div>
       </div>
 
@@ -1295,37 +1297,58 @@
         }
         // === Patient Retention KPIs ===
         document.getElementById('totalPatientsVal').textContent = d.totalUniquePatients || 0;
-        document.getElementById('recurringPatientsVal').textContent = d.totalRecurringPatients || 0;
-        document.getElementById('recurringPctVal').textContent = (d.recurringPct || 0) + '%';
+        document.getElementById('clinicRecurringVal').textContent = d.totalClinicRecurring || 0;
+        document.getElementById('clinicRecurringPctVal').textContent = (d.clinicRecurringPct || 0) + '%';
+        document.getElementById('svcRecurringPctVal').textContent = (d.sameServiceRecurringPct || 0) + '%';
 
-        // === Recurring Services Table ===
+        // === Same-Service Recurring Table ===
         if (d.recurringServices && d.recurringServices.length > 0) {
-          var rsHtml = '<h3 style="font-size:13px;margin:0 0 8px;">Services with Repeat Patients</h3>';
-          rsHtml += '<table><thead><tr><th>Service</th><th>Total Appts</th><th>Unique Patients</th><th>Avg Visits/Patient</th></tr></thead><tbody>';
+          var rsHtml = '<h3 style="font-size:13px;margin:0 0 8px;">Same-Service Repeats</h3>';
+          rsHtml += '<div style="font-size:10px;color:#94a3b8;margin-bottom:6px;">Patients returning for the same treatment</div>';
+          rsHtml += '<table><thead><tr><th>Service</th><th>Appts</th><th>Patients</th><th>Avg Visits</th></tr></thead><tbody>';
           d.recurringServices.forEach(function(s) {
-            rsHtml += '<tr><td><strong>' + esc(s.service.length > 25 ? s.service.substring(0,25) + '...' : s.service) + '</strong></td>';
+            rsHtml += '<tr><td><strong>' + esc(s.service.length > 20 ? s.service.substring(0,20) + '...' : s.service) + '</strong></td>';
             rsHtml += '<td>' + s.total_appts + '</td><td>' + s.unique_patients + '</td>';
             rsHtml += '<td style="font-weight:600;color:#8b5cf6;">' + s.avg_visits_per_patient + 'x</td></tr>';
           });
           rsHtml += '</tbody></table>';
           document.getElementById('recurringServicesTable').innerHTML = rsHtml;
         } else {
-          document.getElementById('recurringServicesTable').innerHTML = '<div class="empty" style="font-size:12px;">No recurring services found</div>';
+          document.getElementById('recurringServicesTable').innerHTML = '<div class="empty" style="font-size:12px;">No same-service repeats</div>';
         }
 
-        // === Patient Loyalty Table ===
-        if (d.patientServiceRepeat && d.patientServiceRepeat.length > 0) {
-          var plHtml = '<h3 style="font-size:13px;margin:0 0 8px;">Top Repeat Patients by Service</h3>';
-          plHtml += '<table><thead><tr><th>Patient</th><th>Service</th><th>Visits</th></tr></thead><tbody>';
-          d.patientServiceRepeat.forEach(function(p) {
-            plHtml += '<tr><td><strong>' + esc(p.patient_name || p.patient_phone) + '</strong></td>';
-            plHtml += '<td>' + esc(p.service.length > 20 ? p.service.substring(0,20) + '...' : p.service) + '</td>';
-            plHtml += '<td style="font-weight:600;color:#0ea5e9;">' + p.visits + '</td></tr>';
+        // === Clinic Repeats Table (any service) ===
+        if (d.clinicRepeats && d.clinicRepeats.length > 0) {
+          var crHtml = '<h3 style="font-size:13px;margin:0 0 8px;">Clinic Repeat Patients</h3>';
+          crHtml += '<div style="font-size:10px;color:#94a3b8;margin-bottom:6px;">Patients who visited multiple times (any service)</div>';
+          crHtml += '<table><thead><tr><th>Patient</th><th>Visits</th><th>Services Used</th></tr></thead><tbody>';
+          d.clinicRepeats.forEach(function(p) {
+            var svcList = (p.service_list || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+            var svcDisplay = svcList.length > 2 ? svcList.slice(0,2).join(', ') + ' +' + (svcList.length-2) : svcList.join(', ');
+            crHtml += '<tr><td><strong>' + esc(p.patient_name || p.patient_phone) + '</strong></td>';
+            crHtml += '<td style="font-weight:600;color:#0ea5e9;">' + p.total_visits + '</td>';
+            crHtml += '<td style="font-size:11px;" title="' + esc(p.service_list || '') + '">' + esc(svcDisplay || '-') + '</td></tr>';
           });
-          plHtml += '</tbody></table>';
-          document.getElementById('patientLoyaltyTable').innerHTML = plHtml;
+          crHtml += '</tbody></table>';
+          document.getElementById('clinicRepeatsTable').innerHTML = crHtml;
         } else {
-          document.getElementById('patientLoyaltyTable').innerHTML = '<div class="empty" style="font-size:12px;">No repeat patients found</div>';
+          document.getElementById('clinicRepeatsTable').innerHTML = '<div class="empty" style="font-size:12px;">No clinic repeats found</div>';
+        }
+
+        // === Same-Service Repeat Patients ===
+        if (d.sameServiceRepeats && d.sameServiceRepeats.length > 0) {
+          var ssHtml = '<h3 style="font-size:13px;margin:0 0 8px;">Top Same-Service Repeaters</h3>';
+          ssHtml += '<div style="font-size:10px;color:#94a3b8;margin-bottom:6px;">Patients returning for the exact same treatment</div>';
+          ssHtml += '<table><thead><tr><th>Patient</th><th>Service</th><th>Visits</th></tr></thead><tbody>';
+          d.sameServiceRepeats.forEach(function(p) {
+            ssHtml += '<tr><td><strong>' + esc(p.patient_name || p.patient_phone) + '</strong></td>';
+            ssHtml += '<td style="font-size:11px;">' + esc(p.service.length > 18 ? p.service.substring(0,18) + '...' : p.service) + '</td>';
+            ssHtml += '<td style="font-weight:600;color:#8b5cf6;">' + p.visits + '</td></tr>';
+          });
+          ssHtml += '</tbody></table>';
+          document.getElementById('sameServiceRepeatsTable').innerHTML = ssHtml;
+        } else {
+          document.getElementById('sameServiceRepeatsTable').innerHTML = '<div class="empty" style="font-size:12px;">No same-service repeaters</div>';
         }
 
         // === Doctor Weekly Table ===
