@@ -651,11 +651,12 @@ async function getAppointmentsByDate(date, forceRefresh = false) {
     return cached.data;
   }
 
-  // Use getChanges (v3) which populates CreatedStaffName, then filter by date
-  const syncFrom = new Date(new Date(date + 'T00:00:00').getTime() - 24 * 60 * 60 * 1000);
+  // Use getChanges (v3) which populates CreatedStaffName
+  // 30-day window to catch appointments created weeks ago for this date
+  const syncFrom = new Date(new Date(date + 'T00:00:00').getTime() - 30 * 24 * 60 * 60 * 1000);
   const syncDate = syncFrom.toISOString().split('.')[0];
   let allData = [];
-  for (let pageNo = 1; pageNo <= 5; pageNo++) {
+  for (let pageNo = 1; pageNo <= 20; pageNo++) {
     const page = await cliniceaFetch(
       `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
     );
@@ -665,10 +666,9 @@ async function getAppointmentsByDate(date, forceRefresh = false) {
   }
 
   // Filter to requested date only
-  const targetDate = date; // YYYY-MM-DD
   const filtered = allData.filter(a => {
     const dt = a.StartDateTime || a.AppointmentDateTime || '';
-    return dt.startsWith(targetDate) && !a.IsDeleted;
+    return dt.startsWith(date) && !a.IsDeleted;
   });
 
   logEvent(

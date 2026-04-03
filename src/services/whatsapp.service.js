@@ -412,11 +412,12 @@ async function syncAppointmentsAndScheduleMessages() {
   try {
     // Fetch appointments for the next 7 days
     const today = new Date();
-    // Use getChanges (v3) instead of getAppointmentsByDate — it populates CreatedStaffName
-    const syncFrom = new Date(today.getTime() - 1 * 24 * 60 * 60 * 1000); // 1 day ago
+    // Fetch appointments using getChanges (populates CreatedStaffName) with 30-day window
+    // to catch appointments created weeks ago that are scheduled for upcoming days
+    const syncFrom = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
     const syncDate = syncFrom.toISOString().split('.')[0];
     let allAppointments = [];
-    for (let pageNo = 1; pageNo <= 10; pageNo++) {
+    for (let pageNo = 1; pageNo <= 20; pageNo++) {
       const data = await cliniceaService.cliniceaFetch(
         `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
       );
@@ -426,11 +427,14 @@ async function syncAppointmentsAndScheduleMessages() {
     }
 
     // Filter to next 7 days only
-    const futureLimit = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const futureLimit = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
     const appointments = allAppointments.filter(a => {
       const d = new Date(a.StartDateTime || a.AppointmentDateTime || '');
-      return d >= today && d <= futureLimit;
+      return d >= todayStart && d <= futureLimit && !a.IsDeleted;
     });
+
+    logEvent('info', 'Appointment sync: ' + allAppointments.length + ' total changes, ' + appointments.length + ' upcoming');
 
     {
 
