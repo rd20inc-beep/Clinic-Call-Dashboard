@@ -97,21 +97,15 @@ socket.on('incoming_call', function(data) {
     }
   }
 
-  // Auto-open Clinicea profile — only for phone calls, not WhatsApp
+  // Show clickable link to Clinicea profile (no auto-open — agent clicks when ready)
   if (isMyCall || myRole !== 'admin') {
-    var isWhatsApp = data.source === 'whatsapp' || (data.caller && data.caller.indexOf('whatsapp:') === 0);
-    var shouldAutoOpen = !isOutbound && !isWhatsApp;
-    var lockKey = 'call_opened_' + data.callId;
-    if (shouldAutoOpen && !localStorage.getItem(lockKey)) {
-      localStorage.setItem(lockKey, '1');
-      setTimeout(function() { localStorage.removeItem(lockKey); }, 60000);
-      var win = window.open(data.cliniceaUrl, 'clinicea_patient');
-      if (!win || win.closed) {
-        cliniceaLink.textContent = '\u26A0 CLICK HERE to open patient profile (popup was blocked)';
-        cliniceaLink.style.color = '#e74c3c';
-        cliniceaLink.style.fontWeight = 'bold';
-        cliniceaLink.style.fontSize = '16px';
-      }
+    if (data.cliniceaUrl) {
+      cliniceaLink.textContent = 'Open patient profile';
+      cliniceaLink.style.color = '#3b82f6';
+      cliniceaLink.style.fontWeight = 'bold';
+      cliniceaLink.style.fontSize = '14px';
+      cliniceaLink.style.textDecoration = 'underline';
+      cliniceaLink.style.cursor = 'pointer';
     }
 
     setTimeout(function() {

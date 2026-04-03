@@ -441,6 +441,7 @@ function waUpdateConnectionUI(status, qrDataUrl) {
   var reconnectBtn = document.getElementById('waReconnectBtn');
   var qrSection = document.getElementById('waQRSection');
   var qrImage = document.getElementById('waQRImage');
+  var isAdmin = typeof myRole !== 'undefined' && myRole === 'admin';
 
   if (status === 'ready') {
     dot.style.background = '#2ecc71';
@@ -448,19 +449,19 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     bar.style.borderColor = 'rgba(46,204,113,0.3)';
     statusText.textContent = 'CONNECTED';
     statusText.style.color = '#2ecc71';
-    logoutBtn.style.display = '';
+    logoutBtn.style.display = isAdmin ? '' : 'none';
     reconnectBtn.style.display = 'none';
     qrSection.style.display = 'none';
   } else if (status === 'qr') {
     dot.style.background = '#f39c12';
     bar.style.background = 'rgba(243,156,18,0.15)';
     bar.style.borderColor = 'rgba(243,156,18,0.3)';
-    statusText.textContent = 'SCAN QR CODE';
+    statusText.textContent = isAdmin ? 'SCAN QR CODE' : 'LINKING...';
     statusText.style.color = '#f39c12';
     logoutBtn.style.display = 'none';
-    reconnectBtn.style.display = '';  // always show reconnect as fallback
-    qrSection.style.display = '';
-    if (qrDataUrl) qrImage.src = qrDataUrl;
+    reconnectBtn.style.display = isAdmin ? '' : 'none';
+    qrSection.style.display = isAdmin ? '' : 'none';
+    if (qrDataUrl && qrImage) qrImage.src = qrDataUrl;
     var expiredMsg = document.getElementById('waQRExpired');
     if (expiredMsg) expiredMsg.remove();
   } else if (status === 'authenticated') {
@@ -479,12 +480,12 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     statusText.textContent = 'DISCONNECTED';
     statusText.style.color = '#e74c3c';
     logoutBtn.style.display = 'none';
-    reconnectBtn.style.display = '';
+    reconnectBtn.style.display = isAdmin ? '' : 'none';
     qrSection.style.display = 'none';
 
     // If QR was showing and we got disconnected, keep the last QR visible
-    // and show a message to click Reconnect
-    if (qrImage && qrImage.src && qrImage.src !== window.location.href) {
+    // and show a message to click Reconnect (admin only)
+    if (isAdmin && qrImage && qrImage.src && qrImage.src !== window.location.href) {
       qrSection.style.display = '';
       var expiredMsg = document.getElementById('waQRExpired');
       if (!expiredMsg) {
