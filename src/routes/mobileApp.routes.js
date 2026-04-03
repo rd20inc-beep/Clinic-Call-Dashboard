@@ -203,11 +203,11 @@ router.post('/api/incoming-call', (req, res) => {
     duration,
   } = req.body;
 
-  if (!phone_number) {
+  if (!phone_number && call_type !== 'outgoing') {
     return res.status(400).json({ error: 'phone_number required' });
   }
 
-  const caller = normalizePKPhone(phone_number) || phone_number;
+  const caller = phone_number ? (normalizePKPhone(phone_number) || phone_number) : (caller_name || 'Unknown');
   const direction = call_type === 'outgoing' ? 'outbound' : 'inbound';
   const sourceIp = getClientIP(req);
 

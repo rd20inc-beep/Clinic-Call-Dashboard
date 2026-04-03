@@ -710,9 +710,12 @@ async function loadCallHistory(page) {
     calls.forEach(function(call) {
       var time = new Date(call.timestamp + 'Z').toLocaleString();
       // Strip "contact:" prefix for display
-      var displayNumber = call.caller_number && call.caller_number.indexOf('contact:') === 0
-        ? call.caller_number.slice(8)
-        : call.caller_number;
+      var rawNumber = call.caller_number || '';
+      var displayNumber = rawNumber.indexOf('contact:') === 0
+        ? rawNumber.slice(8)
+        : (rawNumber === 'Unknown' || !rawNumber) && call.patient_name
+          ? call.patient_name
+          : rawNumber || 'Unknown';
       var waUrl = getWhatsappUrl(call.caller_number);
       var nameDisplay = call.patient_name
         ? '<span class="meeting-badge upcoming" id="name-' + call.id + '">' + escapeHtml(call.patient_name) + '</span>'
