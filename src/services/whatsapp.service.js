@@ -412,29 +412,53 @@ async function syncAppointmentsAndScheduleMessages() {
   try {
     // Fetch appointments for the next 7 days
     const today = new Date();
-    // Fetch appointments using getChanges (populates CreatedStaffName) with 30-day window
-    // to catch appointments created weeks ago that are scheduled for upcoming days
-    const syncFrom = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const syncDate = syncFrom.toISOString().split('.')[0];
-    let allAppointments = [];
-    for (let pageNo = 1; pageNo <= 20; pageNo++) {
-      const data = await cliniceaService.cliniceaFetch(
-        `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
-      );
-      if (!Array.isArray(data) || data.length === 0) break;
-      allAppointments = allAppointments.concat(data);
-      if (data.length < 100) break;
+    // Step 1: Fetch appointments by date for next 7 days
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
+      dates.push(d.toISOString().split('T')[0]);
     }
 
-    // Filter to next 7 days only
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const futureLimit = new Date(todayStart.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const appointments = allAppointments.filter(a => {
-      const d = new Date(a.StartDateTime || a.AppointmentDateTime || '');
-      return d >= todayStart && d <= futureLimit && !a.IsDeleted;
-    });
+    let allAppointments = [];
+    for (const date of dates) {
+      const data = await cliniceaService.cliniceaFetch(
+        `/api/v3/appointments/getAppointmentsByDate?appointmentDate=${date}&pageNo=1&pageSize=100`
+      );
+      if (Array.isArray(data)) allAppointments = allAppointments.concat(data);
+    }
 
-    logEvent('info', 'Appointment sync: ' + allAppointments.length + ' total changes, ' + appointments.length + ' upcoming');
+    // Step 2: Fetch recent changes (has CreatedStaffName) to enrich
+    let changesMap = {};
+    try {
+      const syncFrom = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
+      const syncDate = syncFrom.toISOString().split('.')[0];
+      for (let pageNo = 1; pageNo <= 20; pageNo++) {
+        const data = await cliniceaService.cliniceaFetch(
+          `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
+        );
+        if (!Array.isArray(data) || data.length === 0) break;
+        for (const p of data) {
+          const id = p.ID || p.QDID || '';
+          if (id) changesMap[id] = p;
+        }
+        if (data.length < 100) break;
+      }
+    } catch (e) {
+      logEvent('warn', 'getChanges enrichment failed', e.message);
+    }
+
+    // Merge CreatedStaffName from changes into appointments
+    for (const apt of allAppointments) {
+      const id = apt.ID || apt.QDID || '';
+      const change = changesMap[id];
+      if (change) {
+        if (!apt.CreatedStaffName && change.CreatedStaffName) apt.CreatedStaffName = change.CreatedStaffName;
+        if (!apt.ModifiedStaffName && change.ModifiedStaffName) apt.ModifiedStaffName = change.ModifiedStaffName;
+      }
+    }
+
+    const appointments = allAppointments;
+    logEvent('info', 'Appointment sync: ' + appointments.length + ' appointments, ' + Object.keys(changesMap).length + ' changes enriched');
 
     {
 

@@ -651,32 +651,49 @@ async function getAppointmentsByDate(date, forceRefresh = false) {
     return cached.data;
   }
 
-  // Use getChanges (v3) which populates CreatedStaffName
-  // 30-day window to catch appointments created weeks ago for this date
-  const syncFrom = new Date(new Date(date + 'T00:00:00').getTime() - 30 * 24 * 60 * 60 * 1000);
-  const syncDate = syncFrom.toISOString().split('.')[0];
-  let allData = [];
-  for (let pageNo = 1; pageNo <= 20; pageNo++) {
-    const page = await cliniceaFetch(
-      `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
-    );
-    if (!Array.isArray(page) || page.length === 0) break;
-    allData = allData.concat(page);
-    if (page.length < 100) break;
+  // Step 1: Get all appointments for this date (fast, but no CreatedStaffName)
+  const dateData = await cliniceaFetch(
+    `/api/v3/appointments/getAppointmentsByDate?appointmentDate=${encodeURIComponent(date)}&pageNo=1&pageSize=100`
+  );
+  const rawAppts = Array.isArray(dateData) ? dateData : [];
+
+  // Step 2: Get recent changes (has CreatedStaffName) to enrich
+  let changesMap = {};
+  try {
+    const syncFrom = new Date(new Date(date + 'T00:00:00').getTime() - 90 * 24 * 60 * 60 * 1000);
+    const syncDate = syncFrom.toISOString().split('.')[0];
+    for (let pageNo = 1; pageNo <= 20; pageNo++) {
+      const page = await cliniceaFetch(
+        `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
+      );
+      if (!Array.isArray(page) || page.length === 0) break;
+      for (const p of page) {
+        const id = p.ID || p.QDID || '';
+        if (id) changesMap[id] = p;
+      }
+      if (page.length < 100) break;
+    }
+  } catch (e) {
+    logEvent('warn', 'getChanges enrichment failed for ' + date, e.message);
   }
 
-  // Filter to requested date only
-  const filtered = allData.filter(a => {
-    const dt = a.StartDateTime || a.AppointmentDateTime || '';
-    return dt.startsWith(date) && !a.IsDeleted;
-  });
+  // Merge CreatedStaffName from changes into appointments
+  for (const apt of rawAppts) {
+    const id = apt.ID || apt.QDID || '';
+    const change = changesMap[id];
+    if (change) {
+      if (!apt.CreatedStaffName && change.CreatedStaffName) apt.CreatedStaffName = change.CreatedStaffName;
+      if (!apt.CreatedStaffID && change.CreatedStaffID) apt.CreatedStaffID = change.CreatedStaffID;
+      if (!apt.ModifiedStaffName && change.ModifiedStaffName) apt.ModifiedStaffName = change.ModifiedStaffName;
+    }
+  }
 
   logEvent(
     'info',
     `Clinicea appointments fetched for ${date}`,
-    `total=${allData.length}, filtered=${filtered.length}`
+    `appointments=${rawAppts.length}, changes=${Object.keys(changesMap).length}`
   );
-  const appointments = filtered.map(mapAppointmentFields);
+  const appointments = rawAppts.map(mapAppointmentFields);
 
   appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + CACHE_TTL });
   return appointments;
