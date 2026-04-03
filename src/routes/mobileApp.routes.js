@@ -212,7 +212,7 @@ router.post('/api/incoming-call', (req, res) => {
   const sourceIp = getClientIP(req);
 
   logEvent('info', 'Mobile call: ' + event + ' from ' + caller + ' (' + agent + ')',
-    'Raw: ' + phone_number + ', Normalized: ' + caller + ', Status: ' + (call_status || '-') + ', Duration: ' + (duration || 0) + 's, Type: ' + (call_type || '-'));
+    'Raw: ' + (phone_number || 'EMPTY') + ', Name: ' + (caller_name || 'EMPTY') + ', Normalized: ' + caller + ', Status: ' + (call_status || '-') + ', Duration: ' + (duration || 0) + 's, Type: ' + (call_type || '-'));
 
   if (event === 'ringing') {
     // New call — insert to DB
@@ -322,6 +322,7 @@ router.post('/api/incoming-call', (req, res) => {
         routeCallEvent('incoming_call', {
           caller, callSid: 'mobile-' + callId, cliniceaUrl, callId, agent,
           direction, source: source || 'phone',
+          patientName: caller_name || null,
           timestamp: timestamp || new Date().toISOString(),
         });
       }
