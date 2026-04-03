@@ -88,10 +88,18 @@ function startSendLoop() {
 // ---------------------------------------------------------------------------
 
 async function initialize() {
-  // Clean up any existing client
+  // Clean up any existing client (with timeout — destroy can hang)
   if (client) {
-    try { await client.destroy(); } catch (e) { /* ignore */ }
+    const oldClient = client;
     client = null;
+    try {
+      await Promise.race([
+        oldClient.destroy(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('destroy timeout')), 10000)),
+      ]);
+    } catch (e) {
+      logEvent('warn', 'WA old client cleanup: ' + e.message);
+    }
   }
   if (reinitTimeout) {
     clearTimeout(reinitTimeout);
@@ -209,6 +217,7 @@ async function initialize() {
 
   // Start the client
   logEvent('info', 'WA client initializing...');
+  if (io) io.to('role:admin').emit('wa_connection', { status: 'authenticating' });
   await client.initialize();
 
   // Start the send loop

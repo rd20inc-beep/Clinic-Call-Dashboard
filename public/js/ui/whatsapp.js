@@ -443,7 +443,8 @@ function waUpdateConnectionUI(status, qrDataUrl) {
   var dot = document.getElementById('waConnDot');
   var statusText = document.getElementById('waConnectionStatusText');
   var bar = document.getElementById('waConnectionBar');
-  // Reset reconnect button state on any status change
+  // Reset reconnect button and timer on any real status change
+  if (typeof _waReconnectTimer !== 'undefined' && _waReconnectTimer) { clearTimeout(_waReconnectTimer); _waReconnectTimer = null; }
   var reconnectBtnEl = document.getElementById('waReconnectBtn');
   if (reconnectBtnEl) { reconnectBtnEl.disabled = false; reconnectBtnEl.textContent = 'Reconnect'; }
   var logoutBtn = document.getElementById('waLogoutBtn');
@@ -520,25 +521,43 @@ function waLogout() {
     .catch(function() {});
 }
 
+var _waReconnectTimer = null;
+
 function waReconnect() {
   // Show immediate feedback while Puppeteer starts (10-30s)
   waUpdateConnectionUI('authenticating');
   var btn = document.getElementById('waReconnectBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Initializing...'; }
 
+  // Timeout: if no QR/status arrives in 45s, show error and re-enable
+  if (_waReconnectTimer) clearTimeout(_waReconnectTimer);
+  _waReconnectTimer = setTimeout(function() {
+    if (_lastWaStatus === 'authenticating') {
+      waUpdateConnectionUI('disconnected');
+      var t = document.createElement('div');
+      t.className = 'error-toast';
+      t.innerHTML = 'WhatsApp initialization timed out. Check server logs or try again.<button class="error-toast-close" onclick="dismissToast(this)">&times;</button>';
+      if (typeof toastContainer !== 'undefined' && toastContainer) toastContainer.appendChild(t);
+      setTimeout(function() { if (t.parentNode) t.remove(); }, 8000);
+    }
+  }, 45000);
+
   waFetch('/api/whatsapp/wa-reconnect', { method: 'POST' })
     .then(function(data) {
       if (data.error) {
+        clearTimeout(_waReconnectTimer);
         waUpdateConnectionUI('disconnected');
-        if (btn) { btn.disabled = false; btn.textContent = 'Reconnect'; }
-        showToast('WhatsApp error: ' + data.error, 'error');
+        var t = document.createElement('div');
+        t.className = 'error-toast';
+        t.innerHTML = 'WhatsApp error: ' + (data.error || 'Unknown') + '<button class="error-toast-close" onclick="dismissToast(this)">&times;</button>';
+        if (typeof toastContainer !== 'undefined' && toastContainer) toastContainer.appendChild(t);
+        setTimeout(function() { if (t.parentNode) t.remove(); }, 8000);
       }
-      // Otherwise wait for QR code via socket event
     })
     .catch(function(err) {
+      clearTimeout(_waReconnectTimer);
       waUpdateConnectionUI('disconnected');
-      if (btn) { btn.disabled = false; btn.textContent = 'Reconnect'; }
-      showToast('Failed to reconnect: ' + err.message, 'error');
+      alert('Failed to reconnect: ' + err.message);
     });
 }
 
