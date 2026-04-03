@@ -626,11 +626,11 @@ function mapAppointmentFields(a) {
     endTime: a.EndDateTime || a.EndTime || '',
     duration: a.Duration || null,
     status: a.AppointmentStatus || a.Status || 'Unknown',
-    service: a.ServiceName || a.Service || a.TreatmentName || a.ProcedureName || '',
+    service: a.ServiceName || a.ServiceCategory || a.Service || a.TreatmentName || a.ProcedureName || '',
     doctor: a.DoctorName || a.Doctor || [a.StaffTitle, a.StaffFirstName, a.StaffLastName].filter(Boolean).join(' ').trim() || a.ResourceName || a.ProviderName || '',
     phone: a.AppointmentWithPhone || a.PatientMobile || a.Mobile || '',
     notes: a.Notes || a.AppointmentNotes || '',
-    createdBy: a.CreatedStaffName || a.CreatedBy || a.CreatedByUser || a.BookedBy || '',
+    createdBy: a.CreatedStaffName || a.ModifiedStaffName || a.CreatedBy || a.BookedBy || '',
   };
 }
 

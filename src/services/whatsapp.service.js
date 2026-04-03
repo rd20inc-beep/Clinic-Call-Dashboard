@@ -427,7 +427,7 @@ async function syncAppointmentsAndScheduleMessages() {
       // Log first appointment's key fields for debugging (once per sync)
       if (appointments.length > 0 && dates.indexOf(date) === 0) {
         const s = appointments[0];
-        logEvent('info', 'Sync sample: doctor=' + (s.StaffFirstName || 'EMPTY') + ', service=' + (s.ServiceName || 'EMPTY') + ', createdBy=' + (s.CreatedStaffName || 'EMPTY') + ', keys=' + Object.keys(s).filter(k => /staff|created|service/i.test(k)).join(','));
+        logEvent('info', 'Sync sample: ServiceName="' + (s.ServiceName || '') + '" ServiceCategory="' + (s.ServiceCategory || '') + '" CreatedStaffName="' + (s.CreatedStaffName || '') + '" ModifiedStaffName="' + (s.ModifiedStaffName || '') + '" StaffFirst="' + (s.StaffFirstName || '') + '"');
       }
 
       for (const apt of appointments) {
@@ -448,8 +448,8 @@ async function syncAppointmentsAndScheduleMessages() {
         const patientId = String(apt.PatientID || apt.patientID || '');
         const doctorName = apt.DoctorName || apt.Doctor ||
           [apt.StaffTitle, apt.StaffFirstName, apt.StaffLastName].filter(Boolean).join(' ').trim() || '';
-        const service = apt.ServiceName || apt.Service || '';
-        const createdBy = apt.CreatedStaffName || apt.CreatedBy || apt.BookedBy || '';
+        const service = apt.ServiceName || apt.ServiceCategory || apt.Service || '';
+        const createdBy = apt.CreatedStaffName || apt.ModifiedStaffName || apt.CreatedBy || apt.BookedBy || '';
         const aptDate = apt.StartDateTime || apt.AppointmentDateTime || date;
 
         // Normalize phone
