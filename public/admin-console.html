@@ -1064,31 +1064,48 @@
 
         var html = '';
 
-        // Summary table
-        if (data.summary && data.summary.length > 0) {
-          html += '<h3 style="font-size:14px;margin:0 0 8px;">Login Summary</h3>';
-          html += '<table><thead><tr><th>Agent</th><th>Source</th><th>Logins</th><th>Last Login</th></tr></thead><tbody>';
-          data.summary.forEach(function(s) {
-            html += '<tr><td><strong>' + esc(s.username) + '</strong></td>';
-            html += '<td><span class="badge ' + (s.source === 'dashboard' ? 'badge-active' : 'badge-info') + '">' + esc(s.source) + '</span></td>';
-            html += '<td>' + s.count + '</td>';
-            html += '<td class="meta">' + fmtDate(s.last_login) + '</td></tr>';
-          });
-          html += '</tbody></table>';
+        function fmtMins(m) {
+          if (!m || m <= 0) return '-';
+          if (m < 60) return m + 'm';
+          var h = Math.floor(m / 60);
+          var r = m % 60;
+          return h + 'h ' + (r > 0 ? r + 'm' : '');
         }
 
-        // Recent logins
-        if (data.logins && data.logins.length > 0) {
-          html += '<h3 style="font-size:14px;margin:16px 0 8px;">Recent Logins</h3>';
-          html += '<table><thead><tr><th>Login</th><th>Logout</th><th>Duration</th><th>Agent</th><th>Source</th><th>IP</th></tr></thead><tbody>';
-          data.logins.slice(0, 30).forEach(function(l) {
-            var dur = l.duration_mins ? (l.duration_mins >= 60 ? Math.floor(l.duration_mins/60) + 'h ' + (l.duration_mins%60) + 'm' : l.duration_mins + 'm') : (l.logged_out_at ? '-' : '<span style="color:#10b981;">Active</span>');
-            html += '<tr><td class="meta" style="white-space:nowrap;">' + fmtDate(l.logged_in_at) + '</td>';
-            html += '<td class="meta" style="white-space:nowrap;">' + (l.logged_out_at ? fmtDate(l.logged_out_at) : '<span style="color:#10b981;">—</span>') + '</td>';
-            html += '<td style="font-weight:600;">' + dur + '</td>';
-            html += '<td><strong>' + esc(l.username) + '</strong></td>';
-            html += '<td><span class="badge ' + (l.source === 'dashboard' ? 'badge-active' : 'badge-info') + '">' + esc(l.source) + '</span></td>';
-            html += '<td class="meta">' + esc(l.ip || '-') + '</td></tr>';
+        // Build per-agent totals from summary
+        if (data.summary && data.summary.length > 0) {
+          var agents = {};
+          data.summary.forEach(function(s) {
+            if (!agents[s.username]) agents[s.username] = { dashboard: 0, mobile_app: 0, dashSessions: 0, mobileSessions: 0, lastLogin: null, activeNow: false };
+            if (s.source === 'dashboard') { agents[s.username].dashboard = s.total_mins; agents[s.username].dashSessions = s.sessions; }
+            else { agents[s.username].mobile_app = s.total_mins; agents[s.username].mobileSessions = s.sessions; }
+            if (!agents[s.username].lastLogin || s.last_login > agents[s.username].lastLogin) agents[s.username].lastLogin = s.last_login;
+            if (s.active_now > 0) agents[s.username].activeNow = true;
+          });
+
+          // Today's data
+          var todayMap = {};
+          (data.todaySummary || []).forEach(function(s) {
+            if (!todayMap[s.username]) todayMap[s.username] = { dashboard: 0, mobile_app: 0 };
+            if (s.source === 'dashboard') todayMap[s.username].dashboard = s.total_mins;
+            else todayMap[s.username].mobile_app = s.total_mins;
+          });
+
+          html += '<h3 style="font-size:14px;margin:0 0 8px;">Total Logged-In Time</h3>';
+          html += '<table><thead><tr><th>Agent</th><th>Dashboard (Today)</th><th>Mobile App (Today)</th><th>Dashboard (All Time)</th><th>Mobile App (All Time)</th><th>Sessions</th><th>Last Login</th><th>Status</th></tr></thead><tbody>';
+          Object.keys(agents).sort().forEach(function(username) {
+            var a = agents[username];
+            var t = todayMap[username] || { dashboard: 0, mobile_app: 0 };
+            html += '<tr>';
+            html += '<td><strong>' + esc(username) + '</strong></td>';
+            html += '<td style="font-weight:600;color:#2563eb;">' + fmtMins(t.dashboard) + '</td>';
+            html += '<td style="font-weight:600;color:#8b5cf6;">' + fmtMins(t.mobile_app) + '</td>';
+            html += '<td>' + fmtMins(a.dashboard) + '</td>';
+            html += '<td>' + fmtMins(a.mobile_app) + '</td>';
+            html += '<td>' + (a.dashSessions + a.mobileSessions) + '</td>';
+            html += '<td class="meta">' + fmtDate(a.lastLogin) + '</td>';
+            html += '<td>' + (a.activeNow ? '<span class="badge badge-success">Online</span>' : '<span class="badge badge-disabled">Offline</span>') + '</td>';
+            html += '</tr>';
           });
           html += '</tbody></table>';
         }

@@ -617,19 +617,23 @@ router.get('/admin/analytics/login-history', requireAuth, requireAdmin, (req, re
       'SELECT * FROM login_history WHERE ' + where + ' ORDER BY logged_in_at DESC LIMIT ?'
     ).all(...params, limit);
 
-    // Login summary per agent
+    // Total logged-in time per agent per source
     const summary = db.prepare(
-      "SELECT username, source, COUNT(*) as count, MAX(logged_in_at) as last_login " +
+      "SELECT username, source, COUNT(*) as sessions, " +
+      "COALESCE(SUM(duration_mins), 0) as total_mins, " +
+      "MAX(logged_in_at) as last_login, " +
+      "SUM(CASE WHEN logged_out_at IS NULL THEN 1 ELSE 0 END) as active_now " +
       "FROM login_history GROUP BY username, source ORDER BY last_login DESC"
     ).all();
 
-    // Logins per hour (when do agents log in?)
-    const byHour = db.prepare(
-      "SELECT CAST(strftime('%H', logged_in_at) AS INTEGER) as hour, COUNT(*) as count " +
-      "FROM login_history GROUP BY hour ORDER BY hour"
+    // Today's totals per agent
+    const todaySummary = db.prepare(
+      "SELECT username, source, COUNT(*) as sessions, " +
+      "COALESCE(SUM(duration_mins), 0) as total_mins " +
+      "FROM login_history WHERE date(logged_in_at) = date('now') GROUP BY username, source"
     ).all();
 
-    res.json({ logins, summary, byHour });
+    res.json({ logins, summary, todaySummary });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
