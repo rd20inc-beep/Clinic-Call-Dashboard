@@ -103,22 +103,30 @@ function previewTemplate(key) {
 
 // ===== TEMPLATE VARIABLE BUTTONS =====
 var _tplVarButtons = [
-  { tag: '{name}', label: 'Patient Name' },
-  { tag: '{date}', label: 'Date' },
-  { tag: '{time}', label: 'Time' },
-  { tag: '{service}', label: 'Service' },
-  { tag: '{appointments}', label: 'Appointment Details' },
-  { tag: '{location}', label: 'Location' },
-  { tag: '{mappin}', label: 'Map Link' },
+  { tag: '{name}', label: 'Patient Name', example: 'Ahmed Khan' },
+  { tag: '{date}', label: 'Appointment Date', example: 'Wednesday, 9 April 2026' },
+  { tag: '{time}', label: 'Appointment Time', example: '10:30 AM' },
+  { tag: '{service}', label: 'Service/Treatment', example: 'Laser Hair Removal' },
+  { tag: '{appointments}', label: 'Full Appointment Line', example: 'Wed, 9 Apr at 10:30 AM — Laser (Dr. Ambreen)' },
+  { tag: '{location}', label: 'Clinic Address', example: 'GPC 11, Rojhan Street, Block 5, Clifton, Karachi' },
+  { tag: '{mappin}', label: 'Google Maps Link', example: 'https://maps.app.goo.gl/YadKKdh4911HmxKL9' },
 ];
 
 function buildVarButtons(textareaId) {
-  return '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">' +
-    '<span style="font-size:11px;color:#94a3b8;line-height:26px;margin-right:4px;">Insert:</span>' +
-    _tplVarButtons.map(function(v) {
-      return '<button onclick="insertVarTag(\'' + textareaId + '\',\'' + v.tag + '\')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;background:#f8fafc;color:#3b82f6;font-size:11px;font-weight:600;cursor:pointer;font-family:monospace;">' + v.tag + '<span style="font-family:inherit;color:#94a3b8;font-weight:400;margin-left:4px;font-size:10px;">' + v.label + '</span></button>';
-    }).join('') +
-  '</div>';
+  var html = '<div style="margin-bottom:12px;">';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px;">';
+  html += '<thead><tr style="background:#f8fafc;"><th style="text-align:left;padding:4px 8px;border:1px solid #e2e8f0;font-weight:600;color:#475569;">Variable</th><th style="text-align:left;padding:4px 8px;border:1px solid #e2e8f0;font-weight:600;color:#475569;">Description</th><th style="text-align:left;padding:4px 8px;border:1px solid #e2e8f0;font-weight:600;color:#475569;">Example</th></tr></thead><tbody>';
+  _tplVarButtons.forEach(function(v) {
+    html += '<tr style="cursor:pointer;" onclick="insertVarTag(\'' + textareaId + '\',\'' + v.tag + '\')" title="Click to insert ' + v.tag + '">';
+    html += '<td style="padding:4px 8px;border:1px solid #e2e8f0;font-family:monospace;color:#3b82f6;font-weight:600;">' + v.tag + '</td>';
+    html += '<td style="padding:4px 8px;border:1px solid #e2e8f0;color:#475569;">' + v.label + '</td>';
+    html += '<td style="padding:4px 8px;border:1px solid #e2e8f0;color:#94a3b8;font-style:italic;">' + v.example + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  html += '<div style="font-size:10px;color:#94a3b8;">Click any row to insert the variable at cursor position</div>';
+  html += '</div>';
+  return html;
 }
 
 function insertVarTag(textareaId, tag) {
