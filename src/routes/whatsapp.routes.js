@@ -505,6 +505,61 @@ function setupWhatsAppRoutes(io) {
     res.json({ preview });
   });
 
+  // -----------------------------------------------------------------------
+  // GET /api/whatsapp/services — list all known services from Clinicea
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/services', requireAuth, (req, res) => {
+    const templates = require('../services/messageTemplates');
+    res.json({ services: templates.getAllServices() });
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/whatsapp/service-templates/:type — get all service-specific templates for a type
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/service-templates/:type', requireAuth, (req, res) => {
+    const templates = require('../services/messageTemplates');
+    const type = req.params.type; // confirmation, reminder, aftercare
+    const services = templates.getAllServices();
+    const serviceTemplates = templates.getServiceTemplates(type);
+    const defaultTemplate = templates.getTemplate(type);
+
+    const result = services.map(svc => {
+      const key = templates.serviceToKey(svc);
+      return {
+        service: svc,
+        key: key,
+        template: serviceTemplates[key] || null,
+        usingDefault: !serviceTemplates[key],
+        defaultTemplate: defaultTemplate,
+      };
+    });
+    res.json({ type, services: result, defaultTemplate });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/service-templates — save a service-specific template
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/service-templates', requireAuth, requireAdmin, (req, res) => {
+    const { type, service, text } = req.body;
+    if (!type || !service || !text) return res.json({ error: 'type, service, and text required' });
+    const templates = require('../services/messageTemplates');
+    templates.setServiceTemplate(type, service, text);
+    logEvent('info', 'Service template saved: ' + type + '/' + service + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
+  // -----------------------------------------------------------------------
+  // DELETE /api/whatsapp/service-templates — delete a service-specific template (revert to default)
+  // -----------------------------------------------------------------------
+  router.delete('/api/whatsapp/service-templates', requireAuth, requireAdmin, (req, res) => {
+    const { type, service } = req.body;
+    if (!type || !service) return res.json({ error: 'type and service required' });
+    const templates = require('../services/messageTemplates');
+    templates.deleteServiceTemplate(type, service);
+    logEvent('info', 'Service template deleted: ' + type + '/' + service + ' by ' + req.session.username);
+    res.json({ ok: true });
+  });
+
   return router;
 }
 

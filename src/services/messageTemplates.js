@@ -185,12 +185,83 @@ function resetTemplate(key) {
 }
 
 /**
- * Apply variables to a template string.
- * Variables: {name}, {date}, {time}, {service}, {doctor}, {location}, {phone},
- *            {day_word}, {appointments}, {service_text}, {doctor_text}
+ * Convert a service name to a template key suffix.
+ * e.g. "Laser Hair Removal" → "laser_hair_removal"
+ */
+function serviceToKey(service) {
+  return (service || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+/**
+ * Get a service-specific template if it exists, otherwise fall back to default.
+ * e.g. getServiceTemplate('confirmation', 'Laser Hair Removal')
+ *   → checks 'confirmation_laser_hair_removal' first, then 'confirmation'
+ */
+function getServiceTemplate(templateKey, service) {
+  if (service) {
+    const serviceKey = templateKey + '_' + serviceToKey(service);
+    const specific = waRepo.getSetting('template_' + serviceKey);
+    if (specific) return specific;
+  }
+  return getTemplate(templateKey);
+}
+
+/**
+ * Save a service-specific template.
+ */
+function setServiceTemplate(templateKey, service, text) {
+  const serviceKey = templateKey + '_' + serviceToKey(service);
+  waRepo.setSetting('template_' + serviceKey, text);
+}
+
+/**
+ * Delete a service-specific template (reverts to default).
+ */
+function deleteServiceTemplate(templateKey, service) {
+  const serviceKey = templateKey + '_' + serviceToKey(service);
+  try {
+    const { db } = require('../db/index');
+    db.prepare("DELETE FROM wa_settings WHERE key = ?").run('template_' + serviceKey);
+    return true;
+  } catch (e) { return false; }
+}
+
+/**
+ * Get all service-specific templates for a given type (confirmation/reminder/aftercare).
+ * Returns { serviceName: templateText, ... }
+ */
+function getServiceTemplates(templateKey) {
+  const prefix = 'template_' + templateKey + '_';
+  try {
+    const { db } = require('../db/index');
+    const rows = db.prepare("SELECT key, value FROM wa_settings WHERE key LIKE ?").all(prefix + '%');
+    const result = {};
+    for (const row of rows) {
+      const serviceKey = row.key.replace('template_' + templateKey + '_', '');
+      result[serviceKey] = row.value;
+    }
+    return result;
+  } catch (e) { return {}; }
+}
+
+/**
+ * Get all known services from appointment tracking.
+ */
+function getAllServices() {
+  try {
+    const { db } = require('../db/index');
+    return db.prepare("SELECT DISTINCT service FROM wa_appointment_tracking WHERE service IS NOT NULL AND service != '' ORDER BY service").all().map(r => r.service);
+  } catch (e) { return []; }
+}
+
+/**
+ * Apply variables to a template string, with service-specific override.
+ * If vars.service is set, checks for a service-specific template first.
  */
 function applyTemplate(templateKey, vars) {
-  let text = getTemplate(templateKey);
+  let text = vars && vars.service
+    ? getServiceTemplate(templateKey, vars.service)
+    : getTemplate(templateKey);
   if (!text) return '';
   for (const [k, v] of Object.entries(vars || {})) {
     text = text.replace(new RegExp('\\{' + k + '\\}', 'g'), v || '');
@@ -209,5 +280,11 @@ module.exports = {
   createTemplate,
   deleteTemplate,
   getTemplateName,
+  getServiceTemplate,
+  setServiceTemplate,
+  deleteServiceTemplate,
+  getServiceTemplates,
+  getAllServices,
+  serviceToKey,
   DEFAULT_TEMPLATES,
 };
