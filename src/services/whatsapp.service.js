@@ -426,7 +426,7 @@ async function syncAppointmentsAndScheduleMessages() {
 
       // Log first appointment's raw fields once per sync for debugging
       if (appointments.length > 0 && dates.indexOf(date) === 0) {
-        logEvent('debug', 'Clinicea appointment sample fields', Object.keys(appointments[0]).join(', '));
+        logEvent('info', 'Clinicea appointment sample fields', Object.keys(appointments[0]).join(', '));
       }
 
       for (const apt of appointments) {
