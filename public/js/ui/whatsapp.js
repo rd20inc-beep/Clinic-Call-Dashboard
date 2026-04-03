@@ -352,15 +352,13 @@ function calSendConfirmation(phone, name, date, time, service, doctor) {
 
 function calSendReminder(phone, name, date, time, service, doctor) {
   var aptDate = new Date(date + 'T00:00:00');
-  var today = new Date(); today.setHours(0,0,0,0);
-  var diff = Math.round((aptDate - today) / (24*60*60*1000));
-  var dayWord = diff === 0 ? 'today' : diff === 1 ? 'tomorrow' : diff === 2 ? 'in 2 days' : 'soon';
-  var aptLine = time;
+  var dateStr = aptDate.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  var aptLine = dateStr + ' at ' + time;
   if (service) aptLine += ' — ' + service;
   if (doctor) aptLine += ' (' + doctor + ')';
 
   _applyAndSend('reminder', {
-    day_word: dayWord, time: time, service: service || '', doctor: doctor || '',
+    date: dateStr, time: time, service: service || '', doctor: doctor || '',
     appointments: aptLine,
   }, 'Send Reminder', phone, name, 'reminder');
 }
