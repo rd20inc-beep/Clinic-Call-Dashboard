@@ -249,10 +249,18 @@ function setupWhatsAppRoutes(io) {
     return res.json({ messages });
   });
 
+  // Approval rights: admin and agent1
+  function canApprove(req, res, next) {
+    const role = req.session && req.session.role;
+    const user = req.session && req.session.username;
+    if (role === 'admin' || user === 'agent1') return next();
+    return res.status(403).json({ error: 'Not authorized to approve messages' });
+  }
+
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/approve - approve a single message for sending
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/approve', requireAuth, requireAdmin, (req, res) => {
+  router.post('/api/whatsapp/approve', requireAuth, canApprove, (req, res) => {
     const { id } = req.body;
     if (!id) return res.json({ error: 'id required' });
     waRepo.approveMessage(id);
@@ -263,7 +271,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/approve-all - approve all pending messages
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/approve-all', requireAuth, requireAdmin, (req, res) => {
+  router.post('/api/whatsapp/approve-all', requireAuth, canApprove, (req, res) => {
     const result = waRepo.approveAll();
     logEvent('info', 'WA approve-all: ' + result.changes + ' message(s) approved by ' + req.session.username);
     return res.json({ ok: true, count: result.changes });
@@ -272,7 +280,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/reject - reject a pending message
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/reject', requireAuth, requireAdmin, (req, res) => {
+  router.post('/api/whatsapp/reject', requireAuth, canApprove, (req, res) => {
     const { id } = req.body;
     if (!id) return res.json({ error: 'id required' });
     waRepo.rejectMessage(id);
