@@ -256,18 +256,13 @@ function waApproveAllMessages() {
 // ===== HELPER: fetch template from server, preview, then send =====
 
 function _applyAndSend(templateKey, vars, title, phone, name, type) {
-  waFetch('/api/whatsapp/templates/apply', { method: 'POST', body: JSON.stringify({ key: templateKey, vars: vars }) })
-    .then(function(data) {
-      if (data.error) return alert('Template error: ' + data.error);
-      var msg = data.text;
-      waShowPreview(title, phone, name, msg).then(function(ok) {
-        if (!ok) return;
-        waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: type }) })
-          .then(function(d) { if (d.ok) alert(title + ' queued for approval.'); else alert('Error: ' + (d.error || 'Unknown')); })
-          .catch(function(err) { alert('Error: ' + err.message); });
-      });
+  if (!confirm(title + '\nTo: ' + phone + ' (' + name + ')\n\nSend this message?')) return;
+  waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, template: templateKey, vars: vars, type: type }) })
+    .then(function(d) {
+      if (d.ok) alert(title + ' queued successfully.');
+      else alert('Error: ' + (d.error || 'Unknown'));
     })
-    .catch(function(err) { alert('Failed to load template: ' + err.message); });
+    .catch(function(err) { alert('Error: ' + err.message); });
 }
 
 // ===== POST-VISIT: REVIEW REQUEST =====

@@ -102,7 +102,15 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/send - manual message from dashboard (auth-protected)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/send', requireAuth, (req, res) => {
-    const { phone, message, type } = req.body;
+    let { phone, message, type, template, vars } = req.body;
+
+    // If a template key is provided, apply it server-side
+    if (template) {
+      const templates = require('../services/messageTemplates');
+      message = templates.applyTemplate(template, vars || {});
+      if (!message) return res.json({ error: 'Template not found: ' + template });
+    }
+
     if (!phone || !message) {
       return res.json({ error: 'phone and message required' });
     }
