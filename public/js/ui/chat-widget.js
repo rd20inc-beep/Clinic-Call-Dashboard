@@ -91,17 +91,40 @@
   function renderContacts() {
     var el = document.getElementById('chatContacts');
     if (!chatContacts.length) { el.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8;font-size:13px;">No contacts</div>'; return; }
-    var html = '';
+    el.innerHTML = '';
     chatContacts.forEach(function(c) {
       var unread = unreadCounts[c.username] || 0;
-      var initials = (c.full_name || c.username).split(' ').map(function(w) { return w[0]; }).join('').substring(0, 2).toUpperCase();
-      html += '<div class="chat-contact" onclick="openChat(\'' + c.username + '\',\'' + (c.full_name || c.username).replace(/'/g, "\\'") + '\')">';
-      html += '<div style="width:36px;height:36px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#475569;flex-shrink:0;">' + initials + '</div>';
-      html += '<div><div class="chat-contact-name">' + (c.full_name || c.username) + '</div><div class="chat-contact-role">' + c.role + (c.status === 'disabled' ? ' (disabled)' : '') + '</div></div>';
-      if (unread > 0) html += '<div class="chat-contact-unread">' + unread + '</div>';
-      html += '</div>';
+      var displayName = c.full_name || c.username;
+      var initials = displayName.split(' ').map(function(w) { return w[0]; }).join('').substring(0, 2).toUpperCase();
+
+      var row = document.createElement('div');
+      row.className = 'chat-contact';
+      row.addEventListener('click', function() { openChat(c.username, displayName); });
+
+      var avatar = document.createElement('div');
+      avatar.style.cssText = 'width:36px;height:36px;border-radius:50%;background:#e2e8f0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#475569;flex-shrink:0;';
+      avatar.textContent = initials;
+
+      var info = document.createElement('div');
+      var nameDiv = document.createElement('div');
+      nameDiv.className = 'chat-contact-name';
+      nameDiv.textContent = displayName;
+      var roleDiv = document.createElement('div');
+      roleDiv.className = 'chat-contact-role';
+      roleDiv.textContent = c.role + (c.status === 'disabled' ? ' (disabled)' : '');
+      info.appendChild(nameDiv);
+      info.appendChild(roleDiv);
+
+      row.appendChild(avatar);
+      row.appendChild(info);
+      if (unread > 0) {
+        var badge = document.createElement('div');
+        badge.className = 'chat-contact-unread';
+        badge.textContent = unread;
+        row.appendChild(badge);
+      }
+      el.appendChild(row);
     });
-    el.innerHTML = html;
   }
 
   // Open chat with specific user

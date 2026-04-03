@@ -7,6 +7,7 @@ const { logEvent } = require('../services/logging.service');
 const waRepo = require('../db/whatsapp.repo');
 const waService = require('../services/whatsapp.service');
 const waClient = require('../services/whatsappClient.service');
+const { callLimiter } = require('../middleware/rateLimit');
 
 // ---------------------------------------------------------------------------
 // Setup function — returns router, accepts io for socket emissions
@@ -22,7 +23,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/incoming - incoming WA message
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/incoming', async (req, res) => {
+  router.post('/api/whatsapp/incoming', callLimiter, async (req, res) => {
     const { messageId, text, phone, chatName, timestamp } = req.body;
 
     if (!text || (!phone && !chatName)) {
@@ -106,10 +107,11 @@ function setupWhatsAppRoutes(io) {
       return res.json({ error: 'phone and message required' });
     }
 
-    // Business hours check (9 AM - 7 PM PKT)
-    const pkHour = (new Date().getUTCHours() + 5) % 24;
-    if (pkHour < 9 || pkHour >= 19) {
-      return res.json({ error: 'WhatsApp messages can only be sent between 9 AM and 7 PM Pakistan time. Message saved for later.' });
+    // Business hours check (configurable via DB settings)
+    if (!waClient.isWithinBusinessHours()) {
+      const startH = parseInt(waRepo.getSetting('business_hour_start') || '9', 10);
+      const endH = parseInt(waRepo.getSetting('business_hour_end') || '19', 10);
+      return res.json({ error: `WhatsApp messages can only be sent between ${startH}:00 and ${endH}:00 Pakistan time. Message saved for later.` });
     }
 
     // Validate message type

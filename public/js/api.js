@@ -74,7 +74,7 @@ function quickMessageAgent(agent, caller, status, patient) {
   html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;">';
   templates.forEach(function(t, i) {
     if (t.text) {
-      html += '<button onclick="document.getElementById(\'qmText\').value=\'' + t.text.replace(/'/g, "\\'") + '\'" style="text-align:left;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#334155;font-size:12px;cursor:pointer;font-family:inherit;">' + escapeHtml(t.label) + '</button>';
+      html += '<button data-tpl-idx="' + i + '" style="text-align:left;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;color:#334155;font-size:12px;cursor:pointer;font-family:inherit;">' + escapeHtml(t.label) + '</button>';
     }
   });
   html += '</div>';
@@ -82,10 +82,23 @@ function quickMessageAgent(agent, caller, status, patient) {
   html += '<textarea id="qmText" rows="3" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;" placeholder="Type or select a template above..."></textarea>';
   html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">';
   html += '<button onclick="document.getElementById(\'quickMsgModal\').remove()" style="padding:8px 16px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:13px;font-weight:600;cursor:pointer;">Cancel</button>';
-  html += '<button onclick="sendQuickMessage(\'' + escapeHtml(agent) + '\')" style="padding:8px 16px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Send</button>';
+  html += '<button id="qmSendBtn" style="padding:8px 16px;border:none;border-radius:6px;background:#3b82f6;color:#fff;font-size:13px;font-weight:600;cursor:pointer;">Send</button>';
   html += '</div></div>';
 
   ov.innerHTML = html;
+  // Bind template buttons safely (avoid inline onclick with user data)
+  ov.querySelectorAll('[data-tpl-idx]').forEach(function(btn) {
+    var idx = parseInt(btn.getAttribute('data-tpl-idx'), 10);
+    if (templates[idx] && templates[idx].text) {
+      btn.addEventListener('click', function() {
+        document.getElementById('qmText').value = templates[idx].text;
+      });
+    }
+  });
+  // Bind send button safely (avoid inline onclick with user data)
+  ov.querySelector('#qmSendBtn').addEventListener('click', function() {
+    sendQuickMessage(agent);
+  });
   document.body.appendChild(ov);
 }
 

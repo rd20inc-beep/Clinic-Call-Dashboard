@@ -372,6 +372,8 @@ module.exports = function setupAdminRoutes(io) {
     const dbUser = usersRepo.getByUsername(username);
     if (dbUser) {
       usersRepo.changePassword(dbUser.id, password);
+      // Invalidate all mobile app tokens for this user
+      try { require('./mobileApp.routes').appTokens.deleteByAgent(username); } catch (e) {}
       auditRepo.log('password_changed', username, 'DB user', req.session.username);
       logEvent('info', 'Password changed for ' + username + ' by ' + req.session.username);
       return res.json({ ok: true });

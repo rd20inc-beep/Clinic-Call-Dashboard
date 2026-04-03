@@ -85,12 +85,6 @@ const stmtGetTrackingByPhone = db.prepare(
 );
 
 // --- Failed / expired messages ---
-const stmtFailedMessagesCount = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_messages WHERE status = 'failed'"
-);
-const stmtExpiredMessagesCount = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_messages WHERE status = 'expired'"
-);
 const stmtGetFailedMessages = db.prepare(
   "SELECT * FROM wa_messages WHERE status IN ('failed', 'expired') ORDER BY created_at DESC LIMIT 50"
 );
@@ -165,38 +159,32 @@ const stmtConversationsAgent = db.prepare(`
   LIMIT 50
 `);
 
-// Stats queries — admin
-const stmtTotalMessagesAll = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_messages"
-);
-const stmtTodayMessagesAll = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_messages WHERE date(created_at) = date('now')"
-);
-const stmtPendingMessagesAll = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_messages WHERE status = 'pending'"
-);
-
-// Stats queries — agent-scoped
-const stmtTotalMessagesByAgent = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_messages WHERE agent = ?"
-);
-const stmtTodayMessagesByAgent = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_messages WHERE date(created_at) = date('now') AND agent = ?"
-);
-const stmtPendingMessagesByAgent = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_messages WHERE status = 'pending' AND agent = ?"
-);
-
-// Stats queries — appointment tracking (global)
-const stmtTotalConfirmations = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_appointment_tracking WHERE confirmation_sent = 1"
-);
-const stmtTotalReminders = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_appointment_tracking WHERE reminder_sent = 1"
-);
-const stmtPendingConfirmations = db.prepare(
-  "SELECT COUNT(*) AS count FROM wa_appointment_tracking WHERE confirmation_sent = 0 AND patient_phone IS NOT NULL AND patient_phone != ''"
-);
+// Combined stats queries (single scan instead of N+1)
+const stmtStatsAll = db.prepare(`
+  SELECT
+    COUNT(*) AS totalMessages,
+    SUM(CASE WHEN date(created_at) = date('now') THEN 1 ELSE 0 END) AS todayMessages,
+    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingMessages,
+    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedMessages,
+    SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expiredMessages
+  FROM wa_messages
+`);
+const stmtStatsByAgent = db.prepare(`
+  SELECT
+    COUNT(*) AS totalMessages,
+    SUM(CASE WHEN date(created_at) = date('now') THEN 1 ELSE 0 END) AS todayMessages,
+    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingMessages,
+    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedMessages,
+    SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expiredMessages
+  FROM wa_messages WHERE agent = ?
+`);
+const stmtTrackingStats = db.prepare(`
+  SELECT
+    SUM(CASE WHEN confirmation_sent = 1 THEN 1 ELSE 0 END) AS totalConfirmations,
+    SUM(CASE WHEN reminder_sent = 1 THEN 1 ELSE 0 END) AS totalReminders,
+    SUM(CASE WHEN confirmation_sent = 0 AND patient_phone IS NOT NULL AND patient_phone != '' THEN 1 ELSE 0 END) AS pendingConfirmations
+  FROM wa_appointment_tracking
+`);
 
 module.exports = {
   /**
@@ -360,33 +348,18 @@ module.exports = {
    * @param {string} agent
    */
   getStats(isAdmin, agent) {
-    let totalMessages, todayMessages, pendingMessages;
-
-    if (isAdmin) {
-      totalMessages = stmtTotalMessagesAll.get().count;
-      todayMessages = stmtTodayMessagesAll.get().count;
-      pendingMessages = stmtPendingMessagesAll.get().count;
-    } else {
-      totalMessages = stmtTotalMessagesByAgent.get(agent).count;
-      todayMessages = stmtTodayMessagesByAgent.get(agent).count;
-      pendingMessages = stmtPendingMessagesByAgent.get(agent).count;
-    }
-
-    const totalConfirmations = stmtTotalConfirmations.get().count;
-    const totalReminders = stmtTotalReminders.get().count;
-    const pendingConfirmations = stmtPendingConfirmations.get().count;
-    const failedMessages = stmtFailedMessagesCount.get().count;
-    const expiredMessages = stmtExpiredMessagesCount.get().count;
+    const msgStats = isAdmin ? stmtStatsAll.get() : stmtStatsByAgent.get(agent);
+    const trackStats = stmtTrackingStats.get();
 
     return {
-      totalMessages,
-      todayMessages,
-      pendingMessages,
-      totalConfirmations,
-      totalReminders,
-      pendingConfirmations,
-      failedMessages,
-      expiredMessages,
+      totalMessages: msgStats.totalMessages || 0,
+      todayMessages: msgStats.todayMessages || 0,
+      pendingMessages: msgStats.pendingMessages || 0,
+      failedMessages: msgStats.failedMessages || 0,
+      expiredMessages: msgStats.expiredMessages || 0,
+      totalConfirmations: trackStats.totalConfirmations || 0,
+      totalReminders: trackStats.totalReminders || 0,
+      pendingConfirmations: trackStats.pendingConfirmations || 0,
     };
   },
 

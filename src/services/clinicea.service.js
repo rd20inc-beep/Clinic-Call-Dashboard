@@ -681,7 +681,7 @@ function getMeetingCache() {
 function getPatientCacheState() {
   // Trigger background revalidation if stale but has data
   if (patientCache.patients.length > 0 && Date.now() > patientCache.expiry && !patientCache.loading) {
-    loadAllPatients().catch(() => {}); // background refresh
+    loadAllPatients().catch((e) => { logEvent('warn', 'Background patient refresh failed', e.message); });
   }
   return patientCache;
 }

@@ -72,19 +72,25 @@ server.listen(PORT, () => {
 
   // Preload Clinicea caches (today's appointments + full patient list)
   if (isClinicaConfigured() && cliniceaService && typeof cliniceaService.preloadCaches === 'function') {
-    cliniceaService.preloadCaches().catch(() => { /* swallow — preload is best-effort */ });
+    cliniceaService.preloadCaches().catch((e) => {
+      logEvent('warn', 'Clinicea cache preload failed — starting without cache', e.message);
+    });
   }
 
   // Initial WhatsApp appointment sync after a 10-second warm-up
   if (isClinicaConfigured()) {
     setTimeout(() => {
-      syncAppointmentsAndScheduleMessages().catch(() => { /* swallow */ });
+      syncAppointmentsAndScheduleMessages().catch((e) => {
+        logEvent('error', 'Initial appointment sync failed', e.message);
+      });
     }, 10000);
   }
 
   // Schedule periodic appointment sync every 30 minutes
   intervals.push(setInterval(() => {
-    syncAppointmentsAndScheduleMessages().catch(() => { /* swallow */ });
+    syncAppointmentsAndScheduleMessages().catch((e) => {
+      logEvent('error', 'Periodic appointment sync failed', e.message);
+    });
   }, 30 * 60 * 1000));
 
   // Initialize WhatsApp Web client (QR code auth)

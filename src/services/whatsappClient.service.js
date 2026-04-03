@@ -25,6 +25,9 @@ let io = null;
 let connectionStatus = 'disconnected'; // 'disconnected' | 'qr' | 'authenticated' | 'ready'
 let sendInterval = null;
 let reinitTimeout = null;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const BASE_RECONNECT_DELAY_MS = 30_000; // 30 seconds
 
 function setIO(socketIO) {
   io = socketIO;
@@ -133,6 +136,7 @@ async function initialize() {
   // --- Ready ---
   client.on('ready', () => {
     connectionStatus = 'ready';
+    reconnectAttempts = 0; // reset backoff on successful connection
     if (io) io.to('role:admin').emit('wa_connection', { status: 'ready' });
     logEvent('info', 'WA client ready and connected');
   });
@@ -143,13 +147,20 @@ async function initialize() {
     if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason });
     logEvent('warn', 'WA client disconnected: ' + reason);
 
-    // Attempt to reinitialize after 30 seconds
+    // Exponential backoff reconnection
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      logEvent('error', `WA reconnection abandoned after ${MAX_RECONNECT_ATTEMPTS} attempts — manual restart required`);
+      if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'max_retries_exceeded' });
+      return;
+    }
+    const delay = Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttempts), 5 * 60 * 1000); // max 5 min
+    reconnectAttempts++;
+    logEvent('info', `WA reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${Math.round(delay / 1000)}s`);
     reinitTimeout = setTimeout(() => {
-      logEvent('info', 'WA client attempting to reconnect...');
       initialize().catch((err) => {
         logEvent('error', 'WA reconnect failed: ' + err.message);
       });
-    }, 30000);
+    }, delay);
   });
 
   // --- Auth failure ---

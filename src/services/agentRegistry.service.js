@@ -13,6 +13,19 @@ const ipToAgent = {};
 // Only warn once per unknown raw Agent value to avoid log spam
 const warnedBadAgents = new Set();
 
+// Periodic eviction of expired IP→agent entries (prevents memory leak)
+const ipCacheCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const ip of Object.keys(ipToAgent)) {
+    if (now - ipToAgent[ip].lastSeen > IP_AGENT_TTL_MS) {
+      delete ipToAgent[ip];
+    }
+  }
+  // Cap warnedBadAgents to prevent unbounded growth
+  if (warnedBadAgents.size > 500) warnedBadAgents.clear();
+}, 60_000); // every 60 seconds
+ipCacheCleanup.unref();
+
 /**
  * Set the Socket.IO instance (call once during boot).
  * @param {import('socket.io').Server} socketIO

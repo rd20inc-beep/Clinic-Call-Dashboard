@@ -1,9 +1,14 @@
 'use strict';
 
 /**
- * Adapter routes for the legacy admin console (remote_admin.html).
- * Maps /admin/* endpoints to our existing /api/* endpoints so the
- * old dashboard HTML works without modification.
+ * Routes for the admin console (admin-console.html).
+ *
+ * These /admin/* endpoints serve the dedicated admin panel and overlap
+ * with some /api/* endpoints in admin.routes.js which serve the main
+ * dashboard (index.html). The two UIs have different response format
+ * requirements, so the routes are kept separate. Shared business logic
+ * (user management, call stats) should be extracted to service helpers
+ * when practical to reduce query duplication.
  */
 
 const express = require('express');
@@ -254,6 +259,8 @@ router.put('/admin/agents/:id/password', (req, res) => {
   const { password } = req.body;
   if (!password || password.length < 4) return res.json({ error: 'Password must be 4+ chars' });
   usersRepo.changePassword(u.id, password);
+  // Invalidate all mobile app tokens for this user
+  try { require('./mobileApp.routes').appTokens.deleteByAgent(u.username); } catch (e) {}
   auditRepo.log('password_changed', u.username, 'Admin console', req.session.username);
   res.json({ success: true });
 });
