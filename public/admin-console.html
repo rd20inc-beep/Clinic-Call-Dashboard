@@ -669,7 +669,7 @@
         var matched = data.appointmentsMatched || 0;
         var schedToday = data.appointmentsScheduledToday || 0;
         var apptTotal = data.appointmentsTotal || 0;
-        document.getElementById('statConversions').textContent = matched + ' from calls / ' + schedToday + ' today';
+        document.getElementById('statConversions').textContent = schedToday + ' today / ' + apptTotal + ' total';
         document.getElementById('statTalkTimeTotal').textContent = fmtDuration(data.talkTimeToday || ((data.inboundTalkToday||0) + (data.outboundTalkToday||0)));
         document.getElementById('statAvgDuration').textContent = (data.avgDurationAll || 0) + 's';
         document.getElementById('statPendingCallbacks').textContent = data.pendingCallbacks || 0;
