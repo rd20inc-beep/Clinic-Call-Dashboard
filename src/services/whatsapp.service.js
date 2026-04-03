@@ -412,58 +412,67 @@ async function syncAppointmentsAndScheduleMessages() {
   try {
     // Fetch appointments for the next 7 days
     const today = new Date();
-    const dates = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
-      dates.push(d.toISOString().split('T')[0]);
+    // Use getChanges (v3) instead of getAppointmentsByDate — it populates CreatedStaffName
+    const syncFrom = new Date(today.getTime() - 1 * 24 * 60 * 60 * 1000); // 1 day ago
+    const syncDate = syncFrom.toISOString().split('.')[0];
+    let allAppointments = [];
+    for (let pageNo = 1; pageNo <= 10; pageNo++) {
+      const data = await cliniceaService.cliniceaFetch(
+        `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
+      );
+      if (!Array.isArray(data) || data.length === 0) break;
+      allAppointments = allAppointments.concat(data);
+      if (data.length < 100) break;
     }
 
-    for (const date of dates) {
-      const data = await cliniceaService.cliniceaFetch(
-        `/api/v3/appointments/getAppointmentsByDate?appointmentDate=${date}&pageNo=1&pageSize=100`
-      );
-      const appointments = Array.isArray(data) ? data : [];
+    // Filter to next 7 days only
+    const futureLimit = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const appointments = allAppointments.filter(a => {
+      const d = new Date(a.StartDateTime || a.AppointmentDateTime || '');
+      return d >= today && d <= futureLimit;
+    });
 
-      for (const apt of appointments) {
-        const appointmentId = String(apt.AppointmentID || apt.ID || apt.Id || '');
-        if (!appointmentId) continue;
+    {
 
-        const status = apt.AppointmentStatus || apt.Status || '';
-        if (status === 'Cancelled') continue;
+    for (const apt of appointments) {
+      const appointmentId = String(apt.AppointmentID || apt.ID || apt.Id || '');
+      if (!appointmentId) continue;
 
-        const patientName =
-          apt.AppointmentWithName ||
-          apt.PatientName ||
-          [apt.PatientFirstName || apt.FirstName, apt.PatientLastName || apt.LastName]
-            .filter(Boolean)
-            .join(' ') ||
-          'Patient';
-        const patientPhone = apt.AppointmentWithPhone || apt.PatientMobile || apt.Mobile || '';
-        const patientId = String(apt.PatientID || apt.patientID || '');
-        const doctorName = apt.DoctorName || apt.Doctor ||
-          [apt.StaffTitle, apt.StaffFirstName, apt.StaffLastName].filter(Boolean).join(' ').trim() || '';
-        const service = apt.ServiceName || apt.ServiceCategory || apt.Service || '';
-        const createdBy = apt.CreatedStaffName || apt.ModifiedStaffName || apt.CreatedBy || apt.BookedBy || '';
-        const aptDate = apt.StartDateTime || apt.AppointmentDateTime || date;
+      const status = apt.AppointmentStatus || apt.Status || '';
+      if (status === 'Cancelled' || apt.IsDeleted) continue;
 
-        // Normalize phone
-        let phone = patientPhone.replace(/[\s\-()]/g, '');
-        if (!phone) continue;
-        phone = normalizePKPhone(phone);
-        // Ensure a leading + for international format
-        if (phone && !phone.startsWith('+')) {
-          phone = '+' + phone;
-        }
+      const patientName =
+        apt.AppointmentWithName ||
+        apt.PatientName ||
+        [apt.PatientFirstName || apt.FirstName, apt.PatientLastName || apt.LastName]
+          .filter(Boolean)
+          .join(' ') ||
+        'Patient';
+      const patientPhone = apt.AppointmentWithPhone || apt.PatientMobile || apt.Mobile || '';
+      const patientId = String(apt.PatientID || apt.patientID || '');
+      const doctorName = apt.DoctorName || apt.Doctor ||
+        [apt.StaffTitle, apt.StaffFirstName, apt.StaffLastName].filter(Boolean).join(' ').trim() || '';
+      const service = apt.ServiceName || apt.ServiceCategory || apt.Service || '';
+      const createdBy = apt.CreatedStaffName || apt.ModifiedStaffName || '';
+      const aptDate = apt.StartDateTime || apt.AppointmentDateTime || '';
 
-        // Upsert tracking record
-        waRepo.upsertAppointmentTracking(appointmentId, patientId, patientName, phone, aptDate, doctorName, service, createdBy);
-
-        // Save patient to local DB
-        try {
-          const patientsRepo = require('../db/patients.repo');
-          patientsRepo.upsertFromAppointment(patientId, patientName, phone, doctorName, service, aptDate);
-        } catch (e) { console.error('[wa-sync] Patient upsert failed for ' + phone + ':', e.message); }
+      // Normalize phone
+      let phone = patientPhone.replace(/[\s\-()]/g, '');
+      if (!phone) continue;
+      phone = normalizePKPhone(phone);
+      if (phone && !phone.startsWith('+')) {
+        phone = '+' + phone;
       }
+
+      // Upsert tracking record
+      waRepo.upsertAppointmentTracking(appointmentId, patientId, patientName, phone, aptDate, doctorName, service, createdBy);
+
+      // Save patient to local DB
+      try {
+        const patientsRepo = require('../db/patients.repo');
+        patientsRepo.upsertFromAppointment(patientId, patientName, phone, doctorName, service, aptDate);
+      } catch (e) { console.error('[wa-sync] Patient upsert failed for ' + phone + ':', e.message); }
+    }
     }
 
     logEvent('info', 'Appointment sync complete');

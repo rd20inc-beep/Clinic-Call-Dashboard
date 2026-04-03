@@ -258,33 +258,6 @@ router.get(
   }
 );
 
-// GET /api/appointment-history/:appointmentId — probe Clinicea for appointment audit log
-router.get('/api/appointment-history/:appointmentId', requireAuth, apiLimiter, async (req, res) => {
-  if (!isClinicaConfigured()) return res.json({ error: 'Clinicea not configured' });
-  const id = req.params.appointmentId;
-  const results = {};
-
-  // Try multiple possible API endpoints
-  const endpoints = [
-    `/api/v3/appointments/getAppointmentHistory?appointmentID=${id}`,
-    `/api/v2/appointments/getAppointmentHistory?appointmentID=${id}`,
-    `/api/v3/appointments/getAuditLog?appointmentID=${id}`,
-    `/api/v2/appointments/getAuditLog?appointmentID=${id}`,
-    `/api/v3/appointments/getAppointmentByID?appointmentID=${id}`,
-    `/api/v2/appointments/getAppointmentByID?appointmentID=${id}`,
-  ];
-
-  for (const ep of endpoints) {
-    try {
-      const data = await cliniceaFetch(ep);
-      results[ep] = { ok: true, type: typeof data, isArray: Array.isArray(data), length: Array.isArray(data) ? data.length : null, sample: JSON.stringify(data).substring(0, 500) };
-    } catch (e) {
-      results[ep] = { ok: false, error: e.message };
-    }
-  }
-
-  res.json({ appointmentId: id, results });
-});
 
 // ---------------------------------------------------------------------------
 // POST /api/patients/edit — edit a local patient record

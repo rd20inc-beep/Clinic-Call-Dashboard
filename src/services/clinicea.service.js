@@ -651,15 +651,32 @@ async function getAppointmentsByDate(date, forceRefresh = false) {
     return cached.data;
   }
 
-  const data = await cliniceaFetch(
-    `/api/v3/appointments/getAppointmentsByDate?appointmentDate=${encodeURIComponent(date)}&pageNo=1&pageSize=100`
-  );
+  // Use getChanges (v3) which populates CreatedStaffName, then filter by date
+  const syncFrom = new Date(new Date(date + 'T00:00:00').getTime() - 24 * 60 * 60 * 1000);
+  const syncDate = syncFrom.toISOString().split('.')[0];
+  let allData = [];
+  for (let pageNo = 1; pageNo <= 5; pageNo++) {
+    const page = await cliniceaFetch(
+      `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
+    );
+    if (!Array.isArray(page) || page.length === 0) break;
+    allData = allData.concat(page);
+    if (page.length < 100) break;
+  }
+
+  // Filter to requested date only
+  const targetDate = date; // YYYY-MM-DD
+  const filtered = allData.filter(a => {
+    const dt = a.StartDateTime || a.AppointmentDateTime || '';
+    return dt.startsWith(targetDate) && !a.IsDeleted;
+  });
+
   logEvent(
     'info',
     `Clinicea appointments fetched for ${date}`,
-    `type=${typeof data}, isArray=${Array.isArray(data)}, length=${Array.isArray(data) ? data.length : 'N/A'}`
+    `total=${allData.length}, filtered=${filtered.length}`
   );
-  const appointments = (Array.isArray(data) ? data : []).map(mapAppointmentFields);
+  const appointments = filtered.map(mapAppointmentFields);
 
   appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + CACHE_TTL });
   return appointments;
