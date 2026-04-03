@@ -400,24 +400,14 @@ function formatTimePK(d) {
 }
 
 /**
- * Fetch appointments for the next 7 days from Clinicea, upsert tracking
- * records, and queue confirmation + reminder messages for unsent items.
+ * Fetch appointments for the next 7 days from Clinicea and upsert tracking
+ * records. Messages (confirmations, reminders) are sent manually by agents
+ * via the dashboard — no automatic queuing.
  *
  * This should be called on a 30-minute interval.
  */
 async function syncAppointmentsAndScheduleMessages() {
   if (!isClinicaConfigured() || !cliniceaService) return;
-
-  // Business hours check (configurable, default 9 AM - 7 PM PKT) — only for message queuing, not sync
-  const pkHour = (new Date().getUTCHours() + 5) % 24;
-  const startHour = parseInt(waRepo.getSetting('business_hour_start') || '9', 10);
-  const endHour = parseInt(waRepo.getSetting('business_hour_end') || '19', 10);
-  const withinBusinessHours = pkHour >= startHour && pkHour < endHour;
-  const botEnabled = isBotEnabled();
-
-  if (!withinBusinessHours) {
-    logEvent('info', 'Appointment sync — outside business hours, syncing data only (no messages)');
-  }
 
   try {
     // Fetch appointments for the next 7 days
@@ -472,118 +462,6 @@ async function syncAppointmentsAndScheduleMessages() {
           patientsRepo.upsertFromAppointment(patientId, patientName, phone, doctorName, service, aptDate);
         } catch (e) { console.error('[wa-sync] Patient upsert failed for ' + phone + ':', e.message); }
       }
-    }
-
-    // --- Queue Confirmation & Reminder Messages ---
-    // Only queue new messages during business hours and when sending is enabled.
-    // Toggle controls whether messages get queued; already-queued messages
-    // are controlled by the toggle in the send loop.
-    if (!withinBusinessHours || !botEnabled) {
-      logEvent('info', 'Appointment sync complete (messages skipped — ' + (!withinBusinessHours ? 'outside business hours' : 'sending paused') + ')');
-      return;
-    }
-    const unsent = waRepo.getUnsentConfirmations();
-    const confirmByPhone = {};
-    for (const apt of unsent) {
-      const phone = apt.patient_phone;
-      if (!confirmByPhone[phone]) confirmByPhone[phone] = [];
-      confirmByPhone[phone].push(apt);
-    }
-
-    for (const [phone, apts] of Object.entries(confirmByPhone)) {
-      // Extra dedup: skip if a confirmation was already sent/queued for this phone today
-      const { db } = require('../db/index');
-      const existing = db.prepare(
-        "SELECT id FROM wa_messages WHERE phone = ? AND message_type = 'confirmation' AND date(created_at) = date('now') LIMIT 1"
-      ).get(phone);
-      if (existing) {
-        // Still mark tracking records so they aren't retried
-        for (const apt of apts) waRepo.markConfirmationSent(apt.id);
-        continue;
-      }
-
-      const name = apts[0].patient_name;
-      // Build single message with ALL appointments for this patient
-      let aptList = '';
-      for (const apt of apts) {
-        const aptDate = parseLocalDate(apt.appointment_date);
-        aptList += `\n${formatDatePK(aptDate)} at ${formatTimePK(aptDate)}`;
-        if (apt.service) aptList += ` — ${apt.service}`;
-        if (apt.doctor_name) aptList += ` (${apt.doctor_name})`;
-      }
-
-      const templates = require('./messageTemplates');
-      let msg = templates.applyTemplate('confirmation', {
-        name,
-        appointments: aptList.trim(),
-      });
-
-      waRepo.insertMessage(phone, null, 'out', msg, 'confirmation', 'pending', null);
-      for (const apt of apts) {
-        waRepo.markConfirmationSent(apt.id);
-      }
-      logEvent('info', `WA confirmation queued for ${name} (${phone}) — ${apts.length} appointment(s)`);
-    }
-
-    // --- Send Reminder Messages (grouped by patient phone, 0-2 days before) ---
-    const reminderCandidates = waRepo.getUnsentReminders();
-    const reminderByPhone = {};
-
-    for (const apt of reminderCandidates) {
-      const aptParsed = parseLocalDate(apt.appointment_date);
-      const aptDateOnly = new Date(aptParsed.getFullYear(), aptParsed.getMonth(), aptParsed.getDate());
-      const todayOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const daysUntil = Math.round((aptDateOnly - todayOnly) / (24 * 60 * 60 * 1000));
-
-      if (daysUntil <= 2 && daysUntil >= 0) {
-        const phone = apt.patient_phone;
-        if (!reminderByPhone[phone]) reminderByPhone[phone] = { apts: [], daysUntil };
-        reminderByPhone[phone].apts.push(apt);
-        // Use the closest appointment's daysUntil
-        if (daysUntil < reminderByPhone[phone].daysUntil) {
-          reminderByPhone[phone].daysUntil = daysUntil;
-        }
-      }
-    }
-
-    for (const [phone, group] of Object.entries(reminderByPhone)) {
-      const { apts, daysUntil } = group;
-
-      // Extra dedup: skip if a reminder was already sent/queued for this phone today
-      const { db } = require('../db/index');
-      const existingReminder = db.prepare(
-        "SELECT id FROM wa_messages WHERE phone = ? AND message_type = 'reminder' AND date(created_at) = date('now') LIMIT 1"
-      ).get(phone);
-      if (existingReminder) {
-        for (const apt of apts) waRepo.markReminderSent(apt.id);
-        continue;
-      }
-
-      const name = apts[0].patient_name;
-
-      let dayWord = 'soon';
-      if (daysUntil === 0) dayWord = 'today';
-      else if (daysUntil === 1) dayWord = 'tomorrow';
-      else if (daysUntil === 2) dayWord = 'in 2 days';
-
-      let aptList = '';
-      for (const apt of apts) {
-        const aptDate = parseLocalDate(apt.appointment_date);
-        aptList += `\n${formatTimePK(aptDate)}`;
-      }
-
-      const templates = require('./messageTemplates');
-      let msg = templates.applyTemplate('reminder', {
-        name,
-        day_word: dayWord,
-        appointments: aptList.trim(),
-      });
-
-      waRepo.insertMessage(phone, null, 'out', msg, 'reminder', 'pending', null);
-      for (const apt of apts) {
-        waRepo.markReminderSent(apt.id);
-      }
-      logEvent('info', `WA reminder queued for ${name} (${phone}) — ${apts.length} appointment(s), ${dayWord}`);
     }
 
     logEvent('info', 'Appointment sync complete');
