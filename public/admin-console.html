@@ -1104,9 +1104,8 @@
             html += '<td>' + fmtMins(a.mobile_app) + '</td>';
             html += '<td>' + (a.dashSessions + a.mobileSessions) + '</td>';
             html += '<td class="meta">' + fmtDate(a.lastLogin) + '</td>';
-            var statusParts = [];
-            data.summary.forEach(function(s) { if (s.username === username && s.active_now > 0) statusParts.push(s.source === 'dashboard' ? 'Dashboard' : 'Mobile App'); });
-            var statusHtml = statusParts.length > 0 ? statusParts.map(function(p) { return '<span class="badge ' + (p === 'Dashboard' ? 'badge-success' : 'badge-info') + '">' + p + '</span>'; }).join(' ') : '<span class="badge badge-disabled">Offline</span>';
+            var live = (data.liveStatus || {})[username] || [];
+            var statusHtml = live.length > 0 ? live.map(function(p) { return '<span class="badge ' + (p === 'dashboard' ? 'badge-success' : 'badge-info') + '">' + (p === 'dashboard' ? 'Dashboard' : 'Mobile App') + '</span>'; }).join(' ') : '<span class="badge badge-disabled">Offline</span>';
             html += '<td>' + statusHtml + '</td>';
             html += '</tr>';
           });

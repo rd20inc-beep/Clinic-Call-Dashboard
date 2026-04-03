@@ -633,7 +633,18 @@ router.get('/admin/analytics/login-history', requireAuth, requireAdmin, (req, re
       "FROM login_history WHERE date(logged_in_at) = date('now') GROUP BY username, source"
     ).all();
 
-    res.json({ logins, summary, todaySummary });
+    // Live presence for online status
+    const { getAllPresence } = require('../sockets/index');
+    const presence = getAllPresence();
+    const liveStatus = {};
+    for (const [username, p] of Object.entries(presence)) {
+      const platforms = [];
+      if (p.portalOnline) platforms.push('dashboard');
+      if (p.mobileOnline && p.lastMobileHb && (Date.now() - p.lastMobileHb) < 90000) platforms.push('mobile_app');
+      if (platforms.length > 0) liveStatus[username] = platforms;
+    }
+
+    res.json({ logins, summary, todaySummary, liveStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
