@@ -327,6 +327,7 @@
       <button class="tab-btn" onclick="switchTab('callhistory')">Call History</button>
       <button class="tab-btn" onclick="switchTab('callbacks')">Callbacks</button>
       <button class="tab-btn" onclick="switchTab('agents')">Agent Management</button>
+      <button class="tab-btn" onclick="switchTab('insights')">Insights</button>
       <button class="tab-btn" onclick="switchTab('audit')">Audit Log</button>
     </div>
 
@@ -473,6 +474,31 @@
           </div>
         </h2>
         <div id="agentsList"><div class="empty"><div class="loading-spinner"></div></div></div>
+      </div>
+    </div>
+
+    <!-- ===== INSIGHTS TAB ===== -->
+    <div class="tab-panel" id="panel-insights">
+      <div class="card" style="margin-bottom:16px;">
+        <h2>Peak Call Hours
+          <div class="btn-group">
+            <button class="btn btn-outline btn-sm" id="peakToday" onclick="loadPeakHours('today')">Today</button>
+            <button class="btn btn-outline btn-sm active" id="peakWeek" onclick="loadPeakHours('week')">Week</button>
+            <button class="btn btn-outline btn-sm" id="peakMonth" onclick="loadPeakHours('month')">Month</button>
+          </div>
+        </h2>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;" class="ov-grid-4">
+          <div class="stat-card blue" style="padding:12px;"><div class="stat-value" style="font-size:20px;" id="peakHourVal">-</div><div class="stat-label">Peak Hour</div></div>
+          <div class="stat-card green" style="padding:12px;"><div class="stat-value" style="font-size:20px;" id="peakDayVal">-</div><div class="stat-label">Busiest Day</div></div>
+          <div class="stat-card teal" style="padding:12px;"><div class="stat-value" style="font-size:20px;" id="avgPerHourVal">-</div><div class="stat-label">Avg Calls/Hour</div></div>
+          <div class="stat-card orange" style="padding:12px;"><div class="stat-value" style="font-size:20px;" id="totalCallsVal">-</div><div class="stat-label">Total Calls</div></div>
+        </div>
+        <div style="height:280px;"><canvas id="peakHoursChart"></canvas></div>
+        <div style="height:200px;margin-top:16px;"><canvas id="peakDaysChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Agent Login History</h2>
+        <div id="loginHistoryContent"><div class="empty"><div class="loading-spinner"></div></div></div>
       </div>
     </div>
 
@@ -629,6 +655,7 @@
       if (tab === 'performance') loadPerformance();
       if (tab === 'leaderboard') loadLeaderboard();
       if (tab === 'callhistory') { populateCallHistoryAgentFilter(); loadCallHistory(); }
+      if (tab === 'insights') { loadPeakHours('week'); loadLoginHistory(); }
       if (tab === 'callbacks') loadCallbacks();
       if (tab === 'agents') loadAgents();
       if (tab === 'audit') loadAuditLog();
@@ -972,6 +999,100 @@
       });
       html += '</tbody></table>';
       document.getElementById('agentsList').innerHTML = html;
+    }
+
+    // ===== INSIGHTS — PEAK HOURS & LOGIN HISTORY =====
+    var peakHoursChart = null;
+    var peakDaysChart = null;
+
+    async function loadPeakHours(period) {
+      period = period || 'week';
+      // Update active button
+      ['peakToday','peakWeek','peakMonth'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.classList.toggle('active', id === 'peak' + period.charAt(0).toUpperCase() + period.slice(1));
+      });
+
+      try {
+        var res = await fetch('/admin/analytics/peak-hours?period=' + period);
+        var data = await res.json();
+
+        // KPI cards
+        var peakH = data.peak || {};
+        document.getElementById('peakHourVal').textContent = (peakH.hour !== undefined ? (peakH.hour % 12 || 12) + (peakH.hour < 12 ? ' AM' : ' PM') : '-') + ' (' + (peakH.total || 0) + ')';
+        document.getElementById('peakDayVal').textContent = data.peakDay ? data.peakDay.day + ' (' + data.peakDay.total + ')' : '-';
+        document.getElementById('avgPerHourVal').textContent = data.avgPerHour || 0;
+        document.getElementById('totalCallsVal').textContent = data.totalCalls || 0;
+
+        // Hourly chart
+        var hours = data.hours || [];
+        var labels = hours.map(function(h) { return (h.hour % 12 || 12) + (h.hour < 12 ? 'AM' : 'PM'); });
+
+        if (peakHoursChart) peakHoursChart.destroy();
+        peakHoursChart = new Chart(document.getElementById('peakHoursChart'), {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [
+              { label: 'Answered', data: hours.map(function(h) { return h.answered; }), backgroundColor: '#10b981' },
+              { label: 'Missed', data: hours.map(function(h) { return h.missed; }), backgroundColor: '#ef4444' },
+              { label: 'Outbound', data: hours.map(function(h) { return h.outbound; }), backgroundColor: '#3b82f6' },
+            ]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } }
+        });
+
+        // Days chart
+        var days = data.days || [];
+        if (peakDaysChart) peakDaysChart.destroy();
+        peakDaysChart = new Chart(document.getElementById('peakDaysChart'), {
+          type: 'bar',
+          data: {
+            labels: days.map(function(d) { return d.day.substring(0, 3); }),
+            datasets: [{ label: 'Calls', data: days.map(function(d) { return d.total; }), backgroundColor: '#6366f1' }]
+          },
+          options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+        });
+      } catch (e) { console.error('Peak hours load failed:', e); }
+    }
+
+    async function loadLoginHistory() {
+      try {
+        var res = await fetch('/admin/analytics/login-history?limit=100');
+        var data = await res.json();
+        var el = document.getElementById('loginHistoryContent');
+
+        var html = '';
+
+        // Summary table
+        if (data.summary && data.summary.length > 0) {
+          html += '<h3 style="font-size:14px;margin:0 0 8px;">Login Summary</h3>';
+          html += '<table><thead><tr><th>Agent</th><th>Source</th><th>Logins</th><th>Last Login</th></tr></thead><tbody>';
+          data.summary.forEach(function(s) {
+            html += '<tr><td><strong>' + esc(s.username) + '</strong></td>';
+            html += '<td><span class="badge ' + (s.source === 'dashboard' ? 'badge-active' : 'badge-info') + '">' + esc(s.source) + '</span></td>';
+            html += '<td>' + s.count + '</td>';
+            html += '<td class="meta">' + fmtDate(s.last_login) + '</td></tr>';
+          });
+          html += '</tbody></table>';
+        }
+
+        // Recent logins
+        if (data.logins && data.logins.length > 0) {
+          html += '<h3 style="font-size:14px;margin:16px 0 8px;">Recent Logins</h3>';
+          html += '<table><thead><tr><th>Time</th><th>Agent</th><th>Source</th><th>IP</th></tr></thead><tbody>';
+          data.logins.slice(0, 30).forEach(function(l) {
+            html += '<tr><td class="meta" style="white-space:nowrap;">' + fmtDate(l.logged_in_at) + '</td>';
+            html += '<td><strong>' + esc(l.username) + '</strong></td>';
+            html += '<td><span class="badge ' + (l.source === 'dashboard' ? 'badge-active' : 'badge-info') + '">' + esc(l.source) + '</span></td>';
+            html += '<td class="meta">' + esc(l.ip || '-') + '</td></tr>';
+          });
+          html += '</tbody></table>';
+        }
+
+        if (!html) html = '<div class="empty">No login data yet. Logins are tracked from now.</div>';
+        el.innerHTML = html;
+      } catch (e) { document.getElementById('loginHistoryContent').innerHTML = '<div class="empty">Error loading login history</div>'; }
     }
 
     // ===== AUDIT LOG =====

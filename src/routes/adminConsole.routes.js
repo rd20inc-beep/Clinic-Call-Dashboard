@@ -549,6 +549,93 @@ router.get('/admin/analytics/trends', (req, res) => {
 });
 
 // -------------------------------------------------------------------------
+// GET /admin/analytics/peak-hours — call volume by hour (today/week/month)
+// -------------------------------------------------------------------------
+router.get('/admin/analytics/peak-hours', requireAuth, requireAdminOrDoctor, (req, res) => {
+  try {
+    const { db } = require('../db/index');
+    const period = req.query.period || 'week';
+    let dateFilter = "timestamp >= datetime('now', '-7 days')";
+    if (period === 'today') dateFilter = "date(timestamp) = date('now')";
+    else if (period === 'month') dateFilter = "timestamp >= datetime('now', '-30 days')";
+
+    // Calls per hour (0-23)
+    const hourly = db.prepare(
+      "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, " +
+      "COUNT(*) as total, " +
+      "SUM(CASE WHEN call_status = 'answered' THEN 1 ELSE 0 END) as answered, " +
+      "SUM(CASE WHEN call_status = 'missed' THEN 1 ELSE 0 END) as missed, " +
+      "SUM(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END) as outbound " +
+      "FROM calls WHERE " + dateFilter + " GROUP BY hour ORDER BY hour"
+    ).all();
+
+    // Fill in missing hours
+    const hours = Array(24).fill(null).map((_, i) => {
+      const h = hourly.find(r => r.hour === i);
+      return { hour: i, total: h ? h.total : 0, answered: h ? h.answered : 0, missed: h ? h.missed : 0, outbound: h ? h.outbound : 0 };
+    });
+
+    // Peak hour
+    const peak = hours.reduce((max, h) => h.total > max.total ? h : max, hours[0]);
+
+    // Calls by day of week
+    const byDay = db.prepare(
+      "SELECT CAST(strftime('%w', timestamp) AS INTEGER) as dow, COUNT(*) as total " +
+      "FROM calls WHERE " + dateFilter + " GROUP BY dow ORDER BY dow"
+    ).all();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const days = Array(7).fill(null).map((_, i) => {
+      const d = byDay.find(r => r.dow === i);
+      return { day: dayNames[i], total: d ? d.total : 0 };
+    });
+    const peakDay = days.reduce((max, d) => d.total > max.total ? d : max, days[0]);
+
+    // Avg calls per hour
+    const totalCalls = hours.reduce((s, h) => s + h.total, 0);
+    const activeHours = hours.filter(h => h.total > 0).length;
+
+    res.json({ hours, peak, days, peakDay, totalCalls, avgPerHour: activeHours > 0 ? Math.round(totalCalls / activeHours) : 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------------------
+// GET /admin/analytics/login-history — agent login history
+// -------------------------------------------------------------------------
+router.get('/admin/analytics/login-history', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const { db } = require('../db/index');
+    const agent = req.query.agent || '';
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+
+    let where = '1=1';
+    const params = [];
+    if (agent) { where += ' AND username = ?'; params.push(agent); }
+
+    const logins = db.prepare(
+      'SELECT * FROM login_history WHERE ' + where + ' ORDER BY logged_in_at DESC LIMIT ?'
+    ).all(...params, limit);
+
+    // Login summary per agent
+    const summary = db.prepare(
+      "SELECT username, source, COUNT(*) as count, MAX(logged_in_at) as last_login " +
+      "FROM login_history GROUP BY username, source ORDER BY last_login DESC"
+    ).all();
+
+    // Logins per hour (when do agents log in?)
+    const byHour = db.prepare(
+      "SELECT CAST(strftime('%H', logged_in_at) AS INTEGER) as hour, COUNT(*) as count " +
+      "FROM login_history GROUP BY hour ORDER BY hour"
+    ).all();
+
+    res.json({ logins, summary, byHour });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------------------
 // Callbacks — real implementation backed by callbacks table
 // -------------------------------------------------------------------------
 const callbacksRepo = require('../db/callbacks.repo');

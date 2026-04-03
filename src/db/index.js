@@ -210,6 +210,19 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_phone ON wa_appointment_t
 try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN created_by TEXT"); } catch(e) { /* already exists */ }
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_status ON callbacks(callback_status)'); } catch(e) {}
 
+// --- Login history (tracks all login events) ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS login_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    source TEXT DEFAULT 'dashboard',
+    ip TEXT,
+    user_agent TEXT,
+    logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(username, logged_in_at DESC)'); } catch(e) {}
+
 // --- Mobile app tokens (persisted across restarts) ---
 try {
   db.exec(`

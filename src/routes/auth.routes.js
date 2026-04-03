@@ -83,6 +83,15 @@ router.post('/login', loginLimiter, validateLoginMw, async (req, res) => {
     usersRepo.recordLogin(username);
   } catch (e) { console.error('[auth] recordLogin failed for ' + username + ':', e.message); }
 
+  // Log login event to history
+  try {
+    const { db } = require('../db/index');
+    const { getClientIP } = require('../utils/security');
+    db.prepare('INSERT INTO login_history (username, source, ip, user_agent) VALUES (?, ?, ?, ?)').run(
+      username, 'dashboard', getClientIP(req), (req.headers['user-agent'] || '').substring(0, 200)
+    );
+  } catch (e) {}
+
   return res.redirect('/');
 });
 

@@ -121,6 +121,14 @@ router.post('/api/agent/login', loginLimiter, (req, res) => {
   const fakeReq = { headers: req.headers, ip: getClientIP(req), socket: { remoteAddress: req.ip } };
   rememberAgentIP(fakeReq, agent_id);
 
+  // Log login event to history
+  try {
+    const { db } = require('../db/index');
+    db.prepare('INSERT INTO login_history (username, source, ip, user_agent) VALUES (?, ?, ?, ?)').run(
+      agent_id, 'mobile_app', getClientIP(req), (req.headers['user-agent'] || '').substring(0, 200)
+    );
+  } catch (e) {}
+
   logEvent('info', 'Mobile login: ' + agent_id, 'IP: ' + getClientIP(req));
 
   res.json({
