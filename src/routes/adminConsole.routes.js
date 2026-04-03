@@ -803,7 +803,7 @@ router.get('/admin/appointments', (req, res) => {
     ).all(...params);
 
     // Enrich each appointment with the agent who handled the patient's call
-    const appointments = rawAppointments.map(apt => {
+    let appointments = rawAppointments.map(apt => {
       let attributed_agent = null;
       if (apt.patient_phone) {
         const phone = apt.patient_phone.replace(/[\s\-()]/g, '');
@@ -816,6 +816,11 @@ router.get('/admin/appointments', (req, res) => {
       }
       return { ...apt, attributed_agent };
     });
+
+    // Agent filter: only show appointments attributed to the selected agent
+    if (agent) {
+      appointments = appointments.filter(a => a.attributed_agent === agent);
+    }
 
     // Get unique values for filter dropdowns
     const services = db.prepare("SELECT DISTINCT service FROM wa_appointment_tracking WHERE service IS NOT NULL AND service != '' ORDER BY service").all().map(r => r.service);
