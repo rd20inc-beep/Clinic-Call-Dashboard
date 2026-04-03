@@ -1496,14 +1496,14 @@
     var apptPeriod = 'today';
     var apptAgent = '';
     var apptService = '';
-    var apptStaff = '';
+    var apptDoctor = '';
 
     function closeApptModal() { document.getElementById('apptModal').classList.remove('active'); }
 
     async function showAppointmentsModal(agentFilter) {
       apptAgent = agentFilter || '';
       apptService = '';
-      apptStaff = '';
+      apptDoctor = '';
       document.getElementById('apptModal').classList.add('active');
       document.getElementById('apptContent').innerHTML = '<div class="empty"><div class="loading-spinner"></div></div>';
       await loadAppointmentsModal();
@@ -1523,13 +1523,13 @@
         params.set('period', apptPeriod);
         if (apptAgent) params.set('agent', apptAgent);
         if (apptService) params.set('service', apptService);
-        if (apptStaff) params.set('staff', apptStaff);
+        if (apptDoctor) params.set('doctor', apptDoctor);
         var res = await fetch('/admin/appointments?' + params.toString());
         var data = await res.json();
         var appts = data.appointments || [];
         var agents = data.agents || [];
         var services = data.services || [];
-        var staffList = data.staffList || [];
+        var doctors = data.doctors || [];
 
         var html = '';
         // Header
@@ -1563,16 +1563,16 @@
           html += '<option value="' + esc(sv) + '"' + (apptService === sv ? ' selected' : '') + '>' + esc(sv) + '</option>';
         });
         html += '</select>';
-        // Staff (Booked By) dropdown
-        html += '<select class="filter-select" onchange="apptStaff=this.value;loadAppointmentsModal()">';
-        html += '<option value="">All Staff</option>';
-        staffList.forEach(function(st) {
-          html += '<option value="' + esc(st) + '"' + (apptStaff === st ? ' selected' : '') + '>' + esc(st) + '</option>';
+        // Doctor dropdown
+        html += '<select class="filter-select" onchange="apptDoctor=this.value;loadAppointmentsModal()">';
+        html += '<option value="">All Doctors</option>';
+        doctors.forEach(function(doc) {
+          html += '<option value="' + esc(doc) + '"' + (apptDoctor === doc ? ' selected' : '') + '>' + esc(doc) + '</option>';
         });
         html += '</select>';
         // Clear filters
-        if (apptAgent || apptService || apptStaff) {
-          html += '<button class="perf-filter-btn" onclick="apptAgent=\'\';apptService=\'\';apptStaff=\'\';loadAppointmentsModal()" style="color:#ef4444;">Clear Filters</button>';
+        if (apptAgent || apptService || apptDoctor) {
+          html += '<button class="perf-filter-btn" onclick="apptAgent=\'\';apptService=\'\';apptDoctor=\'\';loadAppointmentsModal()" style="color:#ef4444;">Clear Filters</button>';
         }
         html += '</div>';
 
