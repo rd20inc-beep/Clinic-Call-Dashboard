@@ -702,6 +702,47 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
       "GROUP BY agent ORDER BY missed DESC"
     ).all();
 
+    // === DOCTOR WEEKLY APPOINTMENTS (unique per week) ===
+    const doctorWeekly = db.prepare(
+      "SELECT doctor_name, strftime('%Y-W%W', appointment_date) as week, " +
+      "COUNT(*) as appointments, COUNT(DISTINCT patient_phone) as unique_patients " +
+      "FROM wa_appointment_tracking " +
+      "WHERE " + aptDateFilter + " AND doctor_name IS NOT NULL AND doctor_name != '' " +
+      "GROUP BY doctor_name, week ORDER BY week DESC, appointments DESC"
+    ).all();
+
+    // === RECURRING SERVICES (services with repeat patients) ===
+    const recurringServices = db.prepare(
+      "SELECT service, COUNT(*) as total_appts, " +
+      "COUNT(DISTINCT patient_phone) as unique_patients, " +
+      "ROUND(CAST(COUNT(*) AS REAL) / COUNT(DISTINCT patient_phone), 1) as avg_visits_per_patient " +
+      "FROM wa_appointment_tracking " +
+      "WHERE " + aptDateFilter + " AND service IS NOT NULL AND service != '' AND patient_phone IS NOT NULL " +
+      "GROUP BY service HAVING COUNT(*) > COUNT(DISTINCT patient_phone) " +
+      "ORDER BY avg_visits_per_patient DESC"
+    ).all();
+
+    // === PATIENT LOYALTY (services used by same patients multiple times) ===
+    const patientServiceRepeat = db.prepare(
+      "SELECT service, patient_phone, patient_name, COUNT(*) as visits " +
+      "FROM wa_appointment_tracking " +
+      "WHERE " + aptDateFilter + " AND service IS NOT NULL AND service != '' AND patient_phone IS NOT NULL " +
+      "GROUP BY service, patient_phone HAVING visits > 1 " +
+      "ORDER BY visits DESC LIMIT 20"
+    ).all();
+
+    // === RECURRING PATIENT PERCENTAGE ===
+    const totalPatients = db.prepare(
+      "SELECT COUNT(DISTINCT patient_phone) as total FROM wa_appointment_tracking " +
+      "WHERE " + aptDateFilter + " AND patient_phone IS NOT NULL"
+    ).get();
+    const recurringPatients = db.prepare(
+      "SELECT COUNT(*) as recurring FROM (SELECT patient_phone FROM wa_appointment_tracking " +
+      "WHERE " + aptDateFilter + " AND patient_phone IS NOT NULL " +
+      "GROUP BY patient_phone HAVING COUNT(*) > 1)"
+    ).get();
+    const recurringPct = totalPatients.total > 0 ? Math.round((recurringPatients.recurring / totalPatients.total) * 100) : 0;
+
     res.json({
       callSources,
       callDirection,
@@ -713,6 +754,12 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
       appointmentHours,
       missedByHour,
       missedByAgent,
+      doctorWeekly,
+      recurringServices,
+      patientServiceRepeat,
+      recurringPct,
+      totalUniquePatients: totalPatients.total,
+      totalRecurringPatients: recurringPatients.recurring,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

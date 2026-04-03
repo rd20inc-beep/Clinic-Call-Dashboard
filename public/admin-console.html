@@ -535,6 +535,26 @@
         </div>
       </div>
 
+      <!-- Patient Retention & Recurring -->
+      <div class="card" style="margin-bottom:16px;">
+        <h2>Patient Retention &amp; Recurring Appointments</h2>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;" class="ov-grid-3">
+          <div class="stat-card green" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="totalPatientsVal">-</div><div class="stat-label">Unique Patients</div></div>
+          <div class="stat-card blue" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="recurringPatientsVal">-</div><div class="stat-label">Recurring Patients</div></div>
+          <div class="stat-card teal" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="recurringPctVal">-</div><div class="stat-label">Retention Rate</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="ov-grid-2">
+          <div id="recurringServicesTable"></div>
+          <div id="patientLoyaltyTable"></div>
+        </div>
+      </div>
+
+      <!-- Doctor Weekly Breakdown -->
+      <div class="card" style="margin-bottom:16px;">
+        <h2>Doctor Weekly Appointments</h2>
+        <div id="doctorWeeklyTable"><div class="empty"><div class="loading-spinner"></div></div></div>
+      </div>
+
       <!-- Login History -->
       <div class="card">
         <h2>Agent Login History</h2>
@@ -1273,6 +1293,63 @@
           maHtml += '</tbody></table>';
           document.getElementById('missedByAgentTable').innerHTML = maHtml;
         }
+        // === Patient Retention KPIs ===
+        document.getElementById('totalPatientsVal').textContent = d.totalUniquePatients || 0;
+        document.getElementById('recurringPatientsVal').textContent = d.totalRecurringPatients || 0;
+        document.getElementById('recurringPctVal').textContent = (d.recurringPct || 0) + '%';
+
+        // === Recurring Services Table ===
+        if (d.recurringServices && d.recurringServices.length > 0) {
+          var rsHtml = '<h3 style="font-size:13px;margin:0 0 8px;">Services with Repeat Patients</h3>';
+          rsHtml += '<table><thead><tr><th>Service</th><th>Total Appts</th><th>Unique Patients</th><th>Avg Visits/Patient</th></tr></thead><tbody>';
+          d.recurringServices.forEach(function(s) {
+            rsHtml += '<tr><td><strong>' + esc(s.service.length > 25 ? s.service.substring(0,25) + '...' : s.service) + '</strong></td>';
+            rsHtml += '<td>' + s.total_appts + '</td><td>' + s.unique_patients + '</td>';
+            rsHtml += '<td style="font-weight:600;color:#8b5cf6;">' + s.avg_visits_per_patient + 'x</td></tr>';
+          });
+          rsHtml += '</tbody></table>';
+          document.getElementById('recurringServicesTable').innerHTML = rsHtml;
+        } else {
+          document.getElementById('recurringServicesTable').innerHTML = '<div class="empty" style="font-size:12px;">No recurring services found</div>';
+        }
+
+        // === Patient Loyalty Table ===
+        if (d.patientServiceRepeat && d.patientServiceRepeat.length > 0) {
+          var plHtml = '<h3 style="font-size:13px;margin:0 0 8px;">Top Repeat Patients by Service</h3>';
+          plHtml += '<table><thead><tr><th>Patient</th><th>Service</th><th>Visits</th></tr></thead><tbody>';
+          d.patientServiceRepeat.forEach(function(p) {
+            plHtml += '<tr><td><strong>' + esc(p.patient_name || p.patient_phone) + '</strong></td>';
+            plHtml += '<td>' + esc(p.service.length > 20 ? p.service.substring(0,20) + '...' : p.service) + '</td>';
+            plHtml += '<td style="font-weight:600;color:#0ea5e9;">' + p.visits + '</td></tr>';
+          });
+          plHtml += '</tbody></table>';
+          document.getElementById('patientLoyaltyTable').innerHTML = plHtml;
+        } else {
+          document.getElementById('patientLoyaltyTable').innerHTML = '<div class="empty" style="font-size:12px;">No repeat patients found</div>';
+        }
+
+        // === Doctor Weekly Table ===
+        if (d.doctorWeekly && d.doctorWeekly.length > 0) {
+          // Group by doctor
+          var docWeeks = {};
+          d.doctorWeekly.forEach(function(r) {
+            if (!docWeeks[r.doctor_name]) docWeeks[r.doctor_name] = [];
+            docWeeks[r.doctor_name].push(r);
+          });
+          var dwHtml = '<table><thead><tr><th>Doctor</th><th>Week</th><th>Appointments</th><th>Unique Patients</th></tr></thead><tbody>';
+          Object.keys(docWeeks).forEach(function(doc) {
+            docWeeks[doc].forEach(function(w, i) {
+              dwHtml += '<tr>';
+              if (i === 0) dwHtml += '<td rowspan="' + docWeeks[doc].length + '" style="vertical-align:top;"><strong>' + esc(doc) + '</strong></td>';
+              dwHtml += '<td>' + esc(w.week) + '</td><td style="font-weight:600;">' + w.appointments + '</td><td>' + w.unique_patients + '</td></tr>';
+            });
+          });
+          dwHtml += '</tbody></table>';
+          document.getElementById('doctorWeeklyTable').innerHTML = dwHtml;
+        } else {
+          document.getElementById('doctorWeeklyTable').innerHTML = '<div class="empty">No weekly data available</div>';
+        }
+
       } catch (e) { console.error('Insights load failed:', e); }
     }
 
