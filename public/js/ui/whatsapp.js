@@ -103,99 +103,129 @@ function previewTemplate(key) {
 
 // ===== SERVICE & DOCTOR TEMPLATE MANAGER =====
 
-var _svcTplType = 'confirmation';
+var _tplServices = [];
+var _tplDoctors = [];
+var _tplSelectedName = '';
+var _tplSelectedIsDoctor = false;
 
 function loadServiceTemplateUI() {
   var section = document.getElementById('waServiceTemplatesSection');
   if (section.style.display !== 'none') { section.style.display = 'none'; return; }
   section.style.display = '';
-  section.innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">Loading services &amp; doctors...</div>';
+  section.innerHTML = '<div style="text-align:center;padding:20px;color:#94a3b8;">Loading...</div>';
 
   waFetch('/api/whatsapp/services').then(function(data) {
-    var services = data.services || [];
-    var doctors = data.doctors || [];
+    _tplServices = data.services || [];
+    _tplDoctors = data.doctors || [];
+    _tplSelectedName = '';
 
     var html = '';
-    html += '<div style="font-size:11px;color:#94a3b8;margin-bottom:12px;">Pick a service or doctor, choose the message type, then customize the template. If no custom template is set, the default is used.</div>';
+    html += '<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">';
 
-    // Type selector
-    html += '<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">';
-    ['confirmation', 'reminder', 'aftercare'].forEach(function(t) {
-      var active = _svcTplType === t;
-      html += '<button onclick="_svcTplType=\'' + t + '\';loadServiceTemplateList()" style="padding:6px 16px;border:1px solid ' + (active ? '#3b82f6' : '#e2e8f0') + ';border-radius:6px;background:' + (active ? '#3b82f6' : '#fff') + ';color:' + (active ? '#fff' : '#64748b') + ';font-size:12px;font-weight:600;cursor:pointer;">' + t.charAt(0).toUpperCase() + t.slice(1) + '</button>';
+    // Service dropdown
+    html += '<select id="tplServiceSelect" onchange="onTplSelect(this.value,false)" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;min-width:200px;">';
+    html += '<option value="">— Select Service —</option>';
+    _tplServices.forEach(function(s) {
+      html += '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>';
     });
+    html += '</select>';
+
+    // Doctor dropdown
+    html += '<select id="tplDoctorSelect" onchange="onTplSelect(this.value,true)" style="padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;min-width:200px;">';
+    html += '<option value="">— Select Doctor —</option>';
+    _tplDoctors.forEach(function(d) {
+      html += '<option value="' + escapeHtml(d) + '">' + escapeHtml(d) + '</option>';
+    });
+    html += '</select>';
+
     html += '</div>';
 
-    // Services list
-    html += '<h4 style="font-size:14px;font-weight:600;margin:0 0 8px;color:#0f172a;">Services (' + services.length + ')</h4>';
-    if (services.length === 0) {
-      html += '<div style="color:#94a3b8;font-size:12px;padding:8px 0;">No services found. Services appear after appointment sync from Clinicea.</div>';
-    } else {
-      html += '<div id="svcTemplateList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:20px;"></div>';
-    }
-
-    // Doctors list
-    html += '<h4 style="font-size:14px;font-weight:600;margin:0 0 8px;color:#0f172a;">Doctor Consultations (' + doctors.length + ')</h4>';
-    if (doctors.length === 0) {
-      html += '<div style="color:#94a3b8;font-size:12px;padding:8px 0;">No doctors found. Doctors appear after appointment sync from Clinicea.</div>';
-    } else {
-      html += '<div id="docTemplateList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;"></div>';
-    }
+    // Template cards area
+    html += '<div id="tplCardsArea"></div>';
 
     section.innerHTML = html;
-
-    // Store lists for use by loadServiceTemplateList
-    window._svcList = services;
-    window._docList = doctors;
-    loadServiceTemplateList();
   }).catch(function(err) { section.innerHTML = '<p style="color:#ef4444;">Failed to load: ' + err.message + '</p>'; });
 }
 
-function loadServiceTemplateList() {
-  var services = window._svcList || [];
-  var doctors = window._docList || [];
+function onTplSelect(name, isDoctor) {
+  if (!name) { document.getElementById('tplCardsArea').innerHTML = ''; return; }
+  _tplSelectedName = name;
+  _tplSelectedIsDoctor = isDoctor;
 
-  // Load service templates for current type
-  waFetch('/api/whatsapp/service-templates/' + _svcTplType).then(function(data) {
-    var el = document.getElementById('svcTemplateList');
-    if (!el) return;
-    var svcData = {};
-    (data.services || []).forEach(function(s) { svcData[s.service] = s; });
+  // Clear the other dropdown
+  if (isDoctor) {
+    var svcSel = document.getElementById('tplServiceSelect');
+    if (svcSel) svcSel.value = '';
+  } else {
+    var docSel = document.getElementById('tplDoctorSelect');
+    if (docSel) docSel.value = '';
+  }
 
-    el.innerHTML = services.map(function(svc) {
-      var info = svcData[svc] || {};
-      var hasCustom = !info.usingDefault && info.template;
-      var badge = hasCustom ? '<span style="background:#10b981;color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Custom</span>' : '<span style="background:#94a3b8;color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Default</span>';
-      return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
-          '<span style="font-weight:600;font-size:13px;">' + escapeHtml(svc) + badge + '</span>' +
-          '<button onclick="editServiceTemplate(\'' + _svcTplType + '\',\'' + escapeHtml(svc).replace(/'/g, "\\'") + '\')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:11px;cursor:pointer;">' + (hasCustom ? 'Edit' : 'Customize') + '</button>' +
-        '</div>' +
-        (hasCustom ? '<div style="font-size:11px;color:#64748b;white-space:pre-wrap;max-height:60px;overflow:hidden;">' + escapeHtml((info.template || '').substring(0, 120)) + '...</div>' : '') +
-      '</div>';
-    }).join('');
-  }).catch(function() {});
+  loadTplCards();
+}
 
-  // Load doctor templates for current type
-  waFetch('/api/whatsapp/doctor-templates/' + _svcTplType).then(function(data) {
-    var el = document.getElementById('docTemplateList');
-    if (!el) return;
-    var docData = {};
-    (data.doctors || []).forEach(function(d) { docData[d.doctor] = d; });
+function loadTplCards() {
+  var area = document.getElementById('tplCardsArea');
+  if (!_tplSelectedName) { area.innerHTML = ''; return; }
+  area.innerHTML = '<div style="text-align:center;padding:16px;color:#94a3b8;">Loading templates...</div>';
 
-    el.innerHTML = doctors.map(function(doc) {
-      var info = docData[doc] || {};
-      var hasCustom = !info.usingDefault && info.template;
-      var badge = hasCustom ? '<span style="background:#10b981;color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Custom</span>' : '<span style="background:#94a3b8;color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Default</span>';
-      return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:12px;">' +
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
-          '<span style="font-weight:600;font-size:13px;">' + escapeHtml(doc) + badge + '</span>' +
-          '<button onclick="editDoctorTemplate(\'' + _svcTplType + '\',\'' + escapeHtml(doc).replace(/'/g, "\\'") + '\')" style="padding:3px 10px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:11px;cursor:pointer;">' + (hasCustom ? 'Edit' : 'Customize') + '</button>' +
-        '</div>' +
-        (hasCustom ? '<div style="font-size:11px;color:#64748b;white-space:pre-wrap;max-height:60px;overflow:hidden;">' + escapeHtml((info.template || '').substring(0, 120)) + '...</div>' : '') +
-      '</div>';
-    }).join('');
-  }).catch(function() {});
+  var types = ['confirmation', 'reminder', 'aftercare'];
+  var loaded = 0;
+  var results = {};
+
+  types.forEach(function(type) {
+    var url = _tplSelectedIsDoctor
+      ? '/api/whatsapp/doctor-templates/' + type
+      : '/api/whatsapp/service-templates/' + type;
+
+    waFetch(url).then(function(data) {
+      var list = _tplSelectedIsDoctor ? (data.doctors || []) : (data.services || []);
+      var match = list.find(function(item) {
+        return _tplSelectedIsDoctor ? item.doctor === _tplSelectedName : item.service === _tplSelectedName;
+      });
+      results[type] = { match: match || {}, defaultTemplate: data.defaultTemplate || '' };
+      loaded++;
+      if (loaded === 3) renderTplCards(area, results);
+    }).catch(function() { loaded++; if (loaded === 3) renderTplCards(area, results); });
+  });
+}
+
+function renderTplCards(area, results) {
+  var label = _tplSelectedIsDoctor ? 'Consultation with ' + _tplSelectedName : _tplSelectedName;
+  var html = '<h4 style="font-size:14px;font-weight:600;margin:0 0 12px;color:#0f172a;">' + escapeHtml(label) + '</h4>';
+  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+
+  ['confirmation', 'reminder', 'aftercare'].forEach(function(type) {
+    var r = results[type] || {};
+    var info = r.match || {};
+    var hasCustom = info.template && !info.usingDefault;
+    var badge = hasCustom
+      ? '<span style="background:#10b981;color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Custom</span>'
+      : '<span style="background:#94a3b8;color:#fff;font-size:9px;padding:1px 6px;border-radius:3px;margin-left:6px;">Using Default</span>';
+    var typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
+
+    html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;">';
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">';
+    html += '<span style="font-weight:600;font-size:13px;color:#0f172a;">' + typeLabel + badge + '</span>';
+    html += '<div style="display:flex;gap:4px;">';
+    if (_tplSelectedIsDoctor) {
+      html += '<button onclick="editDoctorTemplate(\'' + type + '\',\'' + _tplSelectedName.replace(/'/g, "\\'") + '\')" style="padding:4px 12px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:11px;font-weight:600;cursor:pointer;">' + (hasCustom ? 'Edit' : 'Customize') + '</button>';
+    } else {
+      html += '<button onclick="editServiceTemplate(\'' + type + '\',\'' + _tplSelectedName.replace(/'/g, "\\'") + '\')" style="padding:4px 12px;border:1px solid #e2e8f0;border-radius:4px;background:#fff;color:#3b82f6;font-size:11px;font-weight:600;cursor:pointer;">' + (hasCustom ? 'Edit' : 'Customize') + '</button>';
+    }
+    html += '</div></div>';
+
+    if (hasCustom) {
+      html += '<div style="font-size:12px;color:#475569;white-space:pre-wrap;max-height:80px;overflow:hidden;background:#f8fafc;padding:8px 10px;border-radius:4px;border:1px solid #f1f5f9;">' + escapeHtml((info.template || '').substring(0, 200)) + (info.template && info.template.length > 200 ? '...' : '') + '</div>';
+    } else {
+      html += '<div style="font-size:11px;color:#94a3b8;font-style:italic;">Will use the default ' + type + ' template</div>';
+    }
+
+    html += '</div>';
+  });
+
+  html += '</div>';
+  area.innerHTML = html;
 }
 
 function editServiceTemplate(type, service) {
@@ -227,7 +257,7 @@ function saveServiceTpl(type, service) {
   if (!text) return alert('Template cannot be empty');
   waFetch('/api/whatsapp/service-templates', { method: 'POST', body: JSON.stringify({ type: type, service: service, text: text }) })
     .then(function(d) {
-      if (d.ok) { document.getElementById('svcTplModal').remove(); alert('Template saved!'); loadServiceTemplateList(); }
+      if (d.ok) { document.getElementById('svcTplModal').remove(); alert('Template saved!'); loadTplCards(); }
       else alert('Error: ' + (d.error || 'Unknown'));
     }).catch(function(err) { alert('Error: ' + err.message); });
 }
@@ -235,7 +265,7 @@ function saveServiceTpl(type, service) {
 function deleteServiceTpl(type, service) {
   if (!confirm('Reset "' + service + '" ' + type + ' template to default?')) return;
   waFetch('/api/whatsapp/service-templates', { method: 'DELETE', body: JSON.stringify({ type: type, service: service }) })
-    .then(function(d) { if (d.ok) { document.getElementById('svcTplModal').remove(); loadServiceTemplateList(); } })
+    .then(function(d) { if (d.ok) { document.getElementById('svcTplModal').remove(); loadTplCards(); } })
     .catch(function() {});
 }
 
@@ -267,7 +297,7 @@ function saveDoctorTpl(type, doctor) {
   if (!text) return alert('Template cannot be empty');
   waFetch('/api/whatsapp/doctor-templates', { method: 'POST', body: JSON.stringify({ type: type, doctor: doctor, text: text }) })
     .then(function(d) {
-      if (d.ok) { document.getElementById('svcTplModal').remove(); alert('Template saved!'); loadServiceTemplateList(); }
+      if (d.ok) { document.getElementById('svcTplModal').remove(); alert('Template saved!'); loadTplCards(); }
       else alert('Error: ' + (d.error || 'Unknown'));
     }).catch(function(err) { alert('Error: ' + err.message); });
 }
@@ -275,7 +305,7 @@ function saveDoctorTpl(type, doctor) {
 function deleteDoctorTpl(type, doctor) {
   if (!confirm('Reset "' + doctor + '" ' + type + ' template to default?')) return;
   waFetch('/api/whatsapp/doctor-templates', { method: 'DELETE', body: JSON.stringify({ type: type, doctor: doctor }) })
-    .then(function(d) { if (d.ok) { document.getElementById('svcTplModal').remove(); loadServiceTemplateList(); } })
+    .then(function(d) { if (d.ok) { document.getElementById('svcTplModal').remove(); loadTplCards(); } })
     .catch(function() {});
 }
 
