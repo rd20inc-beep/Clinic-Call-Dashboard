@@ -496,6 +496,46 @@
         <div style="height:280px;"><canvas id="peakHoursChart"></canvas></div>
         <div style="height:200px;margin-top:16px;"><canvas id="peakDaysChart"></canvas></div>
       </div>
+      <!-- Call Source Breakdown -->
+      <div class="card" style="margin-bottom:16px;">
+        <h2>Call Breakdown
+          <div class="btn-group">
+            <button class="btn btn-outline btn-sm" onclick="loadInsights('today')">Today</button>
+            <button class="btn btn-outline btn-sm" onclick="loadInsights('week')">Week</button>
+            <button class="btn btn-outline btn-sm active" onclick="loadInsights('month')">Month</button>
+          </div>
+        </h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="ov-grid-2">
+          <div><h3 style="font-size:13px;margin:0 0 8px;">By Source (Phone vs WhatsApp)</h3><div style="height:200px;"><canvas id="sourceChart"></canvas></div></div>
+          <div><h3 style="font-size:13px;margin:0 0 8px;">By Direction (Inbound vs Outbound)</h3><div style="height:200px;"><canvas id="directionChart"></canvas></div></div>
+        </div>
+        <div id="callBreakdownTable" style="margin-top:12px;"></div>
+      </div>
+
+      <!-- Service & Doctor Analytics -->
+      <div class="card" style="margin-bottom:16px;">
+        <h2>Service &amp; Doctor Analytics</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="ov-grid-2">
+          <div><h3 style="font-size:13px;margin:0 0 8px;">Top Services</h3><div style="height:250px;"><canvas id="topServicesChart"></canvas></div></div>
+          <div><h3 style="font-size:13px;margin:0 0 8px;">Top Doctors</h3><div style="height:250px;"><canvas id="topDoctorsChart"></canvas></div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;" class="ov-grid-2">
+          <div><h3 style="font-size:13px;margin:0 0 8px;">Appointments by Day of Week</h3><div style="height:200px;"><canvas id="aptDaysChart"></canvas></div></div>
+          <div><h3 style="font-size:13px;margin:0 0 8px;">Appointment Times (Peak Hours)</h3><div style="height:200px;"><canvas id="aptHoursChart"></canvas></div></div>
+        </div>
+        <div id="doctorScheduleTable" style="margin-top:12px;"></div>
+      </div>
+
+      <!-- Missed Call Analysis -->
+      <div class="card" style="margin-bottom:16px;">
+        <h2>Missed Call Analysis</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="ov-grid-2">
+          <div><h3 style="font-size:13px;margin:0 0 8px;">Missed Calls by Hour</h3><div style="height:200px;"><canvas id="missedHoursChart"></canvas></div></div>
+          <div id="missedByAgentTable"></div>
+        </div>
+      </div>
+
+      <!-- Login History -->
       <div class="card">
         <h2>Agent Login History</h2>
         <div id="loginHistoryContent"><div class="empty"><div class="loading-spinner"></div></div></div>
@@ -655,7 +695,7 @@
       if (tab === 'performance') loadPerformance();
       if (tab === 'leaderboard') loadLeaderboard();
       if (tab === 'callhistory') { populateCallHistoryAgentFilter(); loadCallHistory(); }
-      if (tab === 'insights') { loadPeakHours('week'); loadLoginHistory(); }
+      if (tab === 'insights') { loadPeakHours('week'); loadInsights('month'); loadLoginHistory(); }
       if (tab === 'callbacks') loadCallbacks();
       if (tab === 'agents') loadAgents();
       if (tab === 'audit') loadAuditLog();
@@ -1115,6 +1155,125 @@
         if (!html) html = '<div class="empty">No login data yet. Logins are tracked from now.</div>';
         el.innerHTML = html;
       } catch (e) { document.getElementById('loginHistoryContent').innerHTML = '<div class="empty">Error loading login history</div>'; }
+    }
+
+    // ===== INSIGHTS — FULL ANALYTICS =====
+    var insightCharts = {};
+    function destroyChart(name) { if (insightCharts[name]) { insightCharts[name].destroy(); insightCharts[name] = null; } }
+
+    async function loadInsights(period) {
+      try {
+        var res = await fetch('/admin/analytics/insights?period=' + (period || 'month'));
+        var d = await res.json();
+        var dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        // === Call Source Chart (Phone vs WhatsApp) ===
+        destroyChart('source');
+        var srcLabels = (d.callSources || []).map(function(s) { return s.source === 'phone' ? 'Phone' : s.source === 'whatsapp' ? 'WhatsApp' : s.source || 'Unknown'; });
+        insightCharts.source = new Chart(document.getElementById('sourceChart'), {
+          type: 'doughnut',
+          data: { labels: srcLabels, datasets: [{ data: (d.callSources || []).map(function(s) { return s.total; }), backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'] }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        });
+
+        // === Call Direction Chart ===
+        destroyChart('direction');
+        var dirLabels = (d.callDirection || []).map(function(s) { return s.direction === 'inbound' ? 'Inbound' : 'Outbound'; });
+        insightCharts.direction = new Chart(document.getElementById('directionChart'), {
+          type: 'doughnut',
+          data: { labels: dirLabels, datasets: [{ data: (d.callDirection || []).map(function(s) { return s.total; }), backgroundColor: ['#6366f1', '#f97316'] }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+        });
+
+        // === Call Breakdown Table ===
+        var tbl = '<table><thead><tr><th>Source</th><th>Total</th><th>Answered</th><th>Missed</th><th>Talk Time</th><th>Avg Duration</th></tr></thead><tbody>';
+        (d.callSources || []).forEach(function(s) {
+          tbl += '<tr><td><strong>' + (s.source === 'phone' ? 'Phone' : 'WhatsApp') + '</strong></td><td>' + s.total + '</td><td style="color:#10b981;">' + s.answered + '</td><td style="color:#ef4444;">' + s.missed + '</td><td>' + fmtDuration(s.talk_time) + '</td><td>' + (s.avg_duration || 0) + 's</td></tr>';
+        });
+        (d.callDirection || []).forEach(function(s) {
+          tbl += '<tr><td><strong>' + (s.direction === 'inbound' ? 'Inbound' : 'Outbound') + '</strong></td><td>' + s.total + '</td><td style="color:#10b981;">' + s.answered + '</td><td style="color:#ef4444;">' + s.missed + '</td><td>' + fmtDuration(s.talk_time) + '</td><td>-</td></tr>';
+        });
+        tbl += '</tbody></table>';
+        document.getElementById('callBreakdownTable').innerHTML = tbl;
+
+        // === Top Services Chart ===
+        destroyChart('topServices');
+        insightCharts.topServices = new Chart(document.getElementById('topServicesChart'), {
+          type: 'bar',
+          data: { labels: (d.topServices || []).map(function(s) { return s.service.length > 20 ? s.service.substring(0,20) + '...' : s.service; }), datasets: [{ label: 'Appointments', data: (d.topServices || []).map(function(s) { return s.count; }), backgroundColor: '#8b5cf6' }] },
+          options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } }
+        });
+
+        // === Top Doctors Chart ===
+        destroyChart('topDoctors');
+        insightCharts.topDoctors = new Chart(document.getElementById('topDoctorsChart'), {
+          type: 'bar',
+          data: { labels: (d.topDoctors || []).map(function(s) { return s.doctor_name; }), datasets: [{ label: 'Appointments', data: (d.topDoctors || []).map(function(s) { return s.count; }), backgroundColor: '#0ea5e9' }, { label: 'Unique Patients', data: (d.topDoctors || []).map(function(s) { return s.unique_patients; }), backgroundColor: '#10b981' }] },
+          options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { position: 'top' } }, scales: { x: { beginAtZero: true } } }
+        });
+
+        // === Appointments by Day ===
+        destroyChart('aptDays');
+        insightCharts.aptDays = new Chart(document.getElementById('aptDaysChart'), {
+          type: 'bar',
+          data: { labels: (d.appointmentDays || []).map(function(a) { return a.day.substring(0,3); }), datasets: [{ label: 'Appointments', data: (d.appointmentDays || []).map(function(a) { return a.count; }), backgroundColor: '#f59e0b' }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+
+        // === Appointment Hours ===
+        destroyChart('aptHours');
+        var aptH = (d.appointmentHours || []).filter(function(h) { return h.count > 0; });
+        insightCharts.aptHours = new Chart(document.getElementById('aptHoursChart'), {
+          type: 'bar',
+          data: { labels: aptH.map(function(h) { return (h.hour % 12 || 12) + (h.hour < 12 ? 'AM' : 'PM'); }), datasets: [{ label: 'Appointments', data: aptH.map(function(h) { return h.count; }), backgroundColor: '#10b981' }] },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+
+        // === Doctor Schedule Table ===
+        if (d.topDoctors && d.topDoctors.length > 0) {
+          var schedHtml = '<h3 style="font-size:13px;margin:0 0 8px;">Doctor Schedule Analysis</h3><table><thead><tr><th>Doctor</th><th>Total Appts</th><th>Unique Patients</th><th>Busiest Day</th><th>Peak Hour</th></tr></thead><tbody>';
+          d.topDoctors.forEach(function(doc) {
+            var docSched = (d.doctorSchedule || []).filter(function(s) { return s.doctor_name === doc.doctor_name; });
+            var dayTotals = {};
+            var hourTotals = {};
+            docSched.forEach(function(s) { dayTotals[s.dow] = (dayTotals[s.dow] || 0) + s.count; hourTotals[s.hour] = (hourTotals[s.hour] || 0) + s.count; });
+            var busiestDay = Object.entries(dayTotals).sort(function(a,b) { return b[1]-a[1]; })[0];
+            var peakHour = Object.entries(hourTotals).sort(function(a,b) { return b[1]-a[1]; })[0];
+            schedHtml += '<tr><td><strong>' + esc(doc.doctor_name) + '</strong></td>';
+            schedHtml += '<td>' + doc.count + '</td>';
+            schedHtml += '<td>' + doc.unique_patients + '</td>';
+            schedHtml += '<td>' + (busiestDay ? dayNames[busiestDay[0]] + ' (' + busiestDay[1] + ')' : '-') + '</td>';
+            schedHtml += '<td>' + (peakHour ? (peakHour[0] % 12 || 12) + (peakHour[0] < 12 ? ' AM' : ' PM') + ' (' + peakHour[1] + ')' : '-') + '</td></tr>';
+          });
+          schedHtml += '</tbody></table>';
+          document.getElementById('doctorScheduleTable').innerHTML = schedHtml;
+        }
+
+        // === Missed Calls by Hour ===
+        destroyChart('missedHours');
+        var missedH = Array(24).fill(0);
+        (d.missedByHour || []).forEach(function(m) { missedH[m.hour] = m.count; });
+        var missedFiltered = missedH.map(function(c,i) { return { hour: i, count: c }; }).filter(function(h) { return h.count > 0; });
+        if (missedFiltered.length > 0) {
+          insightCharts.missedHours = new Chart(document.getElementById('missedHoursChart'), {
+            type: 'bar',
+            data: { labels: missedFiltered.map(function(h) { return (h.hour % 12 || 12) + (h.hour < 12 ? 'AM' : 'PM'); }), datasets: [{ label: 'Missed', data: missedFiltered.map(function(h) { return h.count; }), backgroundColor: '#ef4444' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+          });
+        }
+
+        // === Missed by Agent Table ===
+        if (d.missedByAgent && d.missedByAgent.length > 0) {
+          var maHtml = '<h3 style="font-size:13px;margin:0 0 8px;">Missed Calls by Agent</h3><table><thead><tr><th>Agent</th><th>Missed</th><th>Total</th><th>Miss Rate</th></tr></thead><tbody>';
+          d.missedByAgent.forEach(function(a) {
+            var rate = a.total > 0 ? Math.round((a.missed / a.total) * 100) : 0;
+            var color = rate > 30 ? '#ef4444' : rate > 15 ? '#f59e0b' : '#10b981';
+            maHtml += '<tr><td><strong>' + esc(a.agent) + '</strong></td><td style="color:#ef4444;font-weight:600;">' + a.missed + '</td><td>' + a.total + '</td><td style="color:' + color + ';font-weight:600;">' + rate + '%</td></tr>';
+          });
+          maHtml += '</tbody></table>';
+          document.getElementById('missedByAgentTable').innerHTML = maHtml;
+        }
+      } catch (e) { console.error('Insights load failed:', e); }
     }
 
     // ===== AUDIT LOG =====

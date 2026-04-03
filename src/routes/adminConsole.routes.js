@@ -601,6 +601,125 @@ router.get('/admin/analytics/peak-hours', requireAuth, requireAdminOrDoctor, (re
 });
 
 // -------------------------------------------------------------------------
+// GET /admin/analytics/insights — comprehensive dashboard insights
+// -------------------------------------------------------------------------
+router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req, res) => {
+  try {
+    const { db } = require('../db/index');
+    const period = req.query.period || 'month';
+    let dateFilter = "timestamp >= datetime('now', '-30 days')";
+    if (period === 'week') dateFilter = "timestamp >= datetime('now', '-7 days')";
+    else if (period === 'today') dateFilter = "date(timestamp) = date('now')";
+
+    let aptDateFilter = "appointment_date >= datetime('now', '-30 days')";
+    if (period === 'week') aptDateFilter = "appointment_date >= datetime('now', '-7 days')";
+    else if (period === 'today') aptDateFilter = "date(appointment_date) = date('now')";
+
+    // === CALL SOURCE BREAKDOWN (Phone vs WhatsApp) ===
+    const callSources = db.prepare(
+      "SELECT source, COUNT(*) as total, " +
+      "SUM(CASE WHEN call_status = 'answered' THEN 1 ELSE 0 END) as answered, " +
+      "SUM(CASE WHEN call_status = 'missed' THEN 1 ELSE 0 END) as missed, " +
+      "COALESCE(SUM(duration), 0) as talk_time, " +
+      "ROUND(AVG(CASE WHEN duration > 0 THEN duration END), 0) as avg_duration " +
+      "FROM calls WHERE " + dateFilter + " GROUP BY source"
+    ).all();
+
+    // === INBOUND vs OUTBOUND ===
+    const callDirection = db.prepare(
+      "SELECT direction, COUNT(*) as total, " +
+      "SUM(CASE WHEN call_status = 'answered' THEN 1 ELSE 0 END) as answered, " +
+      "SUM(CASE WHEN call_status = 'missed' THEN 1 ELSE 0 END) as missed, " +
+      "COALESCE(SUM(duration), 0) as talk_time " +
+      "FROM calls WHERE " + dateFilter + " GROUP BY direction"
+    ).all();
+
+    // === TOP SERVICES (most booked) ===
+    const topServices = db.prepare(
+      "SELECT service, COUNT(*) as count FROM wa_appointment_tracking " +
+      "WHERE " + aptDateFilter + " AND service IS NOT NULL AND service != '' " +
+      "GROUP BY service ORDER BY count DESC LIMIT 10"
+    ).all();
+
+    // === SERVICE BY DAY OF WEEK ===
+    const serviceByDay = db.prepare(
+      "SELECT service, CAST(strftime('%w', appointment_date) AS INTEGER) as dow, COUNT(*) as count " +
+      "FROM wa_appointment_tracking WHERE " + aptDateFilter + " AND service IS NOT NULL AND service != '' " +
+      "GROUP BY service, dow ORDER BY count DESC"
+    ).all();
+
+    // === TOP DOCTORS (most patients) ===
+    const topDoctors = db.prepare(
+      "SELECT doctor_name, COUNT(*) as count, " +
+      "COUNT(DISTINCT patient_phone) as unique_patients " +
+      "FROM wa_appointment_tracking " +
+      "WHERE " + aptDateFilter + " AND doctor_name IS NOT NULL AND doctor_name != '' " +
+      "GROUP BY doctor_name ORDER BY count DESC"
+    ).all();
+
+    // === DOCTOR AVAILABILITY (appointments by day of week + hour) ===
+    const doctorSchedule = db.prepare(
+      "SELECT doctor_name, " +
+      "CAST(strftime('%w', appointment_date) AS INTEGER) as dow, " +
+      "CAST(strftime('%H', appointment_date) AS INTEGER) as hour, " +
+      "COUNT(*) as count " +
+      "FROM wa_appointment_tracking " +
+      "WHERE " + aptDateFilter + " AND doctor_name IS NOT NULL AND doctor_name != '' " +
+      "GROUP BY doctor_name, dow, hour ORDER BY doctor_name, dow, hour"
+    ).all();
+
+    // === APPOINTMENTS BY DAY OF WEEK ===
+    const aptsByDay = db.prepare(
+      "SELECT CAST(strftime('%w', appointment_date) AS INTEGER) as dow, COUNT(*) as count " +
+      "FROM wa_appointment_tracking WHERE " + aptDateFilter + " GROUP BY dow ORDER BY dow"
+    ).all();
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const appointmentDays = Array(7).fill(null).map((_, i) => {
+      const d = aptsByDay.find(r => r.dow === i);
+      return { day: dayNames[i], count: d ? d.count : 0 };
+    });
+
+    // === APPOINTMENTS BY HOUR (peak booking times) ===
+    const aptsByHour = db.prepare(
+      "SELECT CAST(strftime('%H', appointment_date) AS INTEGER) as hour, COUNT(*) as count " +
+      "FROM wa_appointment_tracking WHERE " + aptDateFilter + " GROUP BY hour ORDER BY hour"
+    ).all();
+    const appointmentHours = Array(24).fill(null).map((_, i) => {
+      const h = aptsByHour.find(r => r.hour === i);
+      return { hour: i, count: h ? h.count : 0 };
+    });
+
+    // === MISSED CALL ANALYSIS ===
+    const missedByHour = db.prepare(
+      "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as count " +
+      "FROM calls WHERE " + dateFilter + " AND call_status = 'missed' GROUP BY hour ORDER BY hour"
+    ).all();
+
+    const missedByAgent = db.prepare(
+      "SELECT agent, COUNT(*) as missed, " +
+      "(SELECT COUNT(*) FROM calls c2 WHERE c2.agent = calls.agent AND " + dateFilter.replace('timestamp', 'c2.timestamp') + ") as total " +
+      "FROM calls WHERE " + dateFilter + " AND call_status = 'missed' AND agent IS NOT NULL " +
+      "GROUP BY agent ORDER BY missed DESC"
+    ).all();
+
+    res.json({
+      callSources,
+      callDirection,
+      topServices,
+      serviceByDay,
+      topDoctors,
+      doctorSchedule,
+      appointmentDays,
+      appointmentHours,
+      missedByHour,
+      missedByAgent,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------------------
 // GET /admin/analytics/login-history — agent login history
 // -------------------------------------------------------------------------
 router.get('/admin/analytics/login-history', requireAuth, requireAdmin, (req, res) => {
