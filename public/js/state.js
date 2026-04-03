@@ -48,5 +48,7 @@ fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {
         items[i].style.display = items[i].dataset.display || '';
       }
     }
+    // Re-apply WhatsApp connection UI now that role is known
+    if (typeof waReapplyConnectionUI === 'function') waReapplyConnectionUI();
   }
 }).catch(function() { console.warn('[Dashboard] Failed to load /api/me'); });

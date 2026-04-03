@@ -433,7 +433,13 @@ function calSendMessage(phone, name) {
 
 // ===== WHATSAPP CONNECTION =====
 
+// Store last status so we can re-apply after identity loads
+var _lastWaStatus = null;
+var _lastWaQrDataUrl = null;
+
 function waUpdateConnectionUI(status, qrDataUrl) {
+  _lastWaStatus = status;
+  if (qrDataUrl) _lastWaQrDataUrl = qrDataUrl;
   var dot = document.getElementById('waConnDot');
   var statusText = document.getElementById('waConnectionStatusText');
   var bar = document.getElementById('waConnectionBar');
@@ -497,6 +503,11 @@ function waUpdateConnectionUI(status, qrDataUrl) {
       }
     }
   }
+}
+
+// Re-apply connection UI after identity loads (fixes race condition)
+function waReapplyConnectionUI() {
+  if (_lastWaStatus) waUpdateConnectionUI(_lastWaStatus, _lastWaQrDataUrl);
 }
 
 function waLogout() {
