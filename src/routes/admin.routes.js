@@ -6,19 +6,12 @@ const { apiLimiter } = require('../middleware/rateLimit');
 const { getEventLog, logEvent } = require('../services/logging.service');
 const { requireWebhookSecret } = require('../middleware/webhookAuth');
 const { getUsers } = require('../config/env');
-const { getAllHeartbeats } = require('../services/agentRegistry.service');
 const { getAllPresence, getPresence } = require('../sockets/index');
 const usersRepo = require('../db/users.repo');
 const callsRepo = require('../db/calls.repo');
 const auditRepo = require('../db/audit.repo');
 const bcrypt = require('bcryptjs');
 
-// In-memory monitor log storage (bounded Map with LRU eviction)
-const monitorLogs = new Map();
-
-// Maximum log size per agent (50 KB), max 50 agents in memory
-const MAX_LOG_SIZE = 50 * 1024;
-const MAX_LOG_AGENTS = 50;
 
 /**
  * Setup admin routes. Accepts the Socket.IO instance so that socket-debug
@@ -53,49 +46,6 @@ module.exports = function setupAdminRoutes(io) {
     }
 
     res.json({ totalSockets: io.sockets.sockets.size, rooms, sockets });
-  });
-
-  // -------------------------------------------------------------------------
-  // POST /api/monitor-log - upload monitor log text (from monitor script)
-  // -------------------------------------------------------------------------
-  router.post('/api/monitor-log', requireWebhookSecret, (req, res) => {
-    const agent = (req.body.Agent || '_default').trim();
-    let logText = req.body.Log || '';
-
-    // Sanitize: truncate to 50 KB max
-    if (logText.length > MAX_LOG_SIZE) {
-      logText = logText.slice(-MAX_LOG_SIZE);
-    }
-
-    // LRU: delete + re-set moves entry to end of Map insertion order
-    monitorLogs.delete(agent);
-    monitorLogs.set(agent, logText);
-    // Enforce max agents in memory (evict oldest = first entry)
-    while (monitorLogs.size > MAX_LOG_AGENTS) {
-      const oldest = monitorLogs.keys().next().value;
-      monitorLogs.delete(oldest);
-    }
-    res.json({ status: 'ok' });
-  });
-
-  // -------------------------------------------------------------------------
-  // GET /api/monitor-log/:agent - retrieve stored log for an agent
-  // -------------------------------------------------------------------------
-  router.get('/api/monitor-log/:agent', requireAuth, requireAdmin, (req, res) => {
-    const agent = req.params.agent || '_default';
-    res.type('text/plain').send(monitorLogs.get(agent) || '(no log uploaded yet)');
-  });
-
-  // -------------------------------------------------------------------------
-  // GET /api/monitor-log - list agents with log line counts
-  // -------------------------------------------------------------------------
-  router.get('/api/monitor-log', requireAuth, requireAdmin, (req, res) => {
-    res.json(
-      [...monitorLogs.keys()].map((k) => ({
-        agent: k,
-        lines: (monitorLogs.get(k) || '').split('\n').length,
-      }))
-    );
   });
 
   // -------------------------------------------------------------------------
@@ -246,13 +196,11 @@ module.exports = function setupAdminRoutes(io) {
   // -------------------------------------------------------------------------
   router.get('/api/agents', requireAuth, requireAdmin, (req, res) => {
     const users = getUsers();
-    const heartbeats = getAllHeartbeats();
     const presence = getAllPresence();
     const { db } = require('../db/index');
 
     const agents = [];
     for (const [username, user] of Object.entries(users)) {
-      const hb = heartbeats[username];
       let todayCalls = 0, totalCalls = 0, answeredCalls = 0, missedCalls = 0;
       let weekCalls = 0, weekAnswered = 0;
       let avgDuration = 0, todayTalkTime = 0, weekTalkTime = 0, totalTalkTime = 0;
@@ -300,8 +248,8 @@ module.exports = function setupAdminRoutes(io) {
         }
       } catch (e) { console.error('[admin] Operation failed:', e.message); }
 
-      // Best available "last seen" — prefer live presence, fall back to DB, then heartbeat
-      const lastSeenTs = pres.lastActivity || dbLastSeen || (hb ? hb.lastHeartbeat : null);
+      // Best available "last seen" — prefer live presence, fall back to DB
+      const lastSeenTs = pres.lastActivity || dbLastSeen;
       const hasEverConnected = !!(lastSeenTs || dbLastLogin);
 
       // Use presence engine's computed status, with account-level overrides
@@ -333,9 +281,7 @@ module.exports = function setupAdminRoutes(io) {
         onCall: livePres.onCall || false,
         online: livePres.online || false,
         portalOnline: !!livePres.portalOnline,
-        mobileOnline: !!(livePres.mobileOnline && livePres.lastMobileHb && (Date.now() - livePres.lastMobileHb) < require('../config/constants').HEARTBEAT_STALE_MS),
-        monitorAlive: !!(hb && hb.alive && hb.lastHeartbeat && (Date.now() - hb.lastHeartbeat) < require('../config/constants').HEARTBEAT_STALE_MS),
-        lastHeartbeat: hb ? hb.lastHeartbeat : null,
+        mobileOnline: !!(livePres.mobileOnline && livePres.lastMobileHb && (Date.now() - livePres.lastMobileHb) < 90_000),
         lastSeen: lastSeenTs,
         lastLogin: dbLastLogin,
         todayCalls,
@@ -867,7 +813,6 @@ module.exports = function setupAdminRoutes(io) {
       const { db } = require('../db/index');
 
       const patientCache = cliniceaService.getPatientCacheState();
-      const heartbeats = getAllHeartbeats();
       const presence = getAllPresence();
 
       // Agent connection summary
@@ -875,6 +820,8 @@ module.exports = function setupAdminRoutes(io) {
       for (const [username, p] of Object.entries(presence)) {
         agents[username] = { status: p.status, portal: p.portalOnline, mobile: p.mobileOnline, onCall: p.onCall };
       }
+
+      const meetingCache = cliniceaService.getMeetingCache ? cliniceaService.getMeetingCache() : null;
 
       res.json({
         server: {
@@ -892,6 +839,12 @@ module.exports = function setupAdminRoutes(io) {
             lastSync: patientCache.lastSync || null,
             pages: patientCache.pages || 0,
           },
+          caches: {
+            meetingCache: meetingCache ? meetingCache.size : 0,
+            profileCache: cliniceaService.getProfileCacheSize ? cliniceaService.getProfileCacheSize() : 'N/A',
+            appointmentDateCache: cliniceaService.getAppointmentDateCacheSize ? cliniceaService.getAppointmentDateCacheSize() : 'N/A',
+          },
+          circuitBreaker: cliniceaService.getCircuitBreakerState ? cliniceaService.getCircuitBreakerState() : 'N/A',
         },
         whatsapp: {
           connectionStatus: waClient.getStatus ? waClient.getStatus() : 'unknown',

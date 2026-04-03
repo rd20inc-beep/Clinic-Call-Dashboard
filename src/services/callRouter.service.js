@@ -43,21 +43,4 @@ function routeCallEvent(eventName, callEvent) {
   return result;
 }
 
-/**
- * Emit monitor_status to the appropriate rooms.
- *
- * @param {string|null} agent  Agent username, or null for untagged monitors
- * @param {boolean}     alive  Whether the monitor is alive
- */
-function emitMonitorStatus(agent, alive) {
-  if (!io) return;
-
-  if (agent) {
-    io.to('agent:' + agent).emit('monitor_status', { alive, agent });
-    io.to('role:admin').emit('monitor_status', { alive, agent });
-  } else {
-    io.to('role:admin').emit('monitor_status', { alive, agent: null });
-  }
-}
-
-module.exports = { setIO, routeCallEvent, emitMonitorStatus };
+module.exports = { setIO, routeCallEvent };

@@ -579,6 +579,42 @@ function clearCallFilters() {
   loadCallHistory();
 }
 
+// ---------------------------------------------------------------------------
+// Clear call history
+// ---------------------------------------------------------------------------
+function clearMyCallHistory() {
+  if (!confirm('Delete all YOUR call history?\n\nThis cannot be undone.')) return;
+  fetch('/api/calls/clear-my-history', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        showToast(data.deleted + ' calls deleted', 'success');
+        currentPage = 1;
+        loadCallHistory();
+      } else {
+        showToast(data.error || 'Failed to clear history', 'error');
+      }
+    })
+    .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+}
+
+function clearAllCallHistory() {
+  if (!confirm('DELETE ALL call history for EVERY agent?\n\nThis cannot be undone.')) return;
+  if (!confirm('Are you absolutely sure? All call records will be permanently removed.')) return;
+  fetch('/api/agents/clear-all-history', { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        showToast(data.deleted + ' total calls deleted', 'success');
+        currentPage = 1;
+        loadCallHistory();
+      } else {
+        showToast(data.error || 'Failed to clear history', 'error');
+      }
+    })
+    .catch(function(e) { showToast('Error: ' + e.message, 'error'); });
+}
+
 function buildCallQueryString() {
   var qs = 'page=' + currentPage + '&limit=10';
   if (activeCallFilters.status) qs += '&status=' + activeCallFilters.status;
@@ -806,48 +842,6 @@ window.sendTestCall = async function() {
     alert('Test call failed: ' + e.message);
   }
 };
-
-// ===== VIEW MONITOR LOG =====
-window.viewMonitorLog = async function() {
-  try {
-    // First check which agents have logs
-    var listRes = await fetch('/api/monitor-log');
-    var agents = await listRes.json();
-    var agent = '_default';
-    if (myUsername && myRole !== 'admin') {
-      agent = myUsername;
-    } else if (agents.length > 0) {
-      agent = agents.map(function(a) { return a.agent + ' (' + a.lines + ' lines)'; }).join(', ');
-      var pick = prompt('Available logs: ' + agent + '\nEnter agent name:', agents[0].agent);
-      if (!pick) return;
-      agent = pick.trim();
-    }
-    var res = await fetch('/api/monitor-log/' + encodeURIComponent(agent));
-    var text = await res.text();
-    var w = window.open('', 'monitor_log', 'width=900,height=600');
-    w.document.write('<html><head><title>Monitor Log: ' + agent + '</title></head><body style="background:#1a1a2e;color:#0f0;font-family:monospace;font-size:13px;padding:16px;white-space:pre-wrap;">' + text.replace(/</g,'&lt;') + '</body></html>');
-  } catch (e) {
-    alert('Failed to load monitor log: ' + e.message);
-  }
-};
-
-// ===== MONITOR STATUS =====
-function setMonitorStatus(alive) {
-  if (alive) {
-    monitorDot.classList.add('connected');
-    monitorText.textContent = 'Monitor: On';
-  } else {
-    monitorDot.classList.remove('connected');
-    monitorText.textContent = 'Monitor: Off';
-  }
-}
-
-async function checkMonitorStatus() {
-  try {
-    var data = await safeFetch('/api/monitor-status');
-    setMonitorStatus(data.alive);
-  } catch (e) { setMonitorStatus(false); }
-}
 
 // --- OWNERSHIP CHECK: is this event for the current logged-in user? ---
 function isEventForMe(data) {

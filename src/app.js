@@ -13,7 +13,7 @@ const { sessionDb } = require('./db/index');
 const { corsMiddleware } = require('./middleware/cors');
 const { requireAuth } = require('./middleware/auth');
 const { setIO: setLogIO } = require('./services/logging.service');
-const { setIO: setAgentIO, startStaleChecker } = require('./services/agentRegistry.service');
+const { setIO: setAgentIO } = require('./services/agentRegistry.service');
 const { setIO: setCallRouterIO } = require('./services/callRouter.service');
 const { setIO: setWAClientIO } = require('./services/whatsappClient.service');
 const { setupSockets } = require('./sockets');
@@ -21,8 +21,6 @@ const { setupSockets } = require('./sockets');
 // Import route modules
 const authRoutes = require('./routes/auth.routes');
 const callRoutes = require('./routes/call.routes');
-const heartbeatRoutes = require('./routes/heartbeat.routes');
-const installerRoutes = require('./routes/installer.routes');
 const cliniceaRoutes = require('./routes/clinicea.routes');
 const setupWhatsAppRoutes = require('./routes/whatsapp.routes');
 const setupAdminRoutes = require('./routes/admin.routes');
@@ -101,14 +99,10 @@ app.use(authRoutes);
 // 2. Webhook routes (incoming_call, heartbeat) — authenticated via webhook
 //    secret header, NOT via session
 app.use(callRoutes);
-app.use(heartbeatRoutes);
 
 // 3. Mobile app routes (agent login, heartbeat, incoming-call) — Bearer token auth
 const mobileAppRoutes = require('./routes/mobileApp.routes');
 app.use(mobileAppRoutes);
-
-// 4. Installer routes (monitor script download, extension zip)
-app.use(installerRoutes);
 
 // 4. WhatsApp extension routes — uses extension-key auth, must come before
 //    the static-files middleware so /api/whatsapp/* is not caught by it
@@ -132,12 +126,6 @@ app.use(cliniceaRoutes);
 // 7. Legacy admin console adapter routes (/admin/*)
 const adminConsoleRoutes = require('./routes/adminConsole.routes');
 app.use(adminConsoleRoutes);
-
-// ---------------------------------------------------------------------------
-// Start the periodic stale-heartbeat checker
-// ---------------------------------------------------------------------------
-
-startStaleChecker();
 
 // ---------------------------------------------------------------------------
 // Exports

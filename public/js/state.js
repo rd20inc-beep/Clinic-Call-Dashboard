@@ -16,8 +16,6 @@ var waCurrentChatPhone = null;
 // DOM element references
 var statusDot = document.getElementById('statusDot');
 var statusText = document.getElementById('statusText');
-var monitorDot = document.getElementById('monitorDot');
-var monitorText = document.getElementById('monitorText');
 var notification = document.getElementById('notification');
 var callerNumberText = document.getElementById('callerNumberText');
 var callerWhatsapp = document.getElementById('callerWhatsapp');

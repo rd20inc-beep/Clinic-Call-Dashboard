@@ -42,8 +42,20 @@ process.on('unhandledRejection', (reason) => {
   try { logEvent('error', 'Unhandled rejection: ' + msg); } catch (e) { /* noop */ }
 });
 
+// Track interval handles for clean shutdown
+const intervals = [];
+
 process.on('SIGTERM', async () => {
   logEvent('info', 'Server shutting down (SIGTERM)');
+  // Clear all intervals to allow clean exit
+  for (const id of intervals) clearInterval(id);
+  await destroyWAClient().catch(() => {});
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  logEvent('info', 'Server shutting down (SIGINT)');
+  for (const id of intervals) clearInterval(id);
   await destroyWAClient().catch(() => {});
   process.exit(0);
 });
@@ -71,9 +83,9 @@ server.listen(PORT, () => {
   }
 
   // Schedule periodic appointment sync every 30 minutes
-  setInterval(() => {
+  intervals.push(setInterval(() => {
     syncAppointmentsAndScheduleMessages().catch(() => { /* swallow */ });
-  }, 30 * 60 * 1000);
+  }, 30 * 60 * 1000));
 
   // Initialize WhatsApp Web client (QR code auth)
   initWhatsAppClient().catch((err) => {
@@ -82,7 +94,7 @@ server.listen(PORT, () => {
 
   // Midnight cleanup: clear stale pending/expired messages every hour,
   // full cleanup at midnight PKT (UTC+5 → 19:00 UTC)
-  setInterval(() => {
+  intervals.push(setInterval(() => {
     try {
       const pkHour = (new Date().getUTCHours() + 5) % 24;
       if (pkHour === 0) {
@@ -100,5 +112,5 @@ server.listen(PORT, () => {
         }
       }
     } catch (e) { console.error('[cleanup] Midnight cleanup failed:', e.message); }
-  }, 60 * 60 * 1000); // check every hour
+  }, 60 * 60 * 1000)); // check every hour
 });

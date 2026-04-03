@@ -10,7 +10,6 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth, requireAdmin, requireAdminOrDoctor } = require('../middleware/auth');
 const { getUsers } = require('../config/env');
-const { getAllHeartbeats } = require('../services/agentRegistry.service');
 const { getAllPresence, getPresence } = require('../sockets/index');
 const usersRepo = require('../db/users.repo');
 const callsRepo = require('../db/calls.repo');
@@ -35,7 +34,6 @@ router.get('/admin/analytics/overview', async (req, res) => {
     const { db } = require('../db/index');
     const users = getUsers();
     const presence = getAllPresence();
-    const heartbeats = getAllHeartbeats();
 
     function q(sql) { return db.prepare(sql).get(); }
 
@@ -100,23 +98,19 @@ router.get('/admin/analytics/overview', async (req, res) => {
     let activeAgents = 0, portalOnline = 0, mobileOnline = 0;
 
     const now = Date.now();
-    const STALE_MS = require('../config/constants').HEARTBEAT_STALE_MS;
 
     for (const [username, user] of Object.entries(users)) {
       if (user.role === 'admin') continue;
       const p = getPresence(username);
-      const hb = heartbeats[username];
 
       // Compute live freshness at query time (don't rely on cached booleans)
-      const mobileAlive = !!(p.mobileOnline && p.lastMobileHb && (now - p.lastMobileHb) < STALE_MS);
-      const monitorAlive = !!(hb && hb.alive && hb.lastHeartbeat && (now - hb.lastHeartbeat) < STALE_MS);
+      const mobileAlive = !!(p.mobileOnline && p.lastMobileHb && (now - p.lastMobileHb) < 90_000);
       const portalAlive = !!p.portalOnline;
 
       let status = 'offline';
       if (portalAlive) portalOnline++;
       if (mobileAlive) mobileOnline++;
       if (portalAlive || mobileAlive) { status = p.onCall ? 'busy' : ((now - (p.lastActivity || 0)) < 120000 ? 'online' : 'idle'); }
-      else if (monitorAlive) { status = 'online'; }
       if (status !== 'offline') activeAgents++;
 
       let todayCalls = 0, todayAnswered = 0, todayMissed = 0, todayTalkTime = 0, weekCalls = 0;
@@ -143,7 +137,6 @@ router.get('/admin/analytics/overview', async (req, res) => {
         status: status,
         portal_online: portalAlive,
         mobile_online: mobileAlive,
-        monitor_online: monitorAlive,
         today: todayCalls,
         answered_today: todayAnswered,
         missed_today: todayMissed,
@@ -367,7 +360,6 @@ router.get('/admin/agents/:id/performance', (req, res) => {
 
     // Get presence
     const pres = getPresence(u.username);
-    const hb = getAllHeartbeats()[u.username];
 
     // 14-day daily breakdown for performance chart
     let dailyCalls = [];
@@ -418,7 +410,6 @@ router.get('/admin/agents/:id/performance', (req, res) => {
         username: u.username, full_name: u.display_name, role: u.role,
         portal_online: !!pres.portalOnline,
         mobile_online: !!(pres.mobileOnline && pres.lastMobileHb && (Date.now() - pres.lastMobileHb) < require('../config/constants').HEARTBEAT_STALE_MS),
-        monitor_online: !!(hb && hb.alive && hb.lastHeartbeat && (Date.now() - hb.lastHeartbeat) < require('../config/constants').HEARTBEAT_STALE_MS),
         last_activity: pres.lastActivity, last_seen: u.last_seen,
       },
       stats: {

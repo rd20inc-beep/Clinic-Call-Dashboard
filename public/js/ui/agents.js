@@ -118,8 +118,7 @@ function renderAgentTable() {
     // Connection source dots: portal (green) + mobile (blue)
     var portalDot = a.portalOnline ? '<span title="Dashboard" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;margin-right:3px;"></span>' : '<span title="Dashboard" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e2e8f0;margin-right:3px;"></span>';
     var mobileDot = a.mobileOnline ? '<span title="Mobile App" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3b82f6;margin-right:3px;"></span>' : '<span title="Mobile App" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e2e8f0;margin-right:3px;"></span>';
-    var monitorDotHtml = a.monitorAlive ? '<span title="Monitor" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#f59e0b;"></span>' : '<span title="Monitor" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#e2e8f0;"></span>';
-    var connectionDots = portalDot + mobileDot + monitorDotHtml;
+    var connectionDots = portalDot + mobileDot;
     var name = escapeHtml(a.displayName && a.displayName !== a.username ? a.displayName : '-');
     var phone = a.phone ? escapeHtml(a.phone) : '<span style="color:#94a3b8;">-</span>';
     var lastLogin = a.lastLogin ? formatLastSeen(a.lastLogin) : '<span style="color:#94a3b8;">Never</span>';
@@ -375,7 +374,7 @@ function openAgentDetail(username) {
   if (!agentId) {
     // Fallback: fetch by username via our API
     waFetch('/api/agents/performance?agent=' + encodeURIComponent(username)).then(function(data) {
-      _perfData = { agent: { username: username, full_name: (agent && agent.displayName) || username, portal_online: agent && agent.portalOnline, mobile_online: agent && agent.mobileOnline, monitor_online: agent && agent.monitorAlive, last_activity: agent && agent.lastSeen }, stats: data.performance || {}, hourly: data.hourly || [], recentCalls: [], daily: [] };
+      _perfData = { agent: { username: username, full_name: (agent && agent.displayName) || username, portal_online: agent && agent.portalOnline, mobile_online: agent && agent.mobileOnline, last_activity: agent && agent.lastSeen }, stats: data.performance || {}, hourly: data.hourly || [], recentCalls: [], daily: [] };
       // Also get calls
       safeFetch('/api/calls?agent=' + encodeURIComponent(username) + '&limit=20').then(function(d) { _perfData.recentCalls = d.calls || []; renderPerfDetail(); }).catch(function() { renderPerfDetail(); });
     }).catch(function() { body.innerHTML = '<p style="color:#ef4444;text-align:center;padding:40px;">Failed to load</p>'; });
@@ -406,7 +405,7 @@ function renderPerfDetail() {
   // Header
   html += '<div class="perf-header"><div>';
   html += '<h3>' + escapeHtml(a.full_name || a.username || '?') + '</h3>';
-  html += '<div class="perf-status">' + sDot(a.portal_online) + 'Portal ' + sDot(a.mobile_online) + 'Mobile ' + sDot(a.monitor_online) + 'Monitor';
+  html += '<div class="perf-status">' + sDot(a.portal_online) + 'Portal ' + sDot(a.mobile_online) + 'Mobile';
   html += ' <span style="color:#94a3b8;">&middot;</span> Last active: ' + formatLastSeen(a.last_activity || a.last_seen) + '</div>';
   html += '</div><div><button onclick="closeAgentDetail()" style="padding:6px 14px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;">Close</button></div></div>';
 

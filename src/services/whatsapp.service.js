@@ -307,19 +307,34 @@ async function getGPTReply(phone, incomingText, chatName) {
   try {
     logEvent('info', `Groq request for ${phone}`, `${messages.length} messages, last: "${incomingText.substring(0, 50)}"`);
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages,
-        max_tokens: 350,
-        temperature: 0.7,
-      }),
-    });
+    const controller = new AbortController();
+    const groqTimeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+    let response;
+    try {
+      response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages,
+          max_tokens: 350,
+          temperature: 0.7,
+        }),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      clearTimeout(groqTimeout);
+      if (e.name === 'AbortError') {
+        logEvent('error', 'Groq API timeout (15s)', `Phone: ${phone}`);
+        return 'Sorry, I\'m having trouble responding right now. Please call us directly at +92-300-2105374.';
+      }
+      throw e;
+    }
+    clearTimeout(groqTimeout);
 
     const data = await response.json();
 

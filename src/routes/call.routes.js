@@ -490,4 +490,19 @@ router.post('/api/agent/set-status', requireAuth, (req, res) => {
   res.json({ ok: true, status });
 });
 
+// ---------------------------------------------------------------------------
+// POST /api/calls/clear-my-history — agent clears their own call history
+// ---------------------------------------------------------------------------
+router.post('/api/calls/clear-my-history', requireAuth, (req, res) => {
+  const username = req.session.username;
+  const { db } = require('../db/index');
+  const result = db.prepare('DELETE FROM calls WHERE agent = ?').run(username);
+  try {
+    const auditRepo = require('../db/audit.repo');
+    auditRepo.log('history_deleted', username, result.changes + ' calls (self)', username);
+  } catch (e) { /* audit best-effort */ }
+  logEvent('warn', 'Call history cleared by ' + username + ' (' + result.changes + ' calls)');
+  res.json({ ok: true, deleted: result.changes });
+});
+
 module.exports = router;

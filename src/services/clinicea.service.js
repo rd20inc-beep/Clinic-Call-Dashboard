@@ -18,6 +18,35 @@ const profileCache = new Map();          // patientID -> { data, expiry }
 let patientCache = { patients: [], expiry: 0, loading: false, pages: 0 };
 
 // ---------------------------------------------------------------------------
+// Cache eviction — prevent unbounded Map growth
+// ---------------------------------------------------------------------------
+const MAX_MEETING_CACHE = 200;
+const MAX_PROFILE_CACHE = 200;
+const MAX_APPOINTMENT_DATE_CACHE = 60;
+const CACHE_CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+function evictExpiredEntries(cache, maxSize) {
+  const now = Date.now();
+  // First pass: remove expired entries
+  for (const [key, val] of cache) {
+    if (now > val.expiry) cache.delete(key);
+  }
+  // Second pass: if still over max, remove oldest entries
+  if (cache.size > maxSize) {
+    const entries = [...cache.entries()].sort((a, b) => a[1].expiry - b[1].expiry);
+    const toRemove = entries.slice(0, cache.size - maxSize);
+    for (const [key] of toRemove) cache.delete(key);
+  }
+}
+
+const cacheCleanupInterval = setInterval(() => {
+  evictExpiredEntries(meetingCache, MAX_MEETING_CACHE);
+  evictExpiredEntries(profileCache, MAX_PROFILE_CACHE);
+  evictExpiredEntries(appointmentDateCache, MAX_APPOINTMENT_DATE_CACHE);
+}, CACHE_CLEANUP_INTERVAL);
+cacheCleanupInterval.unref(); // don't keep process alive for cleanup
+
+// ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
 
@@ -230,52 +259,68 @@ async function findPatientByPhone(phone) {
     logEvent('warn', 'v2/getPatient error', e.message);
   }
 
-  // Method 2: appointment-based matching with phone variants (paginated)
-  try {
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const syncDate = thirtyDaysAgo.toISOString().split('.')[0];
+  // Method 2: search in-memory patient cache (fast, no API calls)
+  if (patientCache.patients && patientCache.patients.length > 0) {
     const variants = getPhoneVariants(cleanPhone);
-
-    // Time-budgeted paginated search: stop after match, empty page, or 5 seconds
-    let match = null;
-    const searchStart = Date.now();
-    const SEARCH_BUDGET_MS = 5000;
-    for (let pageNo = 1; !match; pageNo++) {
-      if (Date.now() - searchStart > SEARCH_BUDGET_MS) {
-        logEvent('warn', 'Phone lookup time budget exceeded at page ' + pageNo);
-        break;
-      }
-      let data;
-      try {
-        data = await cliniceaFetch(
-          `/api/v2/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
-        );
-      } catch (e) { break; } // API error — stop searching
-      if (!Array.isArray(data) || data.length === 0) break;
-
-      match = data.find((a) => {
-        const p1 = (a.AppointmentWithPhone || '').replace(/[\s\-()]/g, '');
-        const p2 = (a.PatientMobile || '').replace(/[\s\-()]/g, '');
-        return variants.has(p1) || variants.has(p2);
-      });
-
-      if (data.length < 100) break; // last page
+    const cachedMatch = patientCache.patients.find(
+      (p) => p.phone && variants.has(p.phone.replace(/[\s\-()]/g, ''))
+    );
+    if (cachedMatch) {
+      logEvent('info', 'Patient found via cache: ' + cachedMatch.name, 'ID: ' + cachedMatch.patientID);
+      return { patientID: cachedMatch.patientID, patientName: cachedMatch.name };
     }
+  }
 
-    if (match) {
-      let patientName =
-        match.AppointmentWithName || match.PatientName || null;
-      if (!patientName) {
-        const first = match.PatientFirstName || match.FirstName || '';
-        const last = match.PatientLastName || match.LastName || '';
-        patientName = [first, last].filter(Boolean).join(' ') || null;
+  // Method 3: appointment-based matching with phone variants (paginated API fallback)
+  // Only if patient cache is empty/not loaded — otherwise the cache search above is sufficient
+  if (!patientCache.patients || patientCache.patients.length === 0) {
+    try {
+      const today = new Date();
+      const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const syncDate = thirtyDaysAgo.toISOString().split('.')[0];
+      const variants = getPhoneVariants(cleanPhone);
+
+      // Time-budgeted paginated search: stop after match, empty page, or 5 seconds
+      let match = null;
+      const searchStart = Date.now();
+      const SEARCH_BUDGET_MS = 5000;
+      const MAX_PAGES = 5; // cap pages to avoid excessive API calls
+      for (let pageNo = 1; !match && pageNo <= MAX_PAGES; pageNo++) {
+        if (Date.now() - searchStart > SEARCH_BUDGET_MS) {
+          logEvent('warn', 'Phone lookup time budget exceeded at page ' + pageNo);
+          break;
+        }
+        let data;
+        try {
+          data = await cliniceaFetch(
+            `/api/v2/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
+          );
+        } catch (e) { break; } // API error — stop searching
+        if (!Array.isArray(data) || data.length === 0) break;
+
+        match = data.find((a) => {
+          const p1 = (a.AppointmentWithPhone || '').replace(/[\s\-()]/g, '');
+          const p2 = (a.PatientMobile || '').replace(/[\s\-()]/g, '');
+          return variants.has(p1) || variants.has(p2);
+        });
+
+        if (data.length < 100) break; // last page
       }
-      logEvent('info', 'Patient found via appointments: ' + patientName, 'ID: ' + match.PatientID);
-      return { patientID: match.PatientID, patientName };
+
+      if (match) {
+        let patientName =
+          match.AppointmentWithName || match.PatientName || null;
+        if (!patientName) {
+          const first = match.PatientFirstName || match.FirstName || '';
+          const last = match.PatientLastName || match.LastName || '';
+          patientName = [first, last].filter(Boolean).join(' ') || null;
+        }
+        logEvent('info', 'Patient found via appointments: ' + patientName, 'ID: ' + match.PatientID);
+        return { patientID: match.PatientID, patientName };
+      }
+    } catch (e) {
+      logEvent('warn', 'getChanges error', e.message);
     }
-  } catch (e) {
-    logEvent('warn', 'getChanges error', e.message);
   }
 
   return null;
@@ -696,4 +741,12 @@ module.exports = {
   // For startup preloading
   cliniceaFetch,
   preloadCaches,
+  // Health check accessors
+  getProfileCacheSize: () => profileCache.size,
+  getAppointmentDateCacheSize: () => appointmentDateCache.size,
+  getCircuitBreakerState: () => ({
+    open: cliniceaCircuitOpen,
+    failures: cliniceaFailures,
+    resetsAt: cliniceaCircuitOpen ? new Date(cliniceaCircuitResetAt).toISOString() : null,
+  }),
 };

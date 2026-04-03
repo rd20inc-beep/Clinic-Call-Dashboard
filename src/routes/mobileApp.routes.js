@@ -15,8 +15,7 @@ const { getUsers } = require('../config/env');
 const { logEvent } = require('../services/logging.service');
 const { normalizePKPhone } = require('../utils/phone');
 const { getClientIP } = require('../utils/security');
-const { rememberAgentIP, recordHeartbeat } = require('../services/agentRegistry.service');
-const { emitMonitorStatus } = require('../services/callRouter.service');
+const { rememberAgentIP } = require('../services/agentRegistry.service');
 const { routeCallEvent } = require('../services/callRouter.service');
 const { setOnCall, clearOnCall, updateActivity, recordHeartbeatPresence } = require('../sockets/index');
 const callsRepo = require('../db/calls.repo');
@@ -57,13 +56,14 @@ const appTokens = {
 };
 
 // Cleanup expired tokens every 30 minutes
-setInterval(() => {
+const tokenCleanupInterval = setInterval(() => {
   try {
     const { db } = require('../db/index');
     const cutoff = Date.now() - TOKEN_TTL_MS;
     db.prepare('DELETE FROM app_tokens WHERE login_at < ?').run(cutoff);
   } catch (e) {}
 }, 30 * 60 * 1000);
+tokenCleanupInterval.unref(); // don't keep process alive for cleanup
 
 function evictOldestTokens() {
   // DB handles this — no memory cap needed
@@ -162,10 +162,6 @@ router.post('/api/app/heartbeat', (req, res) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  // Record heartbeat in agent registry
-  const { wasDown } = recordHeartbeat(agent);
-  emitMonitorStatus(agent, true);
-
   // Update presence engine (mark as mobile source)
   recordHeartbeatPresence(agent, 'mobile');
   updateActivity(agent);
@@ -180,10 +176,6 @@ router.post('/api/app/heartbeat', (req, res) => {
   // Remember IP mapping
   const fakeReq = { headers: req.headers, ip: getClientIP(req), socket: { remoteAddress: req.ip } };
   rememberAgentIP(fakeReq, agent);
-
-  if (wasDown) {
-    logEvent('info', 'Mobile app connected: ' + agent, 'IP: ' + getClientIP(req));
-  }
 
   res.json({ status: 'ok' });
 });

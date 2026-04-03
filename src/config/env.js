@@ -185,49 +185,14 @@ function getUsers() {
     }
   }
 
-  // 3. Last resort defaults if nothing configured anywhere
+  // 3. No users configured — refuse to start with hardcoded defaults
   if (Object.keys(users).length === 0) {
-    console.warn('[env] WARNING: No users configured. Using built-in defaults.');
-    const defaults = {
-      admin: 'clinicea2025',
-      agent1: 'password1',
-      agent2: 'password2',
-      agent3: 'password3',
-      agent4: 'password4',
-      agent5: 'password5',
-    };
-    for (const [name, pass] of Object.entries(defaults)) {
-      users[name] = {
-        passwordHash: pass,
-        role: name === 'admin' ? 'admin' : 'agent',
-        isMigration: true,
-      };
-    }
+    console.error('[env] FATAL: No users configured. Set USER_ADMIN_HASH (or USER_ADMIN_PASS) in .env or create users in the database.');
+    console.error('[env] Run: npm run hash-password to generate a bcrypt hash for your password.');
+    process.exit(1);
   }
 
   return users;
-}
-
-// ---------------------------------------------------------------------------
-// Monitor tokens
-// ---------------------------------------------------------------------------
-
-/**
- * Returns a map { agent: token } for per-agent monitor authentication tokens.
- * Environment variable pattern: MONITOR_TOKEN_AGENT1, MONITOR_TOKEN_AGENT2, …
- */
-function getMonitorTokens() {
-  const tokens = {};
-
-  for (const agent of AGENT_NAMES) {
-    const envKey = `MONITOR_TOKEN_${agent.toUpperCase()}`;
-    const val = process.env[envKey] && process.env[envKey].trim();
-    if (val) {
-      tokens[agent] = val;
-    }
-  }
-
-  return tokens;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +217,5 @@ function isClinicaConfigured() {
 module.exports = {
   config,
   getUsers,
-  getMonitorTokens,
   isClinicaConfigured,
 };

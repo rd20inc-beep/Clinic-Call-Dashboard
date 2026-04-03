@@ -37,18 +37,6 @@ socket.on('disconnect', function() {
   myRooms = [];
 });
 
-socket.on('monitor_status', function(data) {
-  // STRICT: only update monitor status for events belonging to this agent
-  if (!isEventForMe(data)) {
-    console.log('[Dashboard] monitor_status REJECTED — event.agent:', data.agent, 'me:', myUsername);
-    return;
-  }
-  console.log('[Dashboard] monitor_status ACCEPTED — event.agent:', data.agent, 'me:', myUsername);
-  setMonitorStatus(data.alive);
-  // Refresh agent cards if on agents page
-  if (window.location.hash === '#agents' && typeof loadAgents === 'function') loadAgents();
-});
-
 // ===== INCOMING CALL HANDLER =====
 socket.on('patient_info', function(data) {
   // STRICT: only process if this event belongs to the logged-in user
@@ -261,8 +249,6 @@ setInterval(function() {
 }, 60000);
 
 // ===== INITIALIZATION =====
-checkMonitorStatus();
-setInterval(checkMonitorStatus, 15000);
 loadCallHistory();
 loadCallStats();
 if (typeof loadDashCharts === 'function') loadDashCharts();

@@ -10,14 +10,8 @@ module.exports = Object.freeze({
   /** Number of records per page in paginated API responses. */
   PAGE_SIZE: 10,
 
-  /** A monitor heartbeat older than this (ms) marks the agent as stale / offline. */
+  /** A mobile heartbeat older than this (ms) marks the agent's mobile as stale. */
   HEARTBEAT_STALE_MS: 90_000,
-
-  /** How often (ms) the server sweeps for stale heartbeats. */
-  HEARTBEAT_CHECK_INTERVAL: 15_000,
-
-  /** Grace period after server start (ms) before stale-heartbeat checks kick in. */
-  STARTUP_GRACE_MS: 120_000,
 
   /** How long (ms) an IP → agent mapping is remembered. */
   IP_AGENT_TTL_MS: 300_000,
@@ -29,7 +23,7 @@ module.exports = Object.freeze({
   PATIENT_CACHE_TTL: 10 * 60 * 1000,
 
   /** Maximum number of entries kept in the in-memory event log ring buffer. */
-  MAX_EVENT_LOG: 50,
+  MAX_EVENT_LOG: 200,
 
   /** De-duplication window (seconds) for repeated incoming-call webhooks. */
   DEDUP_WINDOW_S: 30,

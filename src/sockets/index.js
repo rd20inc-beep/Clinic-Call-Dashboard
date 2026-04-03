@@ -154,8 +154,11 @@ function ensurePresence(username) {
 // Idle sweep — runs periodically to detect agents gone idle
 // ---------------------------------------------------------------------------
 
+let idleSweepInterval = null;
+
 function startIdleSweep() {
-  setInterval(() => {
+  if (idleSweepInterval) clearInterval(idleSweepInterval);
+  idleSweepInterval = setInterval(() => {
     const now = Date.now();
     for (const [username, p] of Object.entries(agentPresence)) {
       // Check if mobile heartbeat went stale (no heartbeat for 90s)
@@ -173,6 +176,7 @@ function startIdleSweep() {
       }
     }
   }, IDLE_CHECK_INTERVAL);
+  idleSweepInterval.unref(); // don't keep process alive for idle sweep
 }
 
 // ---------------------------------------------------------------------------
