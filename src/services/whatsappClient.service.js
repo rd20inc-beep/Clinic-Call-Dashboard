@@ -60,7 +60,7 @@ function startSendLoop() {
   sendInterval = setInterval(async () => {
     if (connectionStatus !== 'ready' || !client) return;
     if (!waService.isBotEnabled()) return; // Admin can pause all message sending
-    if (!isWithinBusinessHours()) return; // Only send during 9 AM - 7 PM PKT
+    // if (!isWithinBusinessHours()) return; // TEMPORARILY DISABLED FOR TESTING
 
     try {
       waRepo.expireStaleMessages();
