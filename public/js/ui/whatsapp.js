@@ -443,6 +443,9 @@ function waUpdateConnectionUI(status, qrDataUrl) {
   var dot = document.getElementById('waConnDot');
   var statusText = document.getElementById('waConnectionStatusText');
   var bar = document.getElementById('waConnectionBar');
+  // Reset reconnect button state on any status change
+  var reconnectBtnEl = document.getElementById('waReconnectBtn');
+  if (reconnectBtnEl) { reconnectBtnEl.disabled = false; reconnectBtnEl.textContent = 'Reconnect'; }
   var logoutBtn = document.getElementById('waLogoutBtn');
   var reconnectBtn = document.getElementById('waReconnectBtn');
   var qrSection = document.getElementById('waQRSection');
@@ -470,11 +473,11 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     if (qrDataUrl && qrImage) qrImage.src = qrDataUrl;
     var expiredMsg = document.getElementById('waQRExpired');
     if (expiredMsg) expiredMsg.remove();
-  } else if (status === 'authenticated') {
+  } else if (status === 'authenticated' || status === 'authenticating') {
     dot.style.background = '#3498db';
     bar.style.background = 'rgba(52,152,219,0.15)';
     bar.style.borderColor = 'rgba(52,152,219,0.3)';
-    statusText.textContent = 'AUTHENTICATING...';
+    statusText.textContent = status === 'authenticating' ? 'INITIALIZING...' : 'AUTHENTICATING...';
     statusText.style.color = '#3498db';
     logoutBtn.style.display = 'none';
     reconnectBtn.style.display = 'none';
@@ -518,9 +521,25 @@ function waLogout() {
 }
 
 function waReconnect() {
+  // Show immediate feedback while Puppeteer starts (10-30s)
+  waUpdateConnectionUI('authenticating');
+  var btn = document.getElementById('waReconnectBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Initializing...'; }
+
   waFetch('/api/whatsapp/wa-reconnect', { method: 'POST' })
-    .then(function() {})
-    .catch(function() {});
+    .then(function(data) {
+      if (data.error) {
+        waUpdateConnectionUI('disconnected');
+        if (btn) { btn.disabled = false; btn.textContent = 'Reconnect'; }
+        showToast('WhatsApp error: ' + data.error, 'error');
+      }
+      // Otherwise wait for QR code via socket event
+    })
+    .catch(function(err) {
+      waUpdateConnectionUI('disconnected');
+      if (btn) { btn.disabled = false; btn.textContent = 'Reconnect'; }
+      showToast('Failed to reconnect: ' + err.message, 'error');
+    });
 }
 
 // ===== GLOBAL BOT TOGGLE =====

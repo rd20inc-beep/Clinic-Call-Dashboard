@@ -379,16 +379,17 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/wa-reconnect - reinitialize WhatsApp client (admin only)
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/wa-reconnect', requireAuth, async (req, res) => {
+  router.post('/api/whatsapp/wa-reconnect', requireAuth, (req, res) => {
     if (req.session.role !== 'admin') {
       return res.status(403).json({ error: 'Admin only' });
     }
-    try {
-      await waClient.initialize();
-      return res.json({ ok: true });
-    } catch (err) {
-      return res.json({ error: err.message });
-    }
+    // Fire-and-forget — initialization takes 10-30s (Puppeteer startup).
+    // QR code will arrive via Socket.IO wa_connection event.
+    waClient.initialize().catch((err) => {
+      logEvent('error', 'WA reconnect failed: ' + err.message);
+      io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'init_failed: ' + err.message });
+    });
+    return res.json({ ok: true, message: 'Initializing — QR code will appear shortly' });
   });
 
   // -----------------------------------------------------------------------
