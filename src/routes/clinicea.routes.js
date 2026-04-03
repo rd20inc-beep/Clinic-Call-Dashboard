@@ -249,8 +249,10 @@ router.get(
         // Log doctor/service related fields specifically
         const doctorFields = Object.entries(sample).filter(([k]) => /doctor|resource|provider|staff|practitioner/i.test(k));
         const serviceFields = Object.entries(sample).filter(([k]) => /service|treatment|procedure/i.test(k));
+        const createdByFields = Object.entries(sample).filter(([k]) => /created|booked|user|modified|staff/i.test(k));
         logEvent('debug', 'Doctor fields: ' + doctorFields.map(([k,v]) => k + '=' + v).join(', '));
         logEvent('debug', 'Service fields: ' + serviceFields.map(([k,v]) => k + '=' + v).join(', '));
+        logEvent('debug', 'CreatedBy fields: ' + createdByFields.map(([k,v]) => k + '=' + v).join(', '));
       }
       const appointments = (Array.isArray(data) ? data : []).map(
         mapAppointmentFields

@@ -630,6 +630,7 @@ function mapAppointmentFields(a) {
     doctor: a.DoctorName || a.Doctor || a.ResourceName || a.ProviderName || a.DoctorFirstName || a.StaffName || a.PractitionerName || '',
     phone: a.AppointmentWithPhone || a.PatientMobile || a.Mobile || '',
     notes: a.Notes || a.AppointmentNotes || '',
+    createdBy: a.CreatedBy || a.CreatedByUser || a.BookedBy || a.CreatedByName || a.UserName || a.ModifiedBy || '',
   };
 }
 

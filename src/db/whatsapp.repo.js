@@ -105,14 +105,15 @@ const stmtGetAllConversationHistory = db.prepare(
 );
 
 const stmtUpsertAppointment = db.prepare(`
-  INSERT INTO wa_appointment_tracking (appointment_id, patient_id, patient_name, patient_phone, appointment_date, doctor_name, service)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO wa_appointment_tracking (appointment_id, patient_id, patient_name, patient_phone, appointment_date, doctor_name, service, created_by)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(appointment_id) DO UPDATE SET
     patient_name = excluded.patient_name,
     patient_phone = excluded.patient_phone,
     appointment_date = excluded.appointment_date,
     doctor_name = excluded.doctor_name,
-    service = excluded.service
+    service = excluded.service,
+    created_by = excluded.created_by
 `);
 
 // Skip walk-in/same-day bookings: if appointment is less than 1 hour after
@@ -289,7 +290,7 @@ module.exports = {
   /**
    * Upsert an appointment tracking record.
    */
-  upsertAppointmentTracking(appointmentId, patientId, patientName, patientPhone, appointmentDate, doctorName, service) {
+  upsertAppointmentTracking(appointmentId, patientId, patientName, patientPhone, appointmentDate, doctorName, service, createdBy) {
     stmtUpsertAppointment.run(
       appointmentId,
       patientId || null,
@@ -297,7 +298,8 @@ module.exports = {
       patientPhone || null,
       appointmentDate || null,
       doctorName || null,
-      service || null
+      service || null,
+      createdBy || null
     );
   },
 

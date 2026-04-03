@@ -448,6 +448,7 @@ async function syncAppointmentsAndScheduleMessages() {
         const doctorName = apt.DoctorName || apt.Doctor || apt.ResourceName || apt.ProviderName ||
           apt.DoctorFirstName || apt.StaffName || apt.PractitionerName || '';
         const service = apt.ServiceName || apt.Service || apt.TreatmentName || apt.ProcedureName || '';
+        const createdBy = apt.CreatedBy || apt.CreatedByUser || apt.BookedBy || apt.CreatedByName || apt.UserName || apt.ModifiedBy || '';
         const aptDate = apt.StartDateTime || apt.AppointmentDateTime || date;
 
         // Normalize phone
@@ -460,7 +461,7 @@ async function syncAppointmentsAndScheduleMessages() {
         }
 
         // Upsert tracking record
-        waRepo.upsertAppointmentTracking(appointmentId, patientId, patientName, phone, aptDate, doctorName, service);
+        waRepo.upsertAppointmentTracking(appointmentId, patientId, patientName, phone, aptDate, doctorName, service, createdBy);
 
         // Save patient to local DB
         try {
