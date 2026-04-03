@@ -258,6 +258,24 @@ function setupSockets(io, sessionMiddleware) {
 
       logEvent('info', 'Socket disconnected: ' + (agent || 'unknown'), 'SID: ' + socket.id);
 
+      // Close open login session when last socket disconnects
+      if (agent) {
+        try {
+          const { db } = require('../db/index');
+          const openSession = db.prepare(
+            "SELECT id FROM login_history WHERE username = ? AND source = 'dashboard' AND logged_out_at IS NULL ORDER BY logged_in_at DESC LIMIT 1"
+          ).get(agent);
+          if (openSession) {
+            const remaining = Object.values(socketToAgent).filter(a => a === agent).length;
+            if (remaining === 0) {
+              db.prepare(
+                "UPDATE login_history SET logged_out_at = datetime('now'), duration_mins = CAST((julianday('now') - julianday(logged_in_at)) * 1440 AS INTEGER) WHERE id = ?"
+              ).run(openSession.id);
+            }
+          }
+        } catch (e) {}
+      }
+
       if (agent && agentPresence[agent]) {
         agentPresence[agent].socketCount = Math.max(0, agentPresence[agent].socketCount - 1);
         if (agentPresence[agent].socketCount === 0) {

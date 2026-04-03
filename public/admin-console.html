@@ -1080,9 +1080,12 @@
         // Recent logins
         if (data.logins && data.logins.length > 0) {
           html += '<h3 style="font-size:14px;margin:16px 0 8px;">Recent Logins</h3>';
-          html += '<table><thead><tr><th>Time</th><th>Agent</th><th>Source</th><th>IP</th></tr></thead><tbody>';
+          html += '<table><thead><tr><th>Login</th><th>Logout</th><th>Duration</th><th>Agent</th><th>Source</th><th>IP</th></tr></thead><tbody>';
           data.logins.slice(0, 30).forEach(function(l) {
+            var dur = l.duration_mins ? (l.duration_mins >= 60 ? Math.floor(l.duration_mins/60) + 'h ' + (l.duration_mins%60) + 'm' : l.duration_mins + 'm') : (l.logged_out_at ? '-' : '<span style="color:#10b981;">Active</span>');
             html += '<tr><td class="meta" style="white-space:nowrap;">' + fmtDate(l.logged_in_at) + '</td>';
+            html += '<td class="meta" style="white-space:nowrap;">' + (l.logged_out_at ? fmtDate(l.logged_out_at) : '<span style="color:#10b981;">—</span>') + '</td>';
+            html += '<td style="font-weight:600;">' + dur + '</td>';
             html += '<td><strong>' + esc(l.username) + '</strong></td>';
             html += '<td><span class="badge ' + (l.source === 'dashboard' ? 'badge-active' : 'badge-info') + '">' + esc(l.source) + '</span></td>';
             html += '<td class="meta">' + esc(l.ip || '-') + '</td></tr>';

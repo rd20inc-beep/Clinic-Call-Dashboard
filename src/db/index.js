@@ -218,10 +218,14 @@ db.exec(`
     source TEXT DEFAULT 'dashboard',
     ip TEXT,
     user_agent TEXT,
-    logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    logged_in_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    logged_out_at DATETIME,
+    duration_mins INTEGER
   )
 `);
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(username, logged_in_at DESC)'); } catch(e) {}
+try { db.exec("ALTER TABLE login_history ADD COLUMN logged_out_at DATETIME"); } catch(e) {}
+try { db.exec("ALTER TABLE login_history ADD COLUMN duration_mins INTEGER"); } catch(e) {}
 
 // --- Mobile app tokens (persisted across restarts) ---
 try {

@@ -99,6 +99,16 @@ router.post('/login', loginLimiter, validateLoginMw, async (req, res) => {
 // GET /logout - destroy session and redirect
 // ---------------------------------------------------------------------------
 router.get('/logout', (req, res) => {
+  // Record logout time in login history
+  const username = req.session && req.session.username;
+  if (username) {
+    try {
+      const { db } = require('../db/index');
+      db.prepare(
+        "UPDATE login_history SET logged_out_at = datetime('now'), duration_mins = CAST((julianday('now') - julianday(logged_in_at)) * 1440 AS INTEGER) WHERE username = ? AND logged_out_at IS NULL ORDER BY logged_in_at DESC LIMIT 1"
+      ).run(username);
+    } catch (e) {}
+  }
   req.session.destroy(() => res.redirect('/login'));
 });
 
