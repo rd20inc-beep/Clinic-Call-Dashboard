@@ -1277,7 +1277,7 @@ function loadWaApprovalQueue() {
         return '<div style="background:#fff;border:1px solid rgba(243,156,18,0.35);border-radius:8px;padding:12px;margin-bottom:8px;color:#222;">' +
           '<div style="display:flex;justify-content:space-between;align-items:start;gap:10px;">' +
             '<div style="flex:1;min-width:0;cursor:pointer;" onclick="this.querySelector(\'.wa-preview\').style.display=this.querySelector(\'.wa-preview\').style.display===\'none\'?\'block\':\'none\';this.querySelector(\'.wa-full\').style.display=this.querySelector(\'.wa-full\').style.display===\'none\'?\'block\':\'none\';">' +
-              '<div style="font-weight:600;font-size:13px;color:#333;">' + escapeHtml(m.phone) + typeTag + '</div>' +
+              '<div style="font-weight:600;font-size:13px;color:#333;">' + ((m.patient_name || m.chat_name) ? escapeHtml(m.patient_name || m.chat_name) + ' <span style="font-weight:400;color:#888;">(' + escapeHtml(m.phone) + ')</span>' : escapeHtml(m.phone)) + typeTag + '</div>' +
               '<div style="font-size:11px;color:#888;margin-top:2px;">' + time + (m.agent ? ' by ' + m.agent : ' (AI)') + '</div>' +
               '<div class="wa-preview" style="font-size:13px;margin-top:6px;color:#444;white-space:pre-wrap;word-break:break-word;">' + preview + '</div>' +
               '<div class="wa-full" style="display:none;font-size:13px;margin-top:6px;color:#222;white-space:pre-wrap;word-break:break-word;border-top:1px solid #eee;padding-top:8px;">' + fullMsg + '</div>' +

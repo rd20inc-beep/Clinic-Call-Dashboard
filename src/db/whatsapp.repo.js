@@ -16,7 +16,7 @@ const stmtGetApprovedOutgoing = db.prepare(
 
 // Pending = awaiting admin approval
 const stmtGetPendingApproval = db.prepare(
-  "SELECT * FROM wa_messages WHERE direction = 'out' AND status = 'pending' ORDER BY created_at DESC LIMIT 50"
+  "SELECT m.*, p.name AS patient_name FROM wa_messages m LEFT JOIN patients p ON p.phone = m.phone WHERE m.direction = 'out' AND m.status = 'pending' ORDER BY m.created_at DESC LIMIT 50"
 );
 
 const stmtApproveMessage = db.prepare(
