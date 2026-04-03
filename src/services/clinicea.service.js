@@ -627,10 +627,10 @@ function mapAppointmentFields(a) {
     duration: a.Duration || null,
     status: a.AppointmentStatus || a.Status || 'Unknown',
     service: a.ServiceName || a.Service || a.TreatmentName || a.ProcedureName || '',
-    doctor: a.DoctorName || a.Doctor || a.ResourceName || a.ProviderName || a.DoctorFirstName || a.StaffName || a.PractitionerName || '',
+    doctor: a.DoctorName || a.Doctor || [a.StaffTitle, a.StaffFirstName, a.StaffLastName].filter(Boolean).join(' ').trim() || a.ResourceName || a.ProviderName || '',
     phone: a.AppointmentWithPhone || a.PatientMobile || a.Mobile || '',
     notes: a.Notes || a.AppointmentNotes || '',
-    createdBy: a.CreatedBy || a.CreatedByUser || a.BookedBy || a.CreatedByName || a.UserName || a.ModifiedBy || '',
+    createdBy: a.CreatedStaffName || a.CreatedBy || a.CreatedByUser || a.BookedBy || '',
   };
 }
 

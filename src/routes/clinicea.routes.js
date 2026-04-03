@@ -242,17 +242,6 @@ router.get(
           encodeURIComponent(date) +
           '&pageNo=1&pageSize=100'
       );
-      // Log raw field names once for debugging
-      if (Array.isArray(data) && data.length > 0) {
-        const sample = data[0];
-        logEvent('info', 'Clinicea raw appointment keys: ' + Object.keys(sample).join(', '));
-        const doctorFields = Object.entries(sample).filter(([k]) => /doctor|resource|provider|staff|practitioner/i.test(k));
-        const serviceFields = Object.entries(sample).filter(([k]) => /service|treatment|procedure/i.test(k));
-        const createdByFields = Object.entries(sample).filter(([k]) => /created|booked|user|modified|staff/i.test(k));
-        logEvent('info', 'Doctor fields: ' + doctorFields.map(([k,v]) => k + '=' + v).join(', '));
-        logEvent('info', 'Service fields: ' + serviceFields.map(([k,v]) => k + '=' + v).join(', '));
-        logEvent('info', 'CreatedBy fields: ' + createdByFields.map(([k,v]) => k + '=' + v).join(', '));
-      }
       const appointments = (Array.isArray(data) ? data : []).map(
         mapAppointmentFields
       );
