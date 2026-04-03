@@ -242,6 +242,28 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
+  // POST /api/whatsapp/delete-failed - delete a single failed message (admin only)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/delete-failed', requireAuth, requireAdmin, (req, res) => {
+    const { id } = req.body;
+    if (!id) return res.json({ error: 'id required' });
+    const { db } = require('../db/index');
+    const result = db.prepare("DELETE FROM wa_messages WHERE id = ? AND status IN ('failed', 'expired')").run(id);
+    logEvent('info', 'WA failed message #' + id + ' deleted by ' + req.session.username);
+    return res.json({ ok: true, deleted: result.changes });
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/whatsapp/delete-all-failed - delete all failed/expired messages (admin only)
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/delete-all-failed', requireAuth, requireAdmin, (req, res) => {
+    const { db } = require('../db/index');
+    const result = db.prepare("DELETE FROM wa_messages WHERE status IN ('failed', 'expired')").run();
+    logEvent('info', 'WA all failed messages deleted (' + result.changes + ') by ' + req.session.username);
+    return res.json({ ok: true, deleted: result.changes });
+  });
+
+  // -----------------------------------------------------------------------
   // GET /api/whatsapp/pending-approval - messages awaiting admin approval
   // -----------------------------------------------------------------------
   router.get('/api/whatsapp/pending-approval', requireAuth, (req, res) => {

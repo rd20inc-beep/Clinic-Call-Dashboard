@@ -848,6 +848,7 @@ function waShowFailed() {
           '<h3 style="margin:0;font-size:16px;font-weight:600;color:#e74c3c;">Failed Messages (' + data.messages.length + ')</h3>' +
           '<div>' +
             '<button onclick="waRetryAll()" style="padding:6px 14px;border:none;border-radius:6px;background:#f39c12;color:white;font-weight:600;cursor:pointer;margin-right:8px;">Retry All</button>' +
+            (myRole === 'admin' ? '<button onclick="waDeleteAllFailed()" style="padding:6px 14px;border:none;border-radius:6px;background:#e74c3c;color:white;font-weight:600;cursor:pointer;margin-right:8px;">Delete All</button>' : '') +
             '<button onclick="loadWaConversations()" style="padding:6px 14px;border:none;border-radius:6px;background:rgba(255,255,255,0.2);color:white;font-weight:600;cursor:pointer;">Back</button>' +
           '</div>' +
         '</div>';
@@ -860,7 +861,10 @@ function waShowFailed() {
               '<div style="font-size:12px;color:#ccc;margin-top:2px;">' + time + '</div>' +
               '<div style="font-size:13px;margin-top:6px;color:#ddd;">' + escapeHtml((m.message || '').substring(0, 120)) + (m.message && m.message.length > 120 ? '...' : '') + '</div>' +
             '</div>' +
-            '<button onclick="waRetryOne(' + m.id + ')" style="padding:4px 12px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;margin-left:8px;">Retry</button>' +
+            '<div style="display:flex;flex-direction:column;gap:4px;margin-left:8px;">' +
+              '<button onclick="waRetryOne(' + m.id + ')" style="padding:4px 12px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">Retry</button>' +
+              (myRole === 'admin' ? '<button onclick="waDeleteFailed(' + m.id + ')" style="padding:4px 12px;border:none;border-radius:4px;background:#e74c3c;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">Delete</button>' : '') +
+            '</div>' +
           '</div>' +
         '</div>';
       });
@@ -882,6 +886,27 @@ function waRetryAll() {
     .then(function(data) {
       if (data.ok) {
         alert(data.count + ' message(s) re-queued for sending.');
+        loadWaConversations();
+        loadWaStats();
+      }
+    })
+    .catch(function() {});
+}
+
+function waDeleteFailed(id) {
+  if (!confirm('Delete this failed message? This cannot be undone.')) return;
+  waFetch('/api/whatsapp/delete-failed', { method: 'POST', body: JSON.stringify({ id: id }) })
+    .then(function(data) { if (data.ok) { waShowFailed(); loadWaStats(); } })
+    .catch(function() {});
+}
+
+function waDeleteAllFailed() {
+  if (!confirm('Delete ALL failed messages? This cannot be undone.')) return;
+  if (!confirm('Are you sure? All failed and expired messages will be permanently removed.')) return;
+  waFetch('/api/whatsapp/delete-all-failed', { method: 'POST' })
+    .then(function(data) {
+      if (data.ok) {
+        alert(data.deleted + ' message(s) deleted.');
         loadWaConversations();
         loadWaStats();
       }
