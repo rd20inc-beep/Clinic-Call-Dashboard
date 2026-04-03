@@ -137,24 +137,26 @@ const stmtMarkReminderSent = db.prepare(
 
 // Conversation list queries
 const stmtConversationsAdmin = db.prepare(`
-  SELECT phone, chat_name,
-         MAX(created_at) AS last_message_at,
+  SELECT w1.phone, w1.chat_name, p.name AS patient_name,
+         MAX(w1.created_at) AS last_message_at,
          COUNT(*) AS message_count,
          (SELECT message FROM wa_messages w2 WHERE w2.phone = w1.phone ORDER BY created_at DESC LIMIT 1) AS last_message
   FROM wa_messages w1
-  GROUP BY phone
+  LEFT JOIN patients p ON p.phone = w1.phone
+  GROUP BY w1.phone
   ORDER BY last_message_at DESC
   LIMIT 50
 `);
 
 const stmtConversationsAgent = db.prepare(`
-  SELECT phone, chat_name,
-         MAX(created_at) AS last_message_at,
+  SELECT w1.phone, w1.chat_name, p.name AS patient_name,
+         MAX(w1.created_at) AS last_message_at,
          COUNT(*) AS message_count,
          (SELECT message FROM wa_messages w2 WHERE w2.phone = w1.phone AND w2.agent = ? ORDER BY created_at DESC LIMIT 1) AS last_message
   FROM wa_messages w1
-  WHERE agent = ?
-  GROUP BY phone
+  LEFT JOIN patients p ON p.phone = w1.phone
+  WHERE w1.agent = ?
+  GROUP BY w1.phone
   ORDER BY last_message_at DESC
   LIMIT 50
 `);

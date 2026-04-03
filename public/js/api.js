@@ -1309,8 +1309,9 @@ function loadWaConversations() {
           return;
         }
         container.innerHTML = data.conversations.map(function(c) {
-          var initials = (c.chat_name || c.phone || '?').substring(0, 2).toUpperCase();
-          var name = c.chat_name || c.phone;
+          var displayName = c.patient_name || c.chat_name || c.phone;
+          var initials = displayName.substring(0, 2).toUpperCase();
+          var name = c.patient_name ? c.patient_name + (c.chat_name && c.chat_name !== c.patient_name ? ' (' + c.chat_name + ')' : '') : (c.chat_name || c.phone);
           var time = new Date(c.last_message_at).toLocaleString();
           var lastMsg = (c.last_message || '').substring(0, 60);
           var isPaused = waPausedChats.has(c.phone) || waPausedChats.has(c.chat_name);
