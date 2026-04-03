@@ -456,6 +456,18 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
+  // POST /api/whatsapp/templates/apply — apply a template with real variables
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/templates/apply', requireAuth, (req, res) => {
+    const { key, vars } = req.body;
+    if (!key) return res.json({ error: 'key required' });
+    const templates = require('../services/messageTemplates');
+    const text = templates.applyTemplate(key, vars || {});
+    if (!text) return res.json({ error: 'Template not found: ' + key });
+    res.json({ text });
+  });
+
+  // -----------------------------------------------------------------------
   // POST /api/whatsapp/templates/preview — preview a template with sample data
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/templates/preview', requireAuth, (req, res) => {

@@ -253,84 +253,46 @@ function waApproveAllMessages() {
     .catch(function() {});
 }
 
+// ===== HELPER: fetch template from server, preview, then send =====
+
+function _applyAndSend(templateKey, vars, title, phone, name, type) {
+  waFetch('/api/whatsapp/templates/apply', { method: 'POST', body: JSON.stringify({ key: templateKey, vars: vars }) })
+    .then(function(data) {
+      if (data.error) return alert('Template error: ' + data.error);
+      var msg = data.text;
+      waShowPreview(title, phone, name, msg).then(function(ok) {
+        if (!ok) return;
+        waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: type }) })
+          .then(function(d) { if (d.ok) alert(title + ' queued for approval.'); else alert('Error: ' + (d.error || 'Unknown')); })
+          .catch(function(err) { alert('Error: ' + err.message); });
+      });
+    })
+    .catch(function(err) { alert('Failed to load template: ' + err.message); });
+}
+
 // ===== POST-VISIT: REVIEW REQUEST =====
 
 function calSendReview(phone, name, service, doctor) {
-  var msg = 'Assalam o Alaikum ' + name + '! Thank you for visiting Dr. Nakhoda\'s Skin Institute today.\n\n';
-  msg += 'We hope you had a great experience';
-  if (service) msg += ' with your ' + service + ' treatment';
-  if (doctor) msg += ' by ' + doctor;
-  msg += '.\n\n';
-  msg += 'We would really appreciate if you could leave us a quick review:\n';
-  msg += 'https://g.page/r/drnakhoda/review\n\n';
-  msg += 'Your feedback helps us serve you better. Thank you!';
-
-  waShowPreview('Send Review Request', phone, name, msg).then(function(ok) {
-    if (!ok) return;
-    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: 'review' }) })
-      .then(function(data) { if (data.ok) alert('Review request queued for approval.'); else alert('Error: ' + (data.error || 'Unknown')); })
-      .catch(function(err) { alert('Error: ' + err.message); });
-  });
+  _applyAndSend('review', {
+    name: name,
+    service_text: service ? ' with your ' + service + ' treatment' : '',
+    doctor_text: doctor ? ' by ' + doctor : '',
+  }, 'Send Review Request', phone, name, 'review');
 }
 
 // ===== POST-VISIT: AFTERCARE MESSAGE =====
 
 function calSendAftercare(phone, name, service, doctor) {
-  var msg = 'Assalam o Alaikum ' + name + '! Here are your aftercare instructions following your visit at Dr. Nakhoda\'s Skin Institute.\n\n';
-
-  // Service-specific aftercare
+  // Pick the right aftercare template based on service
   var svc = (service || '').toLowerCase();
-  if (svc.includes('laser') || svc.includes('hair removal')) {
-    msg += 'Aftercare for Laser Treatment:\n';
-    msg += '- Avoid sun exposure for 48 hours\n';
-    msg += '- Apply SPF 50+ sunscreen daily\n';
-    msg += '- Avoid hot showers/saunas for 24 hours\n';
-    msg += '- Do not scratch or pick the treated area\n';
-    msg += '- Apply aloe vera gel if you feel any irritation\n';
-  } else if (svc.includes('hydra') || svc.includes('facial')) {
-    msg += 'Aftercare for HydraFacial:\n';
-    msg += '- Avoid makeup for 6-12 hours\n';
-    msg += '- Use gentle cleanser and moisturizer\n';
-    msg += '- Apply SPF 30+ sunscreen daily\n';
-    msg += '- Avoid exfoliating for 48 hours\n';
-    msg += '- Stay hydrated and avoid alcohol for 24 hours\n';
-  } else if (svc.includes('botox') || svc.includes('filler')) {
-    msg += 'Aftercare for Injectable Treatment:\n';
-    msg += '- Do not touch or massage the treated area for 4 hours\n';
-    msg += '- Avoid lying down for 4 hours after treatment\n';
-    msg += '- Avoid strenuous exercise for 24 hours\n';
-    msg += '- Avoid alcohol and blood thinners for 24 hours\n';
-    msg += '- Mild swelling/bruising is normal and will resolve in a few days\n';
-  } else if (svc.includes('peel') || svc.includes('chemical')) {
-    msg += 'Aftercare for Chemical Peel:\n';
-    msg += '- Do not pick or peel flaking skin\n';
-    msg += '- Apply prescribed moisturizer frequently\n';
-    msg += '- Avoid sun exposure — use SPF 50+ daily\n';
-    msg += '- Avoid retinol/AHA products for 1 week\n';
-    msg += '- Keep the area clean and hydrated\n';
-  } else if (svc.includes('microneedling') || svc.includes('prp') || svc.includes('rf')) {
-    msg += 'Aftercare for Microneedling/PRP:\n';
-    msg += '- Avoid touching the face for 6 hours\n';
-    msg += '- No makeup for 24 hours\n';
-    msg += '- Use gentle cleanser and prescribed serum only\n';
-    msg += '- Avoid sun and apply SPF 50+ daily\n';
-    msg += '- Redness is normal and will subside in 24-48 hours\n';
-  } else {
-    msg += 'General Aftercare:\n';
-    msg += '- Follow the instructions given by your doctor\n';
-    msg += '- Apply prescribed medications as directed\n';
-    msg += '- Avoid direct sun exposure and use sunscreen\n';
-    msg += '- Stay hydrated and rest well\n';
-  }
+  var templateKey = 'aftercare_general';
+  if (svc.includes('laser') || svc.includes('hair removal')) templateKey = 'aftercare_laser';
+  else if (svc.includes('hydra') || svc.includes('facial')) templateKey = 'aftercare_facial';
+  else if (svc.includes('botox') || svc.includes('filler')) templateKey = 'aftercare_botox';
+  else if (svc.includes('peel') || svc.includes('chemical')) templateKey = 'aftercare_peel';
+  else if (svc.includes('microneedling') || svc.includes('prp') || svc.includes('rf')) templateKey = 'aftercare_microneedling';
 
-  msg += '\nIf you have any questions or concerns, please call us at +92-300-2105374.';
-
-  waShowPreview('Send Aftercare Instructions', phone, name, msg).then(function(ok) {
-    if (!ok) return;
-    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: 'aftercare' }) })
-      .then(function(data) { if (data.ok) alert('Aftercare message queued for approval.'); else alert('Error: ' + (data.error || 'Unknown')); })
-      .catch(function(err) { alert('Error: ' + err.message); });
-  });
+  _applyAndSend(templateKey, { name: name }, 'Send Aftercare Instructions', phone, name, 'aftercare');
 }
 
 // ===== MESSAGE PREVIEW MODAL =====
@@ -383,40 +345,26 @@ function waShowPreview(title, phone, name, msg) {
 function calSendConfirmation(phone, name, date, time, service, doctor) {
   var dateObj = new Date(date + 'T00:00:00');
   var dateStr = dateObj.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  var aptLine = dateStr + ' at ' + time;
+  if (service) aptLine += ' — ' + service;
+  if (doctor) aptLine += ' (' + doctor + ')';
 
-  var msg = 'Assalam o Alaikum ' + name + '! Your appointment at Dr. Nakhoda\'s Skin Institute has been confirmed.\n\n';
-  msg += 'Date: ' + dateStr + '\n';
-  msg += 'Time: ' + time + '\n';
-  if (service) msg += 'Treatment: ' + service + '\n';
-  if (doctor) msg += 'Doctor: ' + doctor + '\n';
-  msg += '\nIf you need to reschedule, call +92-300-2105374. We look forward to seeing you!';
-
-  waShowPreview('Send Confirmation', phone, name, msg).then(function(ok) {
-    if (!ok) return;
-    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: 'confirmation' }) })
-      .then(function(data) {
-        if (data.ok) alert('Confirmation queued for approval.');
-        else alert('Error: ' + (data.error || 'Unknown'));
-      })
-      .catch(function(err) { alert('Error: ' + err.message); });
-  });
+  _applyAndSend('confirmation', {
+    name: name, date: dateStr, time: time, service: service || '', doctor: doctor || '',
+    appointments: aptLine,
+  }, 'Send Confirmation', phone, name, 'confirmation');
 }
 
 function calSendReminder(phone, name, date, time, service, doctor) {
-  var msg = 'Assalam o Alaikum ' + name + '! This is a friendly reminder about your appointment at Dr. Nakhoda\'s Skin Institute.\n\n';
-  msg += 'Time: ' + time + '\n';
-  msg += '\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\nhttps://maps.app.goo.gl/YadKKdh4911HmxKL9\n';
-  msg += '\nPlease arrive 10 minutes early. See you soon!';
+  var aptDate = new Date(date + 'T00:00:00');
+  var today = new Date(); today.setHours(0,0,0,0);
+  var diff = Math.round((aptDate - today) / (24*60*60*1000));
+  var dayWord = diff === 0 ? 'today' : diff === 1 ? 'tomorrow' : diff === 2 ? 'in 2 days' : 'soon';
 
-  waShowPreview('Send Reminder', phone, name, msg).then(function(ok) {
-    if (!ok) return;
-    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg, type: 'reminder' }) })
-      .then(function(data) {
-        if (data.ok) alert('Reminder queued for approval.');
-        else alert('Error: ' + (data.error || 'Unknown'));
-      })
-      .catch(function(err) { alert('Error: ' + err.message); });
-  });
+  _applyAndSend('reminder', {
+    name: name, day_word: dayWord, time: time, service: service || '', doctor: doctor || '',
+    appointments: time,
+  }, 'Send Reminder', phone, name, 'reminder');
 }
 
 function calSendMessage(phone, name) {
