@@ -427,7 +427,7 @@ async function syncAppointmentsAndScheduleMessages() {
       // Log first appointment's key fields for debugging (once per sync)
       if (appointments.length > 0 && dates.indexOf(date) === 0) {
         const s = appointments[0];
-        logEvent('info', 'Sync sample: ServiceName="' + (s.ServiceName || '') + '" ServiceCategory="' + (s.ServiceCategory || '') + '" CreatedStaffName="' + (s.CreatedStaffName || '') + '" ModifiedStaffName="' + (s.ModifiedStaffName || '') + '" StaffFirst="' + (s.StaffFirstName || '') + '"');
+        logEvent('info', 'Sync sample: CreatedStaffID=' + (s.CreatedStaffID || 'EMPTY') + ' CreatedStaffName="' + (s.CreatedStaffName || '') + '" ModifiedStaffID=' + (s.ModifiedStaffID || 'EMPTY') + ' ModifiedStaffName="' + (s.ModifiedStaffName || '') + '" StaffID=' + (s.StaffID || 'EMPTY') + ' StaffFirst="' + (s.StaffFirstName || '') + '"');
       }
 
       for (const apt of appointments) {

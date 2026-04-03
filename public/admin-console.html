@@ -1581,7 +1581,7 @@
           html += '<div class="empty">No appointments match the selected filters</div>';
         } else {
           html += '<div class="perf-table-wrap" style="max-height:500px;"><table><thead><tr>';
-          html += '<th>Date</th><th>Patient</th><th>Phone</th><th>Doctor</th><th>Service</th><th>Booked By</th><th>Agent</th><th>Confirmed</th>';
+          html += '<th>Date</th><th>Patient</th><th>Phone</th><th>Doctor</th><th>Service</th><th>Handled By</th><th>Confirmed</th>';
           html += '</tr></thead><tbody>';
           appts.forEach(function(a) {
             var apptDate = a.appointment_date ? new Date(a.appointment_date).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '-';
@@ -1593,7 +1593,6 @@
             html += '<td style="font-family:monospace;font-size:11px;">' + esc(a.patient_phone || '-') + '</td>';
             html += '<td>' + esc(a.doctor_name || '-') + '</td>';
             html += '<td>' + esc(a.service || '-') + '</td>';
-            html += '<td>' + esc(a.created_by || '-') + '</td>';
             html += '<td>' + agentBadge + '</td>';
             html += '<td>' + confBadge + '</td>';
             html += '</tr>';
