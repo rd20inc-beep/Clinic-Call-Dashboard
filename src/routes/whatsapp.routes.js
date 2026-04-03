@@ -115,12 +115,12 @@ function setupWhatsAppRoutes(io) {
       return res.json({ error: 'phone and message required' });
     }
 
-    // Business hours check — TEMPORARILY DISABLED FOR TESTING
-    // if (!waClient.isWithinBusinessHours()) {
-    //   const startH = parseInt(waRepo.getSetting('business_hour_start') || '9', 10);
-    //   const endH = parseInt(waRepo.getSetting('business_hour_end') || '19', 10);
-    //   return res.json({ error: `WhatsApp messages can only be sent between ${startH}:00 and ${endH}:00 Pakistan time. Message saved for later.` });
-    // }
+    // Business hours check (configurable via DB settings)
+    if (!waClient.isWithinBusinessHours()) {
+      const startH = parseInt(waRepo.getSetting('business_hour_start') || '9', 10);
+      const endH = parseInt(waRepo.getSetting('business_hour_end') || '19', 10);
+      return res.json({ error: `WhatsApp messages can only be sent between ${startH}:00 and ${endH}:00 Pakistan time. Message saved for later.` });
+    }
 
     // Validate message type
     const validTypes = ['chat', 'confirmation', 'reminder', 'review', 'aftercare'];
