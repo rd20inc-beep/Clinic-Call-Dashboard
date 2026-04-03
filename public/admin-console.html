@@ -480,10 +480,10 @@
     <div class="tab-panel" id="panel-callbacks">
       <div class="card" style="margin-bottom:16px;">
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;" class="ov-grid-4">
-          <div class="stat-card red" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="cbPending">-</div><div class="stat-label">Pending</div></div>
-          <div class="stat-card orange" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="cbOverdue">-</div><div class="stat-label">Overdue</div></div>
-          <div class="stat-card green" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="cbResolved">-</div><div class="stat-label">Resolved</div></div>
-          <div class="stat-card teal" style="padding:12px;"><div class="stat-value" style="font-size:24px;" id="cbRecovery">-</div><div class="stat-label">Recovery Rate</div></div>
+          <div class="stat-card red" style="padding:12px;cursor:pointer;" onclick="setCbFilter('pending')"><div class="stat-value" style="font-size:24px;" id="cbPending">-</div><div class="stat-label">Pending</div></div>
+          <div class="stat-card orange" style="padding:12px;cursor:pointer;" onclick="setCbFilter('overdue')"><div class="stat-value" style="font-size:24px;" id="cbOverdue">-</div><div class="stat-label">Overdue</div></div>
+          <div class="stat-card green" style="padding:12px;cursor:pointer;" onclick="setCbFilter('resolved')"><div class="stat-value" style="font-size:24px;" id="cbResolved">-</div><div class="stat-label">Resolved</div></div>
+          <div class="stat-card teal" style="padding:12px;cursor:pointer;" onclick="setCbFilter('')"><div class="stat-value" style="font-size:24px;" id="cbRecovery">-</div><div class="stat-label">Recovery Rate</div></div>
         </div>
       </div>
       <div class="card">
@@ -1646,7 +1646,7 @@
         var params = new URLSearchParams();
         params.set('page', cbPage);
         if (cbFilter === 'overdue') params.set('overdue', '1');
-        else if (cbFilter === 'resolved') params.set('status', 'called_back');
+        else if (cbFilter === 'resolved') params.set('resolved', '1');
         else if (cbFilter) params.set('status', cbFilter);
         var res = await fetch('/admin/callbacks?' + params.toString());
         var data = await res.json();

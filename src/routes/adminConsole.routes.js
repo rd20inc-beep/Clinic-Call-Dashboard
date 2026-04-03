@@ -565,7 +565,8 @@ router.get('/admin/callbacks', (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const status = req.query.status || '';
   const overdue = req.query.overdue === '1';
-  res.json(callbacksRepo.getCallbacks({ status: status || undefined, overdue, page }));
+  const resolved = req.query.resolved === '1';
+  res.json(callbacksRepo.getCallbacks({ status: status || undefined, overdue, resolved, page }));
 });
 
 // The old HTML uses POST for status updates

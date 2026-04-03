@@ -68,13 +68,16 @@ module.exports = {
   },
 
   /** Get callbacks with optional status filter and pagination. */
-  getCallbacks({ status, overdue, page = 1, limit = 25 } = {}) {
+  getCallbacks({ status, overdue, resolved, page = 1, limit = 25 } = {}) {
     const offset = (page - 1) * limit;
     let rows, total;
 
     if (overdue) {
       rows = stmtGetOverdue.all(limit, offset);
       total = stmtCountOverdue.get().c;
+    } else if (resolved) {
+      rows = db.prepare("SELECT * FROM callbacks WHERE callback_status IN ('called_back', 'resolved', 'no_callback_needed') ORDER BY resolved_at DESC LIMIT ? OFFSET ?").all(limit, offset);
+      total = db.prepare("SELECT COUNT(*) as c FROM callbacks WHERE callback_status IN ('called_back', 'resolved', 'no_callback_needed')").get().c;
     } else if (status) {
       rows = stmtGetByStatus.all(status, limit, offset);
       total = stmtCountByStatus.get(status).c;
