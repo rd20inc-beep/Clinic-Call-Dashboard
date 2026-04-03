@@ -666,10 +666,9 @@
         document.getElementById('statMissedToday').textContent = data.missedToday;
         document.getElementById('statAnswerRate').textContent = data.answerRate + '%';
         // Row 2: Appointments (phone-matched from cache)
-        var matched = data.appointmentsMatched || 0;
-        var schedToday = data.appointmentsScheduledToday || 0;
-        var apptTotal = data.appointmentsTotal || 0;
-        document.getElementById('statConversions').textContent = schedToday + ' today / ' + apptTotal + ' total';
+        var apptToday = data.appointmentsToday || 0;
+        var apptByAgents = data.appointmentsByAgents || 0;
+        document.getElementById('statConversions').textContent = apptToday + ' today (' + apptByAgents + ' by agents)';
         document.getElementById('statTalkTimeTotal').textContent = fmtDuration(data.talkTimeToday || ((data.inboundTalkToday||0) + (data.outboundTalkToday||0)));
         document.getElementById('statAvgDuration').textContent = (data.avgDurationAll || 0) + 's';
         document.getElementById('statPendingCallbacks').textContent = data.pendingCallbacks || 0;
@@ -1497,12 +1496,14 @@
     var apptAgent = '';
     var apptService = '';
     var apptDoctor = '';
+    var apptBookedBy = '';
 
     function closeApptModal() { document.getElementById('apptModal').classList.remove('active'); }
 
     async function showAppointmentsModal(agentFilter) {
       apptAgent = agentFilter || '';
       apptService = '';
+      apptBookedBy = '';
       apptDoctor = '';
       document.getElementById('apptModal').classList.add('active');
       document.getElementById('apptContent').innerHTML = '<div class="empty"><div class="loading-spinner"></div></div>';
@@ -1524,12 +1525,14 @@
         if (apptAgent) params.set('agent', apptAgent);
         if (apptService) params.set('service', apptService);
         if (apptDoctor) params.set('doctor', apptDoctor);
+        if (apptBookedBy) params.set('bookedBy', apptBookedBy);
         var res = await fetch('/admin/appointments?' + params.toString());
         var data = await res.json();
         var appts = data.appointments || [];
         var agents = data.agents || [];
         var services = data.services || [];
         var doctors = data.doctors || [];
+        var bookedByList = data.bookedByList || [];
 
         var html = '';
         // Header
@@ -1570,9 +1573,16 @@
           html += '<option value="' + esc(doc) + '"' + (apptDoctor === doc ? ' selected' : '') + '>' + esc(doc) + '</option>';
         });
         html += '</select>';
+        // Booked By dropdown
+        html += '<select class="filter-select" onchange="apptBookedBy=this.value;loadAppointmentsModal()">';
+        html += '<option value="">All Booked By</option>';
+        bookedByList.forEach(function(b) {
+          html += '<option value="' + esc(b) + '"' + (apptBookedBy === b ? ' selected' : '') + '>' + esc(b) + '</option>';
+        });
+        html += '</select>';
         // Clear filters
-        if (apptAgent || apptService || apptDoctor) {
-          html += '<button class="perf-filter-btn" onclick="apptAgent=\'\';apptService=\'\';apptDoctor=\'\';loadAppointmentsModal()" style="color:#ef4444;">Clear Filters</button>';
+        if (apptAgent || apptService || apptDoctor || apptBookedBy) {
+          html += '<button class="perf-filter-btn" onclick="apptAgent=\'\';apptService=\'\';apptDoctor=\'\';apptBookedBy=\'\';loadAppointmentsModal()" style="color:#ef4444;">Clear Filters</button>';
         }
         html += '</div>';
 

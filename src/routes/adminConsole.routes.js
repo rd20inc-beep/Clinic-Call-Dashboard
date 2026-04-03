@@ -60,30 +60,24 @@ router.get('/admin/analytics/overview', async (req, res) => {
       }
     } catch (e) { console.error('[admin-console] Appointments fetch failed:', e.message); }
 
-    // If direct fetch didn't work, try wa_appointment_tracking table
-    let appointmentsTotal = 0;
+    // Appointment stats for today
     let appointmentsToday = 0;
-    try {
-      appointmentsTotal = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking").get().c;
-      appointmentsToday = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking WHERE date(appointment_date) = date('now')").get().c;
-    } catch (e) { console.error('[admin-console] Query failed:', e.message); }
-
-    // Match appointments to agents via phone numbers
-    // An appointment is "attributed" to an agent if the agent handled a call from that phone
-    let appointmentsMatched = 0;
+    let appointmentsByAgents = 0;
     const agentAppointments = {};
     try {
-      const trackingRows = db.prepare(
-        "SELECT DISTINCT patient_phone FROM wa_appointment_tracking WHERE patient_phone IS NOT NULL AND patient_phone != ''"
+      appointmentsToday = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking WHERE date(appointment_date) = date('now')").get().c;
+
+      // Count today's appointments that match an agent's handled call
+      const todayAppts = db.prepare(
+        "SELECT DISTINCT patient_phone FROM wa_appointment_tracking WHERE date(appointment_date) = date('now') AND patient_phone IS NOT NULL AND patient_phone != ''"
       ).all();
-      for (const row of trackingRows) {
-        if (!row.patient_phone) continue;
+      for (const row of todayAppts) {
         const phone = row.patient_phone.replace(/[\s\-()]/g, '');
         const match = db.prepare(
           "SELECT agent FROM calls WHERE caller_number LIKE ? AND agent IS NOT NULL ORDER BY timestamp DESC LIMIT 1"
         ).get('%' + phone.slice(-10) + '%');
         if (match && match.agent) {
-          appointmentsMatched++;
+          appointmentsByAgents++;
           agentAppointments[match.agent] = (agentAppointments[match.agent] || 0) + 1;
         }
       }
@@ -180,9 +174,8 @@ router.get('/admin/analytics/overview', async (req, res) => {
       portalOnline: portalOnline,
       mobileOnline: mobileOnline,
       pendingCallbacks: (() => { try { return require('../db/callbacks.repo').getSummary().pending; } catch(e) { return 0; } })(),
-      appointmentsMatched: appointmentsMatched,
-      appointmentsScheduledToday: appointmentsToday,
-      appointmentsTotal: appointmentsTotal,
+      appointmentsToday: appointmentsToday,
+      appointmentsByAgents: appointmentsByAgents,
       callsWeek: callsWeek,
       callsMonth: callsMonth,
       inboundTalkToday: inboundTalkToday,
@@ -797,6 +790,8 @@ router.get('/admin/appointments', (req, res) => {
     if (service) { where += ' AND service LIKE ?'; params.push('%' + service + '%'); }
     const doctor = req.query.doctor || '';
     if (doctor) { where += ' AND doctor_name LIKE ?'; params.push('%' + doctor + '%'); }
+    const bookedBy = req.query.bookedBy || '';
+    if (bookedBy) { where += ' AND created_by LIKE ?'; params.push('%' + bookedBy + '%'); }
 
     const rawAppointments = db.prepare(
       'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 200'
@@ -825,6 +820,7 @@ router.get('/admin/appointments', (req, res) => {
     // Get unique values for filter dropdowns
     const services = db.prepare("SELECT DISTINCT service FROM wa_appointment_tracking WHERE service IS NOT NULL AND service != '' ORDER BY service").all().map(r => r.service);
     const doctors = db.prepare("SELECT DISTINCT doctor_name FROM wa_appointment_tracking WHERE doctor_name IS NOT NULL AND doctor_name != '' ORDER BY doctor_name").all().map(r => r.doctor_name);
+    const bookedByList = db.prepare("SELECT DISTINCT created_by FROM wa_appointment_tracking WHERE created_by IS NOT NULL AND created_by != '' ORDER BY created_by").all().map(r => r.created_by);
     // Get agents who handled these patients' calls
     const agents = [];
     try {
@@ -832,7 +828,7 @@ router.get('/admin/appointments', (req, res) => {
       agentRows.forEach(r => agents.push(r.agent));
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
-    res.json({ appointments, agents, services, doctors, total: appointments.length });
+    res.json({ appointments, agents, services, doctors, bookedByList, total: appointments.length });
   } catch (err) {
     res.status(500).json({ error: err.message, appointments: [] });
   }
