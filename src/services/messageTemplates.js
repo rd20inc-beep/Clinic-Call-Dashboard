@@ -10,7 +10,7 @@ const DEFAULT_TEMPLATES = {
 
 If you need to reschedule, call +92-300-2105374. We look forward to seeing you!`,
 
-  reminder: `Assalam o Alaikum {name}! This is a friendly reminder that your appointment at Dr. Nakhoda's Skin Institute is {day_word}.
+  reminder: `Assalam o Alaikum! This is a friendly reminder that your appointment at Dr. Nakhoda's Skin Institute is {day_word}.
 
 {appointments}
 
