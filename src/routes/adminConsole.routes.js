@@ -561,7 +561,7 @@ router.get('/admin/analytics/peak-hours', requireAuth, requireAdminOrDoctor, (re
 
     // Calls per hour (0-23)
     const hourly = db.prepare(
-      "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, " +
+      "SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, " +
       "COUNT(*) as total, " +
       "SUM(CASE WHEN call_status = 'answered' THEN 1 ELSE 0 END) as answered, " +
       "SUM(CASE WHEN call_status = 'missed' THEN 1 ELSE 0 END) as missed, " +
@@ -580,7 +580,7 @@ router.get('/admin/analytics/peak-hours', requireAuth, requireAdminOrDoctor, (re
 
     // Calls by day of week
     const byDay = db.prepare(
-      "SELECT CAST(strftime('%w', timestamp) AS INTEGER) as dow, COUNT(*) as total " +
+      "SELECT CAST(strftime('%w', timestamp, '+5 hours') AS INTEGER) as dow, COUNT(*) as total " +
       "FROM calls WHERE " + dateFilter + " GROUP BY dow ORDER BY dow"
     ).all();
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -643,7 +643,7 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
 
     // === SERVICE BY DAY OF WEEK ===
     const serviceByDay = db.prepare(
-      "SELECT service, CAST(strftime('%w', appointment_date) AS INTEGER) as dow, COUNT(*) as count " +
+      "SELECT service, CAST(strftime('%w', appointment_date, '+5 hours') AS INTEGER) as dow, COUNT(*) as count " +
       "FROM wa_appointment_tracking WHERE " + aptDateFilter + " AND service IS NOT NULL AND service != '' " +
       "GROUP BY service, dow ORDER BY count DESC"
     ).all();
@@ -660,8 +660,8 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
     // === DOCTOR AVAILABILITY (appointments by day of week + hour) ===
     const doctorSchedule = db.prepare(
       "SELECT doctor_name, " +
-      "CAST(strftime('%w', appointment_date) AS INTEGER) as dow, " +
-      "CAST(strftime('%H', appointment_date) AS INTEGER) as hour, " +
+      "CAST(strftime('%w', appointment_date, '+5 hours') AS INTEGER) as dow, " +
+      "CAST(strftime('%H', appointment_date, '+5 hours') AS INTEGER) as hour, " +
       "COUNT(*) as count " +
       "FROM wa_appointment_tracking " +
       "WHERE " + aptDateFilter + " AND doctor_name IS NOT NULL AND doctor_name != '' " +
@@ -670,7 +670,7 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
 
     // === APPOINTMENTS BY DAY OF WEEK ===
     const aptsByDay = db.prepare(
-      "SELECT CAST(strftime('%w', appointment_date) AS INTEGER) as dow, COUNT(*) as count " +
+      "SELECT CAST(strftime('%w', appointment_date, '+5 hours') AS INTEGER) as dow, COUNT(*) as count " +
       "FROM wa_appointment_tracking WHERE " + aptDateFilter + " GROUP BY dow ORDER BY dow"
     ).all();
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -681,7 +681,7 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
 
     // === APPOINTMENTS BY HOUR (peak booking times) ===
     const aptsByHour = db.prepare(
-      "SELECT CAST(strftime('%H', appointment_date) AS INTEGER) as hour, COUNT(*) as count " +
+      "SELECT CAST(strftime('%H', appointment_date, '+5 hours') AS INTEGER) as hour, COUNT(*) as count " +
       "FROM wa_appointment_tracking WHERE " + aptDateFilter + " GROUP BY hour ORDER BY hour"
     ).all();
     const appointmentHours = Array(24).fill(null).map((_, i) => {
@@ -691,7 +691,7 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
 
     // === MISSED CALL ANALYSIS ===
     const missedByHour = db.prepare(
-      "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as count " +
+      "SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, COUNT(*) as count " +
       "FROM calls WHERE " + dateFilter + " AND call_status = 'missed' GROUP BY hour ORDER BY hour"
     ).all();
 

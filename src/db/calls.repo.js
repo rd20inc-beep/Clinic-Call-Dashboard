@@ -106,7 +106,7 @@ const stmtPerfAgentRange = db.prepare(`
 // Hourly breakdown for an agent
 const stmtAgentHourly = db.prepare(`
   SELECT
-    CAST(strftime('%H', timestamp) AS INTEGER) as hour,
+    CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour,
     COUNT(*) as calls,
     COALESCE(SUM(CASE WHEN duration IS NOT NULL THEN duration ELSE 0 END), 0) as talk_time
   FROM calls

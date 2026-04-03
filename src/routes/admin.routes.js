@@ -160,7 +160,7 @@ module.exports = function setupAdminRoutes(io) {
 
       // 1. Calls per hour today (0-23)
       const hourlyRows = db.prepare(
-        "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as count FROM calls WHERE date(timestamp) = date('now') GROUP BY hour ORDER BY hour"
+        "SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, COUNT(*) as count FROM calls WHERE date(timestamp) = date('now') GROUP BY hour ORDER BY hour"
       ).all();
       const hourly = Array(24).fill(0);
       hourlyRows.forEach(function(r) { hourly[r.hour] = r.count; });
@@ -169,7 +169,7 @@ module.exports = function setupAdminRoutes(io) {
       const answeredHourly = Array(24).fill(0);
       const missedHourly = Array(24).fill(0);
       db.prepare(
-        "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, call_status, COUNT(*) as count FROM calls WHERE date(timestamp) = date('now') AND call_status IN ('answered','missed') GROUP BY hour, call_status"
+        "SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, call_status, COUNT(*) as count FROM calls WHERE date(timestamp) = date('now') AND call_status IN ('answered','missed') GROUP BY hour, call_status"
       ).all().forEach(function(r) {
         if (r.call_status === 'answered') answeredHourly[r.hour] = r.count;
         else missedHourly[r.hour] = r.count;
@@ -722,8 +722,8 @@ module.exports = function setupAdminRoutes(io) {
       const dailyBreakdown = qa("SELECT date(timestamp) as day, COUNT(*) as calls, SUM(CASE WHEN call_status='answered' THEN 1 ELSE 0 END) as answered, SUM(CASE WHEN call_status='missed' THEN 1 ELSE 0 END) as missed, COALESCE(SUM(duration),0) as talkTime FROM calls WHERE timestamp >= datetime('now', '-7 days') GROUP BY day ORDER BY day");
 
       // Peak hours by calls and talk time
-      const peakByCalls = qa("SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) as count FROM calls WHERE timestamp >= datetime('now', '-7 days') GROUP BY hour ORDER BY count DESC LIMIT 5");
-      const peakByTalkTime = qa("SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COALESCE(SUM(duration),0) as talkTime FROM calls WHERE timestamp >= datetime('now', '-7 days') AND duration IS NOT NULL GROUP BY hour ORDER BY talkTime DESC LIMIT 5");
+      const peakByCalls = qa("SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, COUNT(*) as count FROM calls WHERE timestamp >= datetime('now', '-7 days') GROUP BY hour ORDER BY count DESC LIMIT 5");
+      const peakByTalkTime = qa("SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, COALESCE(SUM(duration),0) as talkTime FROM calls WHERE timestamp >= datetime('now', '-7 days') AND duration IS NOT NULL GROUP BY hour ORDER BY talkTime DESC LIMIT 5");
 
       // Low activity agents (< 5 calls this week)
       const users = getUsers();
