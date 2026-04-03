@@ -3,6 +3,9 @@
 // Load environment variables before anything else
 require('dotenv').config();
 
+// Set timezone to Pakistan Standard Time (UTC+5)
+process.env.TZ = 'Asia/Karachi';
+
 const { app, server, io } = require('./app');
 const { config, isClinicaConfigured } = require('./config/env');
 const { logEvent } = require('./services/logging.service');

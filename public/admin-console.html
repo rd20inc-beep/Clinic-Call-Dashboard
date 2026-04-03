@@ -679,7 +679,7 @@
 
     // ===== UTILS =====
     function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-    function fmtDate(d) { if (!d) return '-'; var dt = new Date(d); return dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
+    function fmtDate(d) { if (!d) return '-'; var dt = new Date(d); return dt.toLocaleDateString('en-PK', {timeZone:'Asia/Karachi'}) + ' ' + dt.toLocaleTimeString('en-PK', {timeZone:'Asia/Karachi',hour:'2-digit',minute:'2-digit'}); }
     function fmtAgo(d) {
       if (!d) return 'Never';
       var diff = Date.now() - new Date(d).getTime();
