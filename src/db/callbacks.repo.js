@@ -130,6 +130,50 @@ module.exports = {
     return db.prepare("UPDATE callbacks SET callback_status = 'no_callback_needed', resolved_at = datetime('now') WHERE callback_status IN ('pending', 'assigned') AND created_at < datetime('now', '-' || ? || ' days')").run(days).changes;
   },
 
+  /**
+   * Auto-resolve pending callbacks where the patient has been contacted since.
+   * Checks: outbound call made, inbound call answered, or appointment booked.
+   * Returns count of resolved callbacks.
+   */
+  autoResolvePending() {
+    const pending = db.prepare(
+      "SELECT id, caller_number, call_time FROM callbacks WHERE callback_status IN ('pending', 'assigned')"
+    ).all();
+
+    if (pending.length === 0) return 0;
+
+    let resolved = 0;
+    for (const cb of pending) {
+      const phone = (cb.caller_number || '').replace(/[\s\-()]/g, '');
+      if (!phone || phone.length < 7) continue;
+      const phoneSuffix = '%' + phone.slice(-10) + '%';
+
+      // Check 1: outbound call made to this number after the missed call
+      const outbound = db.prepare(
+        "SELECT id FROM calls WHERE caller_number LIKE ? AND direction = 'outbound' AND timestamp > ? LIMIT 1"
+      ).get(phoneSuffix, cb.call_time);
+
+      // Check 2: inbound call answered from this number after the missed call
+      const answered = db.prepare(
+        "SELECT id FROM calls WHERE caller_number LIKE ? AND call_status = 'answered' AND timestamp > ? LIMIT 1"
+      ).get(phoneSuffix, cb.call_time);
+
+      // Check 3: appointment booked for this phone after the missed call
+      const appointment = db.prepare(
+        "SELECT id FROM wa_appointment_tracking WHERE patient_phone LIKE ? AND created_at > ? LIMIT 1"
+      ).get(phoneSuffix, cb.call_time);
+
+      if (outbound || answered || appointment) {
+        const reason = outbound ? 'called_back' : answered ? 'resolved' : 'resolved';
+        db.prepare(
+          "UPDATE callbacks SET callback_status = ?, resolved_at = datetime('now'), callback_notes = COALESCE(callback_notes || ' | ', '') || ? WHERE id = ?"
+        ).run(reason, 'Auto-resolved: ' + (outbound ? 'outbound call made' : answered ? 'call answered' : 'appointment booked'), cb.id);
+        resolved++;
+      }
+    }
+    return resolved;
+  },
+
   /** Don't create callbacks for WhatsApp contact names (not real phone numbers). */
   isValidCallbackNumber(number) {
     if (!number) return false;

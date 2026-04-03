@@ -173,7 +173,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
       activeAgents: activeAgents,
       portalOnline: portalOnline,
       mobileOnline: mobileOnline,
-      pendingCallbacks: (() => { try { return require('../db/callbacks.repo').getSummary().pending; } catch(e) { return 0; } })(),
+      pendingCallbacks: (() => { try { const cb = require('../db/callbacks.repo'); cb.autoResolvePending(); return cb.getSummary().pending; } catch(e) { return 0; } })(),
       appointmentsToday: appointmentsToday,
       appointmentsByAgents: appointmentsByAgents,
       callsWeek: callsWeek,
@@ -554,10 +554,14 @@ router.get('/admin/analytics/trends', (req, res) => {
 const callbacksRepo = require('../db/callbacks.repo');
 
 router.get('/admin/callbacks/summary', (req, res) => {
+  // Auto-resolve callbacks where the patient has been contacted since
+  try { callbacksRepo.autoResolvePending(); } catch (e) {}
   res.json(callbacksRepo.getSummary());
 });
 
 router.get('/admin/callbacks', (req, res) => {
+  // Auto-resolve before listing
+  try { callbacksRepo.autoResolvePending(); } catch (e) {}
   const page = parseInt(req.query.page) || 1;
   const status = req.query.status || '';
   const overdue = req.query.overdue === '1';
