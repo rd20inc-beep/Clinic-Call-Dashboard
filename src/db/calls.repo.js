@@ -114,10 +114,15 @@ const stmtAgentHourly = db.prepare(`
   GROUP BY hour ORDER BY hour
 `);
 
-// Auto-finalize stale unknown calls (older than 2 minutes, still unknown → missed)
-const stmtFinalizeStale = db.prepare(`
+// Auto-finalize stale unknown inbound calls (older than 15 minutes → missed)
+// Outbound calls are finalized as 'answered' since the agent initiated them
+const stmtFinalizeStaleInbound = db.prepare(`
   UPDATE calls SET call_status = 'missed'
-  WHERE call_status = 'unknown' AND timestamp < datetime('now', '-2 minutes')
+  WHERE call_status = 'unknown' AND direction != 'outbound' AND timestamp < datetime('now', '-15 minutes')
+`);
+const stmtFinalizeStaleOutbound = db.prepare(`
+  UPDATE calls SET call_status = 'answered'
+  WHERE call_status = 'unknown' AND direction = 'outbound' AND timestamp < datetime('now', '-15 minutes')
 `);
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -237,14 +242,16 @@ module.exports = {
   // Performance analytics (SQL-driven, not frontend guesses)
   // ---------------------------------------------------------------------------
 
-  /** Auto-finalize stale unknown calls as missed. Creates callbacks for them. Returns count finalized. */
+  /** Auto-finalize stale unknown calls. Inbound → missed, outbound → answered. Creates callbacks for missed. Returns count finalized. */
   finalizeStale() {
-    // Get the calls that will be finalized (before updating them)
-    const stale = db.prepare("SELECT id, caller_number, patient_name, agent, timestamp FROM calls WHERE call_status = 'unknown' AND timestamp < datetime('now', '-15 minutes')").all();
+    // Get inbound stale calls (for callbacks)
+    const stale = db.prepare("SELECT id, caller_number, patient_name, agent, timestamp FROM calls WHERE call_status = 'unknown' AND direction != 'outbound' AND timestamp < datetime('now', '-15 minutes')").all();
 
-    if (stale.length === 0) return 0;
+    const inboundChanges = stmtFinalizeStaleInbound.run().changes;
+    const outboundChanges = stmtFinalizeStaleOutbound.run().changes;
+    const changes = inboundChanges + outboundChanges;
 
-    const changes = stmtFinalizeStale.run().changes;
+    if (changes === 0) return 0;
 
     if (changes > 0) {
       console.log('[calls] Auto-finalized ' + changes + ' stale calls as missed: ' + stale.map(c => '#' + c.id + ' ' + (c.caller_number || '?')).join(', '));
