@@ -701,7 +701,19 @@
 
     var COLORS = ['#1565c0','#2e7d32','#e65100','#6a1b9a','#00695c','#c62828','#f9a825','#4527a0','#00838f','#558b2f'];
 
-    function destroyChart(key) { if (chartInstances[key]) { chartInstances[key].destroy(); delete chartInstances[key]; } }
+    function destroyChart(key) {
+      if (chartInstances[key]) { try { chartInstances[key].destroy(); } catch(e) {} delete chartInstances[key]; }
+    }
+    // Safely create a chart — destroys any existing chart on the canvas first
+    function safeChart(key, canvasId, config) {
+      destroyChart(key);
+      var el = document.getElementById(canvasId);
+      if (!el) return null;
+      var existing = Chart.getChart(el);
+      if (existing) try { existing.destroy(); } catch(e) {}
+      chartInstances[key] = new Chart(el, config);
+      return chartInstances[key];
+    }
 
     // ===== TAB SWITCHING =====
     function switchTab(tab) {
@@ -781,11 +793,9 @@
     }
 
     function renderAgentCallsChart(stats) {
-      if (typeof Chart === 'undefined') return; // Chart.js not loaded yet
-      destroyChart('agentCalls');
+      if (typeof Chart === 'undefined') return;
       var active = stats.filter(function(a) { return a.status !== 'disabled'; });
-      var ctx = document.getElementById('chartAgentCalls').getContext('2d');
-      chartInstances.agentCalls = new Chart(ctx, {
+      safeChart('agentCalls', 'chartAgentCalls', {
         type: 'bar',
         data: {
           labels: active.map(function(a) { return a.full_name || a.username; }),
@@ -800,10 +810,8 @@
 
     function renderAnsweredMissedChart(stats) {
       if (typeof Chart === 'undefined') return;
-      destroyChart('answeredMissed');
       var active = stats.filter(function(a) { return a.status !== 'disabled'; });
-      var ctx = document.getElementById('chartAnsweredMissed').getContext('2d');
-      chartInstances.answeredMissed = new Chart(ctx, {
+      safeChart('answeredMissed', 'chartAnsweredMissed', {
         type: 'bar',
         data: {
           labels: active.map(function(a) { return a.full_name || a.username; }),
