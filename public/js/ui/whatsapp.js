@@ -384,7 +384,7 @@ function waOpenChat(phone, name) {
         return;
       }
       container.innerHTML = data.messages.map(function(m) {
-        var time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        var time = new Date(m.created_at + 'Z').toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' });
         var typeLabel = m.message_type !== 'chat' ? ' [' + m.message_type + ']' : '';
         var statusLabel = '';
         if (m.direction === 'out' && m.status === 'failed') {
@@ -402,7 +402,7 @@ function waOpenChat(phone, name) {
         }
         var sentInfo = '';
         if (m.sent_at) {
-          sentInfo = ' <span style="color:#999;font-size:10px;">sent ' + new Date(m.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + '</span>';
+          sentInfo = ' <span style="color:#999;font-size:10px;">sent ' + new Date(m.sent_at + 'Z').toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' }) + '</span>';
         }
         return '<div class="wa-msg ' + m.direction + '">' +
           '<div>' + escapeHtml(m.message) + typeLabel + statusLabel + '</div>' +
@@ -853,7 +853,7 @@ function waShowFailed() {
           '</div>' +
         '</div>';
       data.messages.forEach(function(m) {
-        var time = new Date(m.created_at).toLocaleString();
+        var time = new Date(m.created_at + 'Z').toLocaleString('en-PK', { timeZone: 'Asia/Karachi' });
         html += '<div style="background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.2);border-radius:8px;padding:12px;margin-bottom:8px;">' +
           '<div style="display:flex;justify-content:space-between;align-items:start;">' +
             '<div style="flex:1;">' +

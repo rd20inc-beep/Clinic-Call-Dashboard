@@ -1273,7 +1273,7 @@ function loadWaApprovalQueue() {
       countBadge.textContent = msgs.length;
 
       container.innerHTML = msgs.map(function(m) {
-        var time = new Date(m.created_at).toLocaleString();
+        var time = new Date(m.created_at + 'Z').toLocaleString('en-PK', { timeZone: 'Asia/Karachi' });
         var preview = escapeHtml((m.message || '').substring(0, 150));
         if (m.message && m.message.length > 150) preview += '...';
         var fullMsg = escapeHtml(m.message || '').replace(/\n/g, '<br>');
@@ -1316,7 +1316,7 @@ function loadWaConversations() {
           var displayName = c.patient_name || c.chat_name || c.phone;
           var initials = displayName.substring(0, 2).toUpperCase();
           var name = c.patient_name ? c.patient_name + (c.chat_name && c.chat_name !== c.patient_name ? ' (' + c.chat_name + ')' : '') : (c.chat_name || c.phone);
-          var time = new Date(c.last_message_at).toLocaleString();
+          var time = new Date(c.last_message_at + 'Z').toLocaleString('en-PK', { timeZone: 'Asia/Karachi' });
           var lastMsg = (c.last_message || '').substring(0, 60);
           var isPaused = waPausedChats.has(c.phone) || waPausedChats.has(c.chat_name);
           var pausedBadge = isPaused ? '<span style="background:#e74c3c;color:white;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;">BOT OFF</span>' : '';
