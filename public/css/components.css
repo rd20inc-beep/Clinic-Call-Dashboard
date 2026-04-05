@@ -810,6 +810,11 @@
 .apt-summary-value { font-size: 22px; font-weight: 700; color: #1a1a2e; }
 .apt-summary-label { font-size: 11px; color: #6c757d; text-transform: uppercase; letter-spacing: 0.3px; margin-top: 2px; }
 
+/* Appointment Toolbar */
+.apt-toolbar { margin-bottom: 16px; }
+.apt-toolbar-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.apt-date-header { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 4px 4px; margin-top: 6px; border-bottom: 1px solid #e2e8f0; }
+
 /* Appointment List */
 .apt-list { display: flex; flex-direction: column; gap: 10px; }
 

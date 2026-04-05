@@ -307,14 +307,24 @@ function renderOverview() {
   modalBody.innerHTML = html;
 }
 
-function renderAppointments() {
+function renderAppointments(filterDate, filterStatus) {
   var apts = profileData.appointments;
   if (!apts || apts.length === 0) {
     modalBody.innerHTML = '<div class="empty-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><p>No appointments found</p></div>';
     return;
   }
 
-  // Count statuses
+  // Preserve current filter values if not explicitly passed
+  if (typeof filterDate === 'undefined') {
+    var existingDate = document.getElementById('aptDateFilter');
+    filterDate = existingDate ? existingDate.value : '';
+  }
+  if (typeof filterStatus === 'undefined') {
+    var existingStatus = document.getElementById('aptStatusFilter');
+    filterStatus = existingStatus ? existingStatus.value : 'all';
+  }
+
+  // Count statuses (from full list, not filtered)
   var completed = 0, upcoming = 0, cancelled = 0, noshow = 0;
   apts.forEach(function(a) {
     var sc = getAptStatusClass(a.AppointmentStatus || a.Status);
@@ -324,37 +334,90 @@ function renderAppointments() {
     else upcoming++;
   });
 
+  // Apply filters
+  var filtered = apts;
+  if (filterDate) {
+    filtered = filtered.filter(function(a) {
+      var d = new Date(a.StartDateTime || a.AppointmentDateTime || '');
+      if (isNaN(d)) return false;
+      var aptDate = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      return aptDate === filterDate;
+    });
+  }
+  if (filterStatus && filterStatus !== 'all') {
+    filtered = filtered.filter(function(a) {
+      return getAptStatusClass(a.AppointmentStatus || a.Status) === filterStatus;
+    });
+  }
+
   var html = '';
-  // Summary cards
-  html += '<div class="apt-summary">';
-  html += '<div class="apt-summary-card total"><div class="apt-summary-value">' + apts.length + '</div><div class="apt-summary-label">Total</div></div>';
-  html += '<div class="apt-summary-card done"><div class="apt-summary-value">' + completed + '</div><div class="apt-summary-label">Completed</div></div>';
-  html += '<div class="apt-summary-card upcoming-s"><div class="apt-summary-value">' + upcoming + '</div><div class="apt-summary-label">Upcoming</div></div>';
-  html += '<div class="apt-summary-card missed"><div class="apt-summary-value">' + (noshow + cancelled) + '</div><div class="apt-summary-label">Missed/Cancelled</div></div>';
+
+  // Date picker + status filter toolbar
+  html += '<div class="apt-toolbar">';
+  html += '<div class="apt-toolbar-row">';
+  html += '<input type="date" id="aptDateFilter" value="' + escapeHtml(filterDate || '') + '" onchange="renderAppointments(this.value)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;color:#334155;">';
+  html += '<select id="aptStatusFilter" onchange="renderAppointments(undefined, this.value)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;color:#334155;">';
+  html += '<option value="all"' + (filterStatus === 'all' ? ' selected' : '') + '>All Status</option>';
+  html += '<option value="completed"' + (filterStatus === 'completed' ? ' selected' : '') + '>Completed</option>';
+  html += '<option value="upcoming"' + (filterStatus === 'upcoming' ? ' selected' : '') + '>Upcoming</option>';
+  html += '<option value="cancelled"' + (filterStatus === 'cancelled' ? ' selected' : '') + '>Cancelled</option>';
+  html += '<option value="noshow"' + (filterStatus === 'noshow' ? ' selected' : '') + '>No-show</option>';
+  html += '</select>';
+  if (filterDate || (filterStatus && filterStatus !== 'all')) {
+    html += '<button onclick="renderAppointments(\'\', \'all\')" style="padding:6px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;background:#f8fafc;color:#64748b;cursor:pointer;">Clear</button>';
+  }
+  html += '<span style="font-size:12px;color:#94a3b8;margin-left:auto;">' + filtered.length + ' of ' + apts.length + ' appointments</span>';
+  html += '</div>';
   html += '</div>';
 
-  var sorted = apts.slice().sort(function(a, b) { return new Date(b.StartDateTime || b.AppointmentDateTime || 0) - new Date(a.StartDateTime || a.AppointmentDateTime || 0); });
+  // Summary cards
+  html += '<div class="apt-summary">';
+  html += '<div class="apt-summary-card total" style="cursor:pointer;" onclick="renderAppointments(\'\', \'all\')"><div class="apt-summary-value">' + apts.length + '</div><div class="apt-summary-label">Total</div></div>';
+  html += '<div class="apt-summary-card done" style="cursor:pointer;" onclick="renderAppointments(undefined, \'completed\')"><div class="apt-summary-value">' + completed + '</div><div class="apt-summary-label">Completed</div></div>';
+  html += '<div class="apt-summary-card upcoming-s" style="cursor:pointer;" onclick="renderAppointments(undefined, \'upcoming\')"><div class="apt-summary-value">' + upcoming + '</div><div class="apt-summary-label">Upcoming</div></div>';
+  html += '<div class="apt-summary-card missed" style="cursor:pointer;" onclick="renderAppointments(undefined, \'cancelled\')"><div class="apt-summary-value">' + (noshow + cancelled) + '</div><div class="apt-summary-label">Missed/Cancelled</div></div>';
+  html += '</div>';
+
+  if (filtered.length === 0) {
+    html += '<div class="empty-tab" style="padding:30px 0;"><p>No appointments match the selected filters</p></div>';
+    modalBody.innerHTML = html;
+    return;
+  }
+
+  var sorted = filtered.slice().sort(function(a, b) { return new Date(b.StartDateTime || b.AppointmentDateTime || 0) - new Date(a.StartDateTime || a.AppointmentDateTime || 0); });
+
+  // Group by date
+  var groups = {};
+  sorted.forEach(function(apt) {
+    var d = new Date(apt.StartDateTime || apt.AppointmentDateTime || '');
+    var key = isNaN(d) ? 'Unknown Date' : d.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(apt);
+  });
 
   html += '<div class="apt-list">';
-  sorted.forEach(function(apt) {
-    var dateStr = apt.StartDateTime || apt.AppointmentDateTime || '';
-    var status = apt.AppointmentStatus || apt.Status || 'Unknown';
-    var service = apt.ServiceName || apt.Service || '';
-    var doctor = apt.DoctorName || apt.Doctor || '';
-    var duration = apt.Duration ? apt.Duration + ' min' : '';
-    var statusClass = getAptStatusClass(status);
+  Object.keys(groups).forEach(function(dateLabel) {
+    html += '<div class="apt-date-header">' + escapeHtml(dateLabel) + ' <span style="color:#94a3b8;font-weight:400;">(' + groups[dateLabel].length + ')</span></div>';
+    groups[dateLabel].forEach(function(apt) {
+      var dateStr = apt.StartDateTime || apt.AppointmentDateTime || '';
+      var status = apt.AppointmentStatus || apt.Status || 'Unknown';
+      var service = apt.ServiceName || apt.Service || '';
+      var doctor = apt.DoctorName || apt.Doctor || '';
+      var duration = apt.Duration ? apt.Duration + ' min' : '';
+      var statusClass = getAptStatusClass(status);
 
-    html += '<div class="apt-item ' + statusClass + '">';
-    html += '<div class="apt-item-left">';
-    html += '<h4><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> ' + escapeHtml(service || 'Appointment') + '</h4>';
-    html += '<p>' + escapeHtml(formatDateTime(dateStr)) + '</p>';
-    html += '<div class="apt-meta">';
-    if (doctor) html += '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + escapeHtml(doctor) + '</span>';
-    if (duration) html += '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ' + escapeHtml(duration) + '</span>';
-    html += '</div>';
-    html += '</div>';
-    html += '<span class="apt-status ' + statusClass + '">' + escapeHtml(status) + '</span>';
-    html += '</div>';
+      html += '<div class="apt-item ' + statusClass + '">';
+      html += '<div class="apt-item-left">';
+      html += '<h4><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> ' + escapeHtml(service || 'Appointment') + '</h4>';
+      html += '<p>' + escapeHtml(formatTime(dateStr)) + '</p>';
+      html += '<div class="apt-meta">';
+      if (doctor) html += '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> ' + escapeHtml(doctor) + '</span>';
+      if (duration) html += '<span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ' + escapeHtml(duration) + '</span>';
+      html += '</div>';
+      html += '</div>';
+      html += '<span class="apt-status ' + statusClass + '">' + escapeHtml(status) + '</span>';
+      html += '</div>';
+    });
   });
   html += '</div>';
   modalBody.innerHTML = html;
