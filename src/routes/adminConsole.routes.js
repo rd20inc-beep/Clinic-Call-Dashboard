@@ -1096,10 +1096,9 @@ router.get('/admin/appointments', (req, res) => {
       'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 500'
     ).all(...params);
 
-    // Detect overdue: appointment date is past and status is still scheduled
     const todayStr = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' })).toISOString().split('T')[0];
 
-    // Enrich with agent from call history + compute overdue flag
+    // Enrich with agent from call history + compute flags
     // Status comes from the local clinicea_status column (synced every 30 min)
     let appointments = rawAppointments.map(apt => {
       let attributed_agent = null;
@@ -1115,12 +1114,22 @@ router.get('/admin/appointments', (req, res) => {
       const effective_agent = attributed_agent || apt.assigned_agent || null;
       const sl = (apt.clinicea_status || '').toLowerCase();
       const apptDateStr = apt.appointment_date ? new Date(apt.appointment_date).toISOString().split('T')[0] : null;
-      const is_overdue = !!(apptDateStr && apptDateStr < todayStr &&
+      const isPast = !!(apptDateStr && apptDateStr < todayStr);
+
+      // No-show: past appointment still marked "Scheduled" (patient never showed up)
+      const is_noshow = isPast &&
         (!apt.clinicea_status || sl.includes('scheduled')) &&
         !sl.includes('check') && !sl.includes('complet') && !sl.includes('arrived') &&
         !sl.includes('cancel') && !sl.includes('no show') && !sl.includes('noshow') &&
-        !sl.includes('engaged') && !sl.includes('confirmed'));
-      return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, is_overdue };
+        !sl.includes('engaged') && !sl.includes('confirmed');
+
+      // Cancelled: explicitly cancelled or no-show in Clinicea
+      const is_cancelled = sl.includes('cancel') || sl.includes('no show') || sl.includes('noshow');
+
+      // Needs callback: no-shows and cancellations need follow-up
+      const is_overdue = is_noshow || is_cancelled;
+
+      return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, is_overdue, is_noshow, is_cancelled };
     });
 
     // Agent filter: only show appointments attributed to the selected agent
