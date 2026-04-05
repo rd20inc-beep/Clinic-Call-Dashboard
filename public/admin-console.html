@@ -2013,12 +2013,29 @@
           html += '<div class="empty">No appointments match the selected filters</div>';
         } else {
           html += '<div class="perf-table-wrap" style="max-height:500px;"><table><thead><tr>';
-          html += '<th>Date</th><th>Patient</th><th>Phone</th><th>Doctor</th><th>Service</th><th>Booked By</th><th>Handled By</th><th>Confirmed</th>';
+          html += '<th>Date</th><th>Patient</th><th>Phone</th><th>Doctor</th><th>Service</th><th>Booked By</th><th>Handled By</th><th>Status</th>';
           html += '</tr></thead><tbody>';
           appts.forEach(function(a) {
             var apptDate = a.appointment_date ? new Date(a.appointment_date).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '-';
             var agentBadge = a.attributed_agent ? '<span class="badge badge-active">' + esc(a.attributed_agent) + '</span>' : '<span style="color:#94a3b8;">—</span>';
-            var confBadge = a.confirmation_sent ? '<span class="badge badge-success">Yes</span>' : '<span class="badge badge-disabled">No</span>';
+            var rawStatus = (a.clinicea_status || '').toLowerCase();
+            var statusLabel = a.clinicea_status || (a.confirmation_sent ? 'Confirmed' : 'Scheduled');
+            var statusBadge = '';
+            if (rawStatus.indexOf('check') >= 0 || rawStatus.indexOf('complet') >= 0 || rawStatus.indexOf('arrived') >= 0) {
+              statusBadge = '<span class="badge badge-success">' + esc(statusLabel) + '</span>';
+            } else if (rawStatus.indexOf('confirmed') >= 0 || rawStatus.indexOf('confirm') >= 0) {
+              statusBadge = '<span class="badge badge-active">' + esc(statusLabel) + '</span>';
+            } else if (rawStatus.indexOf('engaged') >= 0) {
+              statusBadge = '<span class="badge" style="background:#f3e8ff;color:#7c3aed;">' + esc(statusLabel) + '</span>';
+            } else if (rawStatus.indexOf('cancel') >= 0) {
+              statusBadge = '<span class="badge badge-disabled">' + esc(statusLabel) + '</span>';
+            } else if (rawStatus.indexOf('no show') >= 0 || rawStatus.indexOf('noshow') >= 0) {
+              statusBadge = '<span class="badge" style="background:#fef2f2;color:#dc2626;">' + esc(statusLabel) + '</span>';
+            } else if (rawStatus.indexOf('scheduled') >= 0 || !a.clinicea_status) {
+              statusBadge = '<span class="badge" style="background:#fffbeb;color:#d97706;">' + esc(statusLabel) + '</span>';
+            } else {
+              statusBadge = '<span class="badge">' + esc(statusLabel) + '</span>';
+            }
             html += '<tr>';
             html += '<td class="meta" style="white-space:nowrap;">' + apptDate + '</td>';
             html += '<td><strong>' + esc(a.patient_name || '-') + '</strong></td>';
@@ -2027,7 +2044,7 @@
             html += '<td>' + esc(a.service || '-') + '</td>';
             html += '<td>' + esc(a.created_by || '-') + '</td>';
             html += '<td>' + agentBadge + '</td>';
-            html += '<td>' + confBadge + '</td>';
+            html += '<td>' + statusBadge + '</td>';
             html += '</tr>';
           });
           html += '</tbody></table></div>';

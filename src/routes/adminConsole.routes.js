@@ -1064,7 +1064,7 @@ router.get('/admin/wa-sessions', (req, res) => {
 // -------------------------------------------------------------------------
 // GET /admin/appointments — today's appointments from tracking table
 // -------------------------------------------------------------------------
-router.get('/admin/appointments', (req, res) => {
+router.get('/admin/appointments', async (req, res) => {
   try {
     const { db } = require('../db/index');
     const period = req.query.period !== undefined ? req.query.period : 'today';
@@ -1096,7 +1096,34 @@ router.get('/admin/appointments', (req, res) => {
       'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 200'
     ).all(...params);
 
-    // Enrich each appointment with the agent who handled the patient's call
+    // Build a map of Clinicea appointment statuses by fetching from API for relevant dates
+    const statusMap = {};
+    try {
+      const { isClinicaConfigured } = require('../config/env');
+      if (isClinicaConfigured()) {
+        const { getAppointmentsByDate } = require('../services/clinicea.service');
+        // Collect unique dates from the appointments
+        const dates = new Set();
+        for (const apt of rawAppointments) {
+          if (apt.appointment_date) {
+            const d = new Date(apt.appointment_date);
+            if (!isNaN(d)) dates.add(d.toISOString().split('T')[0]);
+          }
+        }
+        // Fetch Clinicea data for each unique date (max 7 to avoid overload)
+        const dateArr = Array.from(dates).slice(0, 7);
+        const results = await Promise.allSettled(dateArr.map(d => getAppointmentsByDate(d)));
+        for (const result of results) {
+          if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+            for (const ca of result.value) {
+              if (ca.appointmentID) statusMap[String(ca.appointmentID)] = ca.status || 'Unknown';
+            }
+          }
+        }
+      }
+    } catch (e) { /* Clinicea enrichment is best-effort */ }
+
+    // Enrich each appointment with agent + Clinicea status
     let appointments = rawAppointments.map(apt => {
       let attributed_agent = null;
       if (apt.patient_phone) {
@@ -1108,7 +1135,8 @@ router.get('/admin/appointments', (req, res) => {
           if (match) attributed_agent = match.agent;
         } catch (e) { /* ignore */ }
       }
-      return { ...apt, attributed_agent };
+      const clinicea_status = statusMap[String(apt.appointment_id)] || null;
+      return { ...apt, attributed_agent, clinicea_status };
     });
 
     // Agent filter: only show appointments attributed to the selected agent
