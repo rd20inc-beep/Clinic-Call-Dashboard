@@ -28,7 +28,10 @@ function requireCallOwnership(req, res, next) {
       return res.status(403).json({ error: 'Access denied — not your call' });
     }
     next();
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) {
+    console.error('[calls] requireCallOwnership error:', e.message);
+    res.status(500).json({ error: 'Failed to verify call access.' });
+  }
 }
 
 // Clinicea service is loaded lazily to avoid circular deps or missing-module
@@ -268,11 +271,14 @@ router.get('/api/calls', requireAuth, apiLimiter, (req, res) => {
   }
 
   // Date range filter
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
   if (req.query.from) {
+    if (!dateRe.test(req.query.from)) return res.status(400).json({ error: 'Invalid from date format' });
     conditions.push('timestamp >= ?');
     params.push(req.query.from + ' 00:00:00');
   }
   if (req.query.to) {
+    if (!dateRe.test(req.query.to)) return res.status(400).json({ error: 'Invalid to date format' });
     conditions.push('timestamp <= ?');
     params.push(req.query.to + ' 23:59:59');
   }
@@ -307,7 +313,8 @@ router.get('/api/calls', requireAuth, apiLimiter, (req, res) => {
       filters: { status: req.query.status || null, agent: req.query.agent || null, direction: req.query.direction || null, from: req.query.from || null, to: req.query.to || null },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[calls] GET /api/calls error:', err.message);
+    res.status(500).json({ error: 'Failed to load call history.' });
   }
 });
 
@@ -346,7 +353,8 @@ router.get('/api/calls/confirmations', requireAuth, (req, res) => {
 
     res.json({ confirmations, total: confirmations.length });
   } catch (e) {
-    res.json({ confirmations: [], error: e.message });
+    console.error('[calls] confirmations error:', e.message);
+    res.json({ confirmations: [], error: 'Failed to load confirmations.' });
   }
 });
 
@@ -366,7 +374,8 @@ router.get('/api/calls/check-appointment', requireAuth, (req, res) => {
     const alreadySent = apt && apt.confirmation_sent === 1;
     res.json({ appointment: apt || null, confirmationAlreadySent: !!alreadySent });
   } catch (e) {
-    res.json({ appointment: null, error: e.message });
+    console.error('[calls] check-appointment error:', e.message);
+    res.json({ appointment: null, error: 'Failed to check appointment.' });
   }
 });
 
@@ -382,7 +391,8 @@ router.get('/api/calls/:id', requireAuth, requireCallOwnership, (req, res) => {
     if (!call) return res.status(404).json({ error: 'Call not found' });
     res.json({ call });
   } catch (e) {
-    res.json({ error: e.message });
+    console.error('[calls] GET call by ID error:', e.message);
+    res.json({ error: 'Failed to load call details.' });
   }
 });
 
@@ -459,7 +469,7 @@ router.post('/api/calls/send-confirmation', requireAuth, (req, res) => {
     res.json({ ok: true, message: 'Confirmation sent' });
   } catch (e) {
     console.error('[send-confirmation]', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Failed to send confirmation. Please try again.' });
   }
 });
 

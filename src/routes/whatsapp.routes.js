@@ -410,7 +410,8 @@ function setupWhatsAppRoutes(io) {
       logEvent('info', 'WA client logged out by ' + req.session.username);
       return res.json({ ok: true });
     } catch (err) {
-      return res.json({ error: err.message });
+      console.error('[whatsapp] logout error:', err.message);
+      return res.json({ error: 'Failed to disconnect WhatsApp. Please try again.' });
     }
   });
 

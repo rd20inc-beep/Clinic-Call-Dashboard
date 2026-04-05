@@ -29,6 +29,14 @@ db.exec(`
     agent TEXT,
     routing_method TEXT,
     source_ip TEXT,
+    direction TEXT DEFAULT 'inbound',
+    call_status TEXT DEFAULT 'unknown',
+    duration INTEGER DEFAULT NULL,
+    disposition TEXT,
+    notes TEXT,
+    source TEXT DEFAULT 'phone',
+    call_started_at DATETIME,
+    call_ended_at DATETIME,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
@@ -39,8 +47,14 @@ try { db.exec('ALTER TABLE calls ADD COLUMN patient_id TEXT'); } catch (e) { /* 
 try { db.exec('ALTER TABLE calls ADD COLUMN agent TEXT'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN routing_method TEXT'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN source_ip TEXT'); } catch (e) { /* already exists */ }
+try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* already exists */ }
+try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN disposition TEXT'); } catch (e) { /* already exists */ }
 try { db.exec('ALTER TABLE calls ADD COLUMN notes TEXT'); } catch (e) { /* already exists */ }
+try { db.exec("ALTER TABLE calls ADD COLUMN source TEXT DEFAULT 'phone'"); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN call_ended_at DATETIME'); } catch (e) { /* already exists */ }
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS wa_messages (
@@ -243,10 +257,7 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_caller ON callbacks(call
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name)'); } catch(e) {}
 
-// Call timing and source columns
-try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN call_ended_at DATETIME'); } catch (e) { /* exists */ }
-try { db.exec("ALTER TABLE calls ADD COLUMN source TEXT DEFAULT 'phone'"); } catch (e) { /* exists */ }
+// (call timing and source columns now defined above with the CREATE TABLE)
 
 // --- Callbacks table (missed calls that need follow-up) ---
 db.exec(`

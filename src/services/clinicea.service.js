@@ -117,7 +117,7 @@ async function cliniceaFetch(endpoint) {
     res = await fetch(url, { signal: controller.signal });
   } catch (e) {
     clearTimeout(timeout);
-    if (e.name === 'AbortError') throw new Error('Clinicea API timeout (15s): ' + endpoint);
+    if (e.name === 'AbortError') throw new Error('Clinicea API request timed out. Please try again.');
     throw e;
   }
   clearTimeout(timeout);
@@ -128,7 +128,10 @@ async function cliniceaFetch(endpoint) {
     const retryUrl = `${config.CLINICEA_API_BASE}${endpoint}${separator}api_key=${cliniceaToken}`;
     const retryRes = await fetch(retryUrl, { signal: AbortSignal.timeout(15000) });
     if (retryRes.status === 204) return [];
-    if (!retryRes.ok) throw new Error(`Clinicea API error ${retryRes.status} on retry: ${endpoint}`);
+    if (!retryRes.ok) {
+      const endpointName = endpoint.split('?')[0].split('/').pop() || 'unknown';
+      throw new Error(`Clinicea API error (${retryRes.status}) on ${endpointName}`);
+    }
     return parseJsonSafe(await retryRes.text(), endpoint);
   }
 
@@ -138,7 +141,9 @@ async function cliniceaFetch(endpoint) {
   if (!res.ok) {
     const preview = (await res.text().catch(() => '')).substring(0, 150);
     logEvent('error', `Clinicea API HTTP ${res.status}`, `${endpoint} | ${preview}`);
-    throw new Error(`Clinicea API error ${res.status}: ${endpoint}`);
+    // Strip endpoint details and raw error bodies — only expose status code to frontend
+    const endpointName = endpoint.split('?')[0].split('/').pop() || 'unknown';
+    throw new Error(`Clinicea API error (${res.status}) on ${endpointName}`);
   }
 
   return parseJsonSafe(await res.text(), endpoint);
@@ -149,7 +154,7 @@ function parseJsonSafe(text, endpoint) {
     return JSON.parse(text);
   } catch {
     logEvent('warn', 'Clinicea API non-JSON response', `${endpoint} | ${text.substring(0, 100)}`);
-    throw new Error('Clinicea API returned non-JSON: ' + endpoint);
+    throw new Error('Clinicea API returned an unexpected response. Please try again.');
   }
 }
 
@@ -391,8 +396,10 @@ async function findPatientByName(name) {
  * @returns {Promise<object|null>}
  */
 async function getNextAppointmentForPatient(patientID) {
+  if (!patientID || String(patientID).startsWith('local-')) return null;
+  const safeId = encodeURIComponent(patientID);
   const data = await cliniceaFetch(
-    `/api/v2/appointments/getAppointmentsByPatient?patientID=${patientID}&appointmentType=0&pageNo=1&pageSize=10`
+    `/api/v2/appointments/getAppointmentsByPatient?patientID=${safeId}&appointmentType=0&pageNo=1&pageSize=10`
   );
   if (!Array.isArray(data) || data.length === 0) return null;
 
@@ -416,13 +423,17 @@ async function getNextAppointmentForPatient(patientID) {
  * @returns {Promise<object>}
  */
 async function fetchProfileByPatientId(patientId) {
+  if (!patientId || String(patientId).startsWith('local-')) {
+    throw new Error('Cannot fetch Clinicea profile for a local-only patient.');
+  }
   const cached = profileCache.get(patientId);
   if (cached && Date.now() < cached.expiry) return cached.data;
 
+  const safeId = encodeURIComponent(patientId);
   const [details, appointments, bills] = await Promise.all([
-    cliniceaFetch(`/api/v3/patients/getPatientByID?patientID=${patientId}`),
-    cliniceaFetch(`/api/v2/appointments/getAppointmentsByPatient?patientID=${patientId}&appointmentType=2&pageNo=1&pageSize=50`),
-    cliniceaFetch(`/api/v2/bills/getBillsByPatient?patientID=${patientId}&billStatus=0&pageNo=1&pageSize=50`),
+    cliniceaFetch(`/api/v3/patients/getPatientByID?patientID=${safeId}`),
+    cliniceaFetch(`/api/v2/appointments/getAppointmentsByPatient?patientID=${safeId}&appointmentType=2&pageNo=1&pageSize=50`),
+    cliniceaFetch(`/api/v2/bills/getBillsByPatient?patientID=${safeId}&billStatus=0&pageNo=1&pageSize=50`),
   ]);
 
   const pat = Array.isArray(details) ? (details[0] || {}) : (details || {});

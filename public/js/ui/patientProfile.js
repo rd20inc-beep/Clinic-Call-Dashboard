@@ -31,8 +31,14 @@ function openProfileById(patientId, patientName) {
   profileModal.classList.add('active');
   modalClinicaLink.href = '#';
   modalTitle.textContent = patientName || 'Patient Profile';
-  modalBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div><p>Loading patient profile...</p></div>';
   modalTabs.querySelectorAll('.modal-tab').forEach(function(t, i) { t.classList.toggle('active', i === 0); });
+
+  if (String(patientId).indexOf('local-') === 0) {
+    modalBody.innerHTML = '<div class="modal-error">This patient exists only in the local database and has no Clinicea profile yet.</div>';
+    return;
+  }
+
+  modalBody.innerHTML = '<div class="modal-loading"><div class="spinner"></div><p>Loading patient profile...</p></div>';
 
   fetch('/api/patient-profile-by-id/' + encodeURIComponent(patientId))
     .then(function(r) { return r.json(); })

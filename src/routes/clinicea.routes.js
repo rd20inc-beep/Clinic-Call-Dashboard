@@ -62,7 +62,7 @@ router.get('/api/next-meeting/:phone', requireAuth, apiLimiter, async (req, res)
     return res.json(result);
   } catch (err) {
     logEvent('error', 'Clinicea API error', err.message);
-    return res.json({ nextMeeting: null, patientName: null, error: err.message });
+    return res.json({ nextMeeting: null, patientName: null, error: 'Failed to look up next appointment. Please try again.' });
   }
 });
 
@@ -84,7 +84,7 @@ router.get('/api/patient-profile/:phone', requireAuth, apiLimiter, async (req, r
     return res.json(result);
   } catch (err) {
     logEvent('error', 'Patient profile fetch failed', err.message);
-    return res.json({ error: err.message });
+    return res.json({ error: 'Failed to load patient profile. Please try again.' });
   }
 });
 
@@ -96,6 +96,10 @@ router.get(
   async (req, res) => {
     const patientId = req.params.patientId;
 
+    if (!patientId || patientId.startsWith('local-')) {
+      return res.json({ error: 'This patient exists only in the local database and has no Clinicea profile yet.' });
+    }
+
     if (!isClinicaConfigured()) {
       return res.json({ error: 'Clinicea API not configured' });
     }
@@ -105,7 +109,7 @@ router.get(
       return res.json(result);
     } catch (err) {
       logEvent('error', 'Patient profile by ID fetch failed', err.message);
-      return res.json({ error: err.message });
+      return res.json({ error: 'Failed to load patient profile. Please try again.' });
     }
   }
 );
@@ -136,6 +140,7 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
       const existingPhones = new Set(patients.map(p => p.phone.replace(/[\s\-()]/g, '')));
 
       for (const lp of localPatients) {
+        if (!lp.id) continue;
         const cleanPhone = (lp.phone || '').replace(/[\s\-()]/g, '');
         if (cleanPhone && !existingPhones.has(cleanPhone)) {
           patients.push({
@@ -210,7 +215,7 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
     });
   } catch (err) {
     logEvent('error', 'Patients list fetch failed', err.message);
-    return res.json({ error: err.message, patients: [], total: 0 });
+    return res.json({ error: 'Failed to load patients list. Please try again.', patients: [], total: 0 });
   }
 });
 
@@ -223,6 +228,9 @@ router.get(
     const date = req.query.date;
     if (!date) {
       return res.json({ error: 'date parameter required', appointments: [] });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.json({ error: 'Invalid date format (expected YYYY-MM-DD)', appointments: [] });
     }
 
     if (!isClinicaConfigured()) {
@@ -253,7 +261,7 @@ router.get(
       return res.json({ appointments, date });
     } catch (err) {
       logEvent('error', 'Appointments by date fetch failed', err.message);
-      return res.json({ error: err.message, appointments: [] });
+      return res.json({ error: 'Failed to load appointments. Please try again.', appointments: [] });
     }
   }
 );
@@ -270,7 +278,8 @@ router.post('/api/patients/edit', requireAuth, (req, res) => {
     patientsRepo.update(id, name, phone, email, gender, doctor, null, notes);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    logEvent('error', 'Patient edit failed', e.message);
+    res.status(500).json({ error: 'Failed to update patient record.' });
   }
 });
 

@@ -47,40 +47,9 @@ const CLINICEA_STAFF_USERNAME = process.env.CLINICEA_STAFF_USERNAME;
 const CLINICEA_STAFF_PASSWORD = process.env.CLINICEA_STAFF_PASSWORD;
 const CLINICEA_API_BASE = 'https://api.clinicea.com';
 
-// --- SQLite Setup ---
+// --- SQLite Setup (schema managed by src/db/index.js) ---
 const db = new Database('calls.db');
 db.pragma('journal_mode = WAL');
-db.exec(`
-  CREATE TABLE IF NOT EXISTS calls (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    caller_number TEXT NOT NULL,
-    call_sid TEXT,
-    clinicea_url TEXT,
-    patient_name TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  )
-`);
-
-// Add patient_name and patient_id columns if missing (existing DBs)
-try { db.exec('ALTER TABLE calls ADD COLUMN patient_name TEXT'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN patient_id TEXT'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN agent TEXT'); } catch (e) { /* already exists */ }
-try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* already exists */ }
-try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* already exists */ }
-
-// One-time migration: normalize all existing 03XXX numbers to +92XXX
-const oldNumbers = db.prepare("SELECT id, caller_number FROM calls WHERE caller_number LIKE '03%' AND length(caller_number) = 11").all();
-if (oldNumbers.length > 0) {
-  const updateNum = db.prepare('UPDATE calls SET caller_number = ? WHERE id = ?');
-  const migrate = db.transaction(() => {
-    for (const row of oldNumbers) {
-      updateNum.run('+92' + row.caller_number.substring(1), row.id);
-    }
-  });
-  migrate();
-  console.log(`[MIGRATION] Normalized ${oldNumbers.length} phone numbers from 03XXX to +92XXX`);
-}
 
 const updateCallPatientName = db.prepare(
   'UPDATE calls SET patient_name = ? WHERE id = ?'

@@ -183,7 +183,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
       agentStats: agentStats,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[admin-console]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
   }
 });
 
@@ -427,7 +427,7 @@ router.get('/admin/agents/:id/performance', (req, res) => {
       appointments: agentAppointments,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[admin-console]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
   }
 });
 
@@ -484,7 +484,7 @@ router.get('/admin/leaderboard', requireAuth, requireAdmin, (req, res) => {
 
     res.json({ period, leaderboard: ranked });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[admin-console]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
   }
 });
 
@@ -516,7 +516,7 @@ router.get('/admin/calls/history', (req, res) => {
 
     res.json({ calls, total, page, totalPages: Math.ceil(total / limit) || 1 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[admin-console]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
   }
 });
 
@@ -544,7 +544,7 @@ router.get('/admin/analytics/trends', (req, res) => {
 
     res.json({ trends: rows });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[admin-console]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
   }
 });
 
@@ -596,7 +596,7 @@ router.get('/admin/analytics/peak-hours', requireAuth, requireAdminOrDoctor, (re
 
     res.json({ hours, peak, days, peakDay, totalCalls, avgPerHour: activeHours > 0 ? Math.round(totalCalls / activeHours) : 0 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[admin-console]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
   }
 });
 
@@ -782,7 +782,7 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
       totalSameServiceRecurring: sameServiceRecurring.recurring,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[admin-console]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
   }
 });
 
@@ -832,7 +832,7 @@ router.get('/admin/analytics/login-history', requireAuth, requireAdmin, (req, re
 
     res.json({ logins, summary, todaySummary, liveStatus });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[admin-console]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
   }
 });
 
@@ -1123,7 +1123,7 @@ router.get('/admin/appointments', (req, res) => {
 
     res.json({ appointments, agents, services, doctors, bookedByList, total: appointments.length });
   } catch (err) {
-    res.status(500).json({ error: err.message, appointments: [] });
+    console.error('[admin-console] appointments error:', err.message); res.status(500).json({ error: 'Failed to load appointments.', appointments: [] });
   }
 });
 

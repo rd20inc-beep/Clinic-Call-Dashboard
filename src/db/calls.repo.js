@@ -4,17 +4,10 @@ const { db } = require('./index');
 
 // --- Prepared statements ---
 
-// Ensure columns exist
-try { db.exec('ALTER TABLE calls ADD COLUMN disposition TEXT'); } catch (e) { /* exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN notes TEXT'); } catch (e) { /* exists */ }
+// All column migrations are handled in src/db/index.js
 
 const stmtUpdateDisposition = db.prepare('UPDATE calls SET disposition = ? WHERE id = ?');
 const stmtUpdateNotes = db.prepare('UPDATE calls SET notes = ? WHERE id = ?');
-
-// Ensure direction/call_status/duration columns exist
-try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* exists */ }
-try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* exists */ }
 
 const stmtInsertCall = db.prepare(`
   INSERT INTO calls (caller_number, call_sid, clinicea_url, agent, routing_method, source_ip, direction, call_status, source)

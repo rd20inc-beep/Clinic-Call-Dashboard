@@ -147,7 +147,7 @@ module.exports = function setupAdminRoutes(io) {
         alerts,
       });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      console.error('[admin]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
     }
   });
 
@@ -187,7 +187,7 @@ module.exports = function setupAdminRoutes(io) {
 
       res.json({ hourly, answeredHourly, missedHourly, dailyTrend: dailyRows, agentComparison: agentComp });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      console.error('[admin]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
     }
   });
 
@@ -617,7 +617,7 @@ module.exports = function setupAdminRoutes(io) {
         leaderboard: ranked,
       });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      console.error('[admin]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
     }
   });
 
@@ -690,7 +690,7 @@ module.exports = function setupAdminRoutes(io) {
         },
       });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      console.error('[admin]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
     }
   });
 
@@ -748,7 +748,7 @@ module.exports = function setupAdminRoutes(io) {
         lowActivity,
       });
     } catch (err) {
-      res.status(500).json({ error: err.message });
+      console.error('[admin]', err.message); res.status(500).json({ error: 'An internal error occurred. Please try again.' });
     }
   });
 
