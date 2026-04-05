@@ -1067,17 +1067,23 @@ router.get('/admin/wa-sessions', (req, res) => {
 router.get('/admin/appointments', (req, res) => {
   try {
     const { db } = require('../db/index');
-    const period = req.query.period || 'today';
+    const period = req.query.period !== undefined ? req.query.period : 'today';
     const agent = req.query.agent || '';
     const service = req.query.service || '';
+    const specificDate = req.query.date || '';
 
     let dateFilter = "date(appointment_date) = date('now')";
-    if (period === 'week') dateFilter = "appointment_date >= datetime('now', '-7 days')";
+    if (specificDate && /^\d{4}-\d{2}-\d{2}$/.test(specificDate)) {
+      dateFilter = "date(appointment_date) = ?";
+    } else if (period === 'week') dateFilter = "appointment_date >= datetime('now', '-7 days')";
     else if (period === 'month') dateFilter = "appointment_date >= datetime('now', '-30 days')";
-    else if (period === '') dateFilter = '1=1';
+    else if (period === '' || period === 'all') dateFilter = '1=1';
 
     let where = 'WHERE ' + dateFilter;
     const params = [];
+    if (specificDate && /^\d{4}-\d{2}-\d{2}$/.test(specificDate)) {
+      params.push(specificDate);
+    }
 
     // Filters
     if (service) { where += ' AND service LIKE ?'; params.push('%' + service + '%'); }

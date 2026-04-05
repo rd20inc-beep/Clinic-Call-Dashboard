@@ -1907,6 +1907,7 @@
     var apptService = '';
     var apptDoctor = '';
     var apptBookedBy = '';
+    var apptDate = '';
 
     function closeApptModal() { document.getElementById('apptModal').classList.remove('active'); }
 
@@ -1915,6 +1916,7 @@
       apptService = '';
       apptBookedBy = '';
       apptDoctor = '';
+      apptDate = '';
       document.getElementById('apptModal').classList.add('active');
       document.getElementById('apptContent').innerHTML = '<div class="empty"><div class="loading-spinner"></div></div>';
       await loadAppointmentsModal();
@@ -1922,16 +1924,21 @@
 
     function setApptPeriod(p) {
       apptPeriod = p;
-      document.querySelectorAll('#apptContent .perf-filter-btn').forEach(function(b) {
-        b.classList.toggle('pf-active', b.getAttribute('data-ap') === p);
-      });
+      apptDate = '';
+      loadAppointmentsModal();
+    }
+
+    function setApptDate(d) {
+      apptDate = d;
+      if (d) apptPeriod = '';
       loadAppointmentsModal();
     }
 
     async function loadAppointmentsModal() {
       try {
         var params = new URLSearchParams();
-        params.set('period', apptPeriod);
+        params.set('period', apptDate ? '' : apptPeriod);
+        if (apptDate) params.set('date', apptDate);
         if (apptAgent) params.set('agent', apptAgent);
         if (apptService) params.set('service', apptService);
         if (apptDoctor) params.set('doctor', apptDoctor);
@@ -1952,12 +1959,17 @@
         html += '<div class="perf-header-right"><button class="btn btn-outline btn-sm" onclick="closeApptModal()">Close</button></div>';
         html += '</div>';
 
-        // Filters row 1: period pills
-        html += '<div class="perf-filter-bar" style="gap:6px;margin-bottom:6px;">';
-        html += '<button class="perf-filter-btn' + (apptPeriod==='today'?' pf-active':'') + '" onclick="setApptPeriod(\'today\')">Today</button>';
-        html += '<button class="perf-filter-btn' + (apptPeriod==='week'?' pf-active':'') + '" onclick="setApptPeriod(\'week\')">This Week</button>';
-        html += '<button class="perf-filter-btn' + (apptPeriod==='month'?' pf-active':'') + '" onclick="setApptPeriod(\'month\')">This Month</button>';
-        html += '<button class="perf-filter-btn' + (apptPeriod===''?' pf-active':'') + '" onclick="setApptPeriod(\'\')">All</button>';
+        // Filters row 1: period pills + date picker
+        html += '<div class="perf-filter-bar" style="gap:6px;margin-bottom:6px;align-items:center;">';
+        html += '<button class="perf-filter-btn' + (apptPeriod==='today'&&!apptDate?' pf-active':'') + '" onclick="setApptPeriod(\'today\')">Today</button>';
+        html += '<button class="perf-filter-btn' + (apptPeriod==='week'&&!apptDate?' pf-active':'') + '" onclick="setApptPeriod(\'week\')">This Week</button>';
+        html += '<button class="perf-filter-btn' + (apptPeriod==='month'&&!apptDate?' pf-active':'') + '" onclick="setApptPeriod(\'month\')">This Month</button>';
+        html += '<button class="perf-filter-btn' + ((apptPeriod===''||apptPeriod==='all')&&!apptDate?' pf-active':'') + '" onclick="setApptPeriod(\'all\')">All</button>';
+        html += '<span style="color:#cbd5e1;margin:0 4px;">|</span>';
+        html += '<input type="date" value="' + esc(apptDate) + '" onchange="setApptDate(this.value)" style="padding:5px 10px;border:1px solid ' + (apptDate ? '#6366f1' : '#d1d5db') + ';border-radius:8px;font-size:13px;color:#334155;background:' + (apptDate ? '#eef2ff' : '#fff') + ';">';
+        if (apptDate) {
+          html += '<button class="perf-filter-btn" onclick="setApptDate(\'\')" style="color:#6366f1;font-size:12px;">Clear Date</button>';
+        }
         html += '</div>';
 
         // Filters row 2: agent + service dropdowns
