@@ -220,8 +220,9 @@ try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_phone ON wa_messages(phone)
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_status ON wa_messages(status)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_dir ON wa_messages(direction, created_at DESC)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_phone ON wa_appointment_tracking(patient_phone)'); } catch(e) {}
-// Migration: add created_by column to appointment tracking
+// Migration: add created_by and assigned_agent columns to appointment tracking
 try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN created_by TEXT"); } catch(e) { /* already exists */ }
+try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN assigned_agent TEXT"); } catch(e) { /* already exists */ }
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_status ON callbacks(callback_status)'); } catch(e) {}
 
 // --- Login history (tracks all login events) ---

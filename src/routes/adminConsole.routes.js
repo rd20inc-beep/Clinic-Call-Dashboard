@@ -1093,7 +1093,7 @@ router.get('/admin/appointments', async (req, res) => {
     if (bookedBy) { where += ' AND created_by LIKE ?'; params.push('%' + bookedBy + '%'); }
 
     const rawAppointments = db.prepare(
-      'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 200'
+      'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 500'
     ).all(...params);
 
     // Build a map of Clinicea appointment statuses by fetching from API for relevant dates
@@ -1123,7 +1123,10 @@ router.get('/admin/appointments', async (req, res) => {
       }
     } catch (e) { /* Clinicea enrichment is best-effort */ }
 
-    // Enrich each appointment with agent + Clinicea status
+    // Detect overdue: appointment date is past and status is still scheduled
+    const todayStr = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' })).toISOString().split('T')[0];
+
+    // Enrich each appointment with agent + Clinicea status + overdue flag
     let appointments = rawAppointments.map(apt => {
       let attributed_agent = null;
       if (apt.patient_phone) {
@@ -1135,8 +1138,16 @@ router.get('/admin/appointments', async (req, res) => {
           if (match) attributed_agent = match.agent;
         } catch (e) { /* ignore */ }
       }
+      const effective_agent = attributed_agent || apt.assigned_agent || null;
       const clinicea_status = statusMap[String(apt.appointment_id)] || null;
-      return { ...apt, attributed_agent, clinicea_status };
+      const sl = (clinicea_status || '').toLowerCase();
+      const apptDateStr = apt.appointment_date ? new Date(apt.appointment_date).toISOString().split('T')[0] : null;
+      const is_overdue = !!(apptDateStr && apptDateStr < todayStr &&
+        (!clinicea_status || sl.includes('scheduled')) &&
+        !sl.includes('check') && !sl.includes('complet') && !sl.includes('arrived') &&
+        !sl.includes('cancel') && !sl.includes('no show') && !sl.includes('noshow') &&
+        !sl.includes('engaged') && !sl.includes('confirmed'));
+      return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, clinicea_status, is_overdue };
     });
 
     // Agent filter: only show appointments attributed to the selected agent
@@ -1148,16 +1159,35 @@ router.get('/admin/appointments', async (req, res) => {
     const services = db.prepare("SELECT DISTINCT service FROM wa_appointment_tracking WHERE service IS NOT NULL AND service != '' ORDER BY service").all().map(r => r.service);
     const doctors = db.prepare("SELECT DISTINCT doctor_name FROM wa_appointment_tracking WHERE doctor_name IS NOT NULL AND doctor_name != '' ORDER BY doctor_name").all().map(r => r.doctor_name);
     const bookedByList = db.prepare("SELECT DISTINCT created_by FROM wa_appointment_tracking WHERE created_by IS NOT NULL AND created_by != '' ORDER BY created_by").all().map(r => r.created_by);
-    // Get agents who handled these patients' calls
-    const agents = [];
+    // Get all agents (from users table + call history) for assignment dropdown
+    const agentSet = new Set();
     try {
-      const agentRows = db.prepare("SELECT DISTINCT agent FROM calls WHERE agent IS NOT NULL ORDER BY agent").all();
-      agentRows.forEach(r => agents.push(r.agent));
+      db.prepare("SELECT DISTINCT agent FROM calls WHERE agent IS NOT NULL").all().forEach(r => agentSet.add(r.agent));
+      db.prepare("SELECT username FROM users WHERE active = 1 AND deleted_at IS NULL").all().forEach(r => agentSet.add(r.username));
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
+    const agents = Array.from(agentSet).sort();
 
     res.json({ appointments, agents, services, doctors, bookedByList, total: appointments.length });
   } catch (err) {
     console.error('[admin-console] appointments error:', err.message); res.status(500).json({ error: 'Failed to load appointments.', appointments: [] });
+  }
+});
+
+// -------------------------------------------------------------------------
+// POST /admin/appointments/:id/assign — assign agent to appointment
+// -------------------------------------------------------------------------
+router.post('/admin/appointments/:id/assign', (req, res) => {
+  try {
+    const { db } = require('../db/index');
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid appointment ID' });
+    const agent = (req.body.agent || '').trim();
+    db.prepare('UPDATE wa_appointment_tracking SET assigned_agent = ? WHERE id = ?').run(agent || null, id);
+    auditRepo.log('appointment_agent_assigned', 'appointment:' + id, 'Assigned to: ' + (agent || 'unassigned'), req.session.username);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin-console] assign appointment error:', err.message);
+    res.status(500).json({ error: 'Failed to assign agent.' });
   }
 });
 

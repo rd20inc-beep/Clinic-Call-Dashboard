@@ -270,6 +270,7 @@
       border-radius: 50%; animation: spin 0.6s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
     .score-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; width: 80px; display: inline-block; vertical-align: middle; margin-left: 6px; }
     .score-fill { height: 100%; background: #10b981; border-radius: 3px; transition: width 0.3s ease; }
     .reset-badge { font-size: 10px; color: #f59e0b; font-weight: 700; }
@@ -326,6 +327,7 @@
       <button class="tab-btn" onclick="switchTab('leaderboard')">Leaderboard</button>
       <button class="tab-btn" onclick="switchTab('callhistory')">Call History</button>
       <button class="tab-btn" onclick="switchTab('callbacks')">Callbacks</button>
+      <button class="tab-btn" onclick="switchTab('appointments')">Appointments</button>
       <button class="tab-btn" onclick="switchTab('agents')">Agent Management</button>
       <button class="tab-btn" onclick="switchTab('insights')">Insights</button>
       <button class="tab-btn" onclick="switchTab('audit')">Audit Log</button>
@@ -593,6 +595,29 @@
       </div>
     </div>
 
+    <!-- ===== APPOINTMENTS TAB ===== -->
+    <div class="tab-panel" id="panel-appointments">
+      <!-- KPI Summary -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px;" class="ov-grid-4">
+        <div class="stat-card blue" style="padding:12px;"><div class="stat-value" style="font-size:22px;" id="apptTabTotal">-</div><div class="stat-label">Total</div></div>
+        <div class="stat-card green" style="padding:12px;"><div class="stat-value" style="font-size:22px;" id="apptTabShowedUp">-</div><div class="stat-label">Showed Up</div></div>
+        <div class="stat-card red" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='overdue';loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabOverdue">-</div><div class="stat-label">Needs Callback</div></div>
+        <div class="stat-card orange" style="padding:12px;"><div class="stat-value" style="font-size:22px;" id="apptTabCancelled">-</div><div class="stat-label">Cancelled / No-Show</div></div>
+        <div class="stat-card teal" style="padding:12px;"><div class="stat-value" style="font-size:22px;" id="apptTabShowRate">-</div><div class="stat-label">Show-Up Rate</div></div>
+      </div>
+      <!-- Filters + Table -->
+      <div class="card">
+        <h2>Appointments <span class="card-muted" id="apptTabCount"></span></h2>
+        <div id="apptTabFilterBar" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px;"></div>
+        <div style="overflow-x:auto;" id="apptTabTable"><div class="empty"><div class="loading-spinner"></div></div></div>
+      </div>
+      <!-- Agent Performance -->
+      <div class="card" style="margin-top:12px;">
+        <h2>Agent Booking Performance</h2>
+        <div style="overflow-x:auto;" id="apptAgentStats"><div class="empty"><div class="loading-spinner"></div></div></div>
+      </div>
+    </div>
+
     <!-- ===== AUDIT LOG TAB ===== -->
     <div class="tab-panel" id="panel-audit">
       <div class="card">
@@ -718,7 +743,7 @@
     // ===== TAB SWITCHING =====
     function switchTab(tab) {
       currentTab = tab;
-      var tabMap = ['overview','performance','leaderboard','callhistory','callbacks','agents','audit'];
+      var tabMap = ['overview','performance','leaderboard','callhistory','callbacks','appointments','agents','insights','audit'];
       document.querySelectorAll('.tab-btn').forEach(function(b, i) {
         b.classList.toggle('active', tabMap[i] === tab);
       });
@@ -731,6 +756,7 @@
       if (tab === 'callhistory') { populateCallHistoryAgentFilter(); loadCallHistory(); }
       if (tab === 'insights') { loadPeakHours('week'); loadInsights('month'); loadLoginHistory(); }
       if (tab === 'callbacks') loadCallbacks();
+      if (tab === 'appointments') loadAppointmentsTab();
       if (tab === 'agents') loadAgents();
       if (tab === 'audit') loadAuditLog();
     }
@@ -1893,7 +1919,7 @@
           switchTab('leaderboard');
           break;
         case 'appointments':
-          showAppointmentsModal();
+          switchTab('appointments');
           break;
         case 'callbacks':
           switchTab('callbacks');
@@ -2053,6 +2079,189 @@
         document.getElementById('apptContent').innerHTML = html;
       } catch(e) {
         document.getElementById('apptContent').innerHTML = '<div class="empty">Error loading appointments</div>';
+      }
+    }
+
+    // ===== APPOINTMENTS TAB =====
+    var apptTabState = { period: 'month', date: '', agent: '', service: '', doctor: '', bookedBy: '', statusFilter: '' };
+
+    function setApptTabPeriod(p) { apptTabState.period = p; apptTabState.date = ''; loadAppointmentsTab(); }
+    function setApptTabDate(d) { apptTabState.date = d; if (d) apptTabState.period = ''; loadAppointmentsTab(); }
+
+    function apptStatusBadge(a) {
+      var rawStatus = (a.clinicea_status || '').toLowerCase();
+      var label = a.clinicea_status || (a.confirmation_sent ? 'Confirmed' : 'Scheduled');
+      if (a.is_overdue) return '<span class="badge" style="background:#fef2f2;color:#dc2626;animation:pulse 2s infinite;">Overdue</span>';
+      if (rawStatus.indexOf('check') >= 0 || rawStatus.indexOf('complet') >= 0 || rawStatus.indexOf('arrived') >= 0) return '<span class="badge badge-success">' + esc(label) + '</span>';
+      if (rawStatus.indexOf('confirmed') >= 0) return '<span class="badge badge-active">' + esc(label) + '</span>';
+      if (rawStatus.indexOf('engaged') >= 0) return '<span class="badge" style="background:#f3e8ff;color:#7c3aed;">' + esc(label) + '</span>';
+      if (rawStatus.indexOf('cancel') >= 0) return '<span class="badge badge-disabled">' + esc(label) + '</span>';
+      if (rawStatus.indexOf('no show') >= 0 || rawStatus.indexOf('noshow') >= 0) return '<span class="badge" style="background:#fef2f2;color:#dc2626;">' + esc(label) + '</span>';
+      return '<span class="badge" style="background:#fffbeb;color:#d97706;">' + esc(label) + '</span>';
+    }
+
+    function isShowedUp(a) {
+      var s = (a.clinicea_status || '').toLowerCase();
+      return s.indexOf('check') >= 0 || s.indexOf('complet') >= 0 || s.indexOf('arrived') >= 0 || s.indexOf('engaged') >= 0;
+    }
+
+    function isCancelledOrNoShow(a) {
+      var s = (a.clinicea_status || '').toLowerCase();
+      return s.indexOf('cancel') >= 0 || s.indexOf('no show') >= 0 || s.indexOf('noshow') >= 0;
+    }
+
+    async function assignApptAgent(apptId, agent) {
+      try {
+        var r = await fetch('/admin/appointments/' + apptId + '/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent: agent }) });
+        var d = await r.json();
+        if (d.ok) loadAppointmentsTab();
+      } catch (e) { alert('Failed to assign: ' + e.message); }
+    }
+
+    async function loadAppointmentsTab() {
+      var s = apptTabState;
+      var params = new URLSearchParams();
+      params.set('period', s.date ? '' : s.period);
+      if (s.date) params.set('date', s.date);
+      if (s.agent) params.set('agent', s.agent);
+      if (s.service) params.set('service', s.service);
+      if (s.doctor) params.set('doctor', s.doctor);
+      if (s.bookedBy) params.set('bookedBy', s.bookedBy);
+
+      try {
+        var res = await fetch('/admin/appointments?' + params.toString());
+        var data = await res.json();
+        var appts = data.appointments || [];
+        var agents = data.agents || [];
+
+        // Apply client-side status filter
+        var filtered = appts;
+        if (s.statusFilter === 'overdue') filtered = appts.filter(function(a) { return a.is_overdue; });
+        else if (s.statusFilter === 'showed') filtered = appts.filter(isShowedUp);
+        else if (s.statusFilter === 'cancelled') filtered = appts.filter(isCancelledOrNoShow);
+        else if (s.statusFilter === 'scheduled') filtered = appts.filter(function(a) { var sl = (a.clinicea_status||'').toLowerCase(); return !sl || sl.indexOf('scheduled') >= 0; });
+
+        // KPI stats (from full appts, not filtered)
+        var total = appts.length;
+        var showedUp = appts.filter(isShowedUp).length;
+        var overdue = appts.filter(function(a) { return a.is_overdue; }).length;
+        var cancelled = appts.filter(isCancelledOrNoShow).length;
+        var showRate = total > 0 ? Math.round((showedUp / total) * 100) + '%' : '-';
+        document.getElementById('apptTabTotal').textContent = total;
+        document.getElementById('apptTabShowedUp').textContent = showedUp;
+        document.getElementById('apptTabOverdue').textContent = overdue;
+        document.getElementById('apptTabCancelled').textContent = cancelled;
+        document.getElementById('apptTabShowRate').textContent = showRate;
+        document.getElementById('apptTabCount').textContent = '(' + filtered.length + (filtered.length !== total ? ' of ' + total : '') + ')';
+
+        // Filter bar
+        var fb = '';
+        fb += '<button class="filter-btn' + (s.period==='today'&&!s.date?' active':'') + '" onclick="setApptTabPeriod(\'today\')">Today</button>';
+        fb += '<button class="filter-btn' + (s.period==='week'&&!s.date?' active':'') + '" onclick="setApptTabPeriod(\'week\')">This Week</button>';
+        fb += '<button class="filter-btn' + (s.period==='month'&&!s.date?' active':'') + '" onclick="setApptTabPeriod(\'month\')">This Month</button>';
+        fb += '<button class="filter-btn' + ((s.period===''||s.period==='all')&&!s.date?' active':'') + '" onclick="setApptTabPeriod(\'all\')">All</button>';
+        fb += '<span style="color:#e2e8f0;margin:0 2px;">|</span>';
+        fb += '<input type="date" value="' + esc(s.date) + '" onchange="setApptTabDate(this.value)" style="padding:5px 10px;border:1px solid ' + (s.date?'#6366f1':'#e2e8f0') + ';border-radius:6px;font-size:13px;' + (s.date?'background:#eef2ff;':'') + '">';
+        fb += '<span style="color:#e2e8f0;margin:0 2px;">|</span>';
+        // Status filter
+        fb += '<select class="filter-select" onchange="apptTabState.statusFilter=this.value;loadAppointmentsTab()">';
+        fb += '<option value="">All Statuses</option>';
+        fb += '<option value="overdue"' + (s.statusFilter==='overdue'?' selected':'') + '>Needs Callback (' + overdue + ')</option>';
+        fb += '<option value="showed"' + (s.statusFilter==='showed'?' selected':'') + '>Showed Up</option>';
+        fb += '<option value="cancelled"' + (s.statusFilter==='cancelled'?' selected':'') + '>Cancelled / No-Show</option>';
+        fb += '<option value="scheduled"' + (s.statusFilter==='scheduled'?' selected':'') + '>Scheduled</option>';
+        fb += '</select>';
+        // Agent filter
+        fb += '<select class="filter-select" onchange="apptTabState.agent=this.value;loadAppointmentsTab()">';
+        fb += '<option value="">All Agents</option>';
+        agents.forEach(function(ag) { fb += '<option value="' + esc(ag) + '"' + (s.agent===ag?' selected':'') + '>' + esc(ag) + '</option>'; });
+        fb += '</select>';
+        // Service filter
+        fb += '<select class="filter-select" onchange="apptTabState.service=this.value;loadAppointmentsTab()">';
+        fb += '<option value="">All Services</option>';
+        (data.services||[]).forEach(function(sv) { fb += '<option value="' + esc(sv) + '"' + (s.service===sv?' selected':'') + '>' + esc(sv) + '</option>'; });
+        fb += '</select>';
+        // Doctor filter
+        fb += '<select class="filter-select" onchange="apptTabState.doctor=this.value;loadAppointmentsTab()">';
+        fb += '<option value="">All Doctors</option>';
+        (data.doctors||[]).forEach(function(doc) { fb += '<option value="' + esc(doc) + '"' + (s.doctor===doc?' selected':'') + '>' + esc(doc) + '</option>'; });
+        fb += '</select>';
+        if (s.agent || s.service || s.doctor || s.bookedBy || s.statusFilter || s.date) {
+          fb += '<button class="filter-btn" onclick="apptTabState={period:\'month\',date:\'\',agent:\'\',service:\'\',doctor:\'\',bookedBy:\'\',statusFilter:\'\'};loadAppointmentsTab()" style="color:#ef4444;font-size:12px;">Clear All</button>';
+        }
+        document.getElementById('apptTabFilterBar').innerHTML = fb;
+
+        // Table
+        var html = '';
+        if (filtered.length === 0) {
+          html = '<div class="empty">No appointments match the selected filters</div>';
+        } else {
+          html += '<table><thead><tr>';
+          html += '<th>Date</th><th>Patient</th><th>Phone</th><th>Doctor</th><th>Service</th><th>Booked By</th><th>Agent</th><th>Status</th>';
+          html += '</tr></thead><tbody>';
+          filtered.forEach(function(a) {
+            var apptDate = a.appointment_date ? new Date(a.appointment_date).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '-';
+            var rowClass = a.is_overdue ? ' style="background:#fef2f2;border-left:3px solid #ef4444;"' : '';
+            // Agent cell: show assigned or dropdown
+            var agentCell = '';
+            if (a.attributed_agent) {
+              agentCell = '<span class="badge badge-active">' + esc(a.attributed_agent) + '</span>';
+              if (a.manually_assigned) agentCell += ' <span style="font-size:10px;color:#94a3b8;">(assigned)</span>';
+            } else {
+              agentCell = '<select class="filter-select" style="min-width:100px;font-size:11px;padding:3px 6px;" onchange="assignApptAgent(' + a.id + ',this.value)">';
+              agentCell += '<option value="">Assign...</option>';
+              agents.forEach(function(ag) { agentCell += '<option value="' + esc(ag) + '">' + esc(ag) + '</option>'; });
+              agentCell += '</select>';
+            }
+            html += '<tr' + rowClass + '>';
+            html += '<td class="meta" style="white-space:nowrap;">' + apptDate + '</td>';
+            html += '<td><strong>' + esc(a.patient_name || '-') + '</strong></td>';
+            html += '<td style="font-family:monospace;font-size:11px;">' + esc(a.patient_phone || '-') + '</td>';
+            html += '<td>' + esc(a.doctor_name || '-') + '</td>';
+            html += '<td>' + esc(a.service || '-') + '</td>';
+            html += '<td>' + esc(a.created_by || '-') + '</td>';
+            html += '<td>' + agentCell + '</td>';
+            html += '<td>' + apptStatusBadge(a) + '</td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+        }
+        document.getElementById('apptTabTable').innerHTML = html;
+
+        // Agent booking performance stats
+        var agentMap = {};
+        appts.forEach(function(a) {
+          var ag = a.attributed_agent || a.created_by || 'Unassigned';
+          if (!agentMap[ag]) agentMap[ag] = { booked: 0, showedUp: 0, cancelled: 0 };
+          agentMap[ag].booked++;
+          if (isShowedUp(a)) agentMap[ag].showedUp++;
+          if (isCancelledOrNoShow(a)) agentMap[ag].cancelled++;
+        });
+        var agentArr = Object.keys(agentMap).map(function(ag) { return { name: ag, stats: agentMap[ag] }; })
+          .sort(function(a, b) { return b.stats.booked - a.stats.booked; });
+
+        var sh = '';
+        if (agentArr.length === 0) {
+          sh = '<div class="empty">No data</div>';
+        } else {
+          sh += '<table><thead><tr><th>Agent</th><th>Booked</th><th>Showed Up</th><th>Cancelled / No-Show</th><th>Show-Up Rate</th><th></th></tr></thead><tbody>';
+          agentArr.forEach(function(a) {
+            var rate = a.stats.booked > 0 ? Math.round((a.stats.showedUp / a.stats.booked) * 100) : 0;
+            var barColor = rate >= 70 ? '#22c55e' : rate >= 40 ? '#f59e0b' : '#ef4444';
+            sh += '<tr>';
+            sh += '<td><strong>' + esc(a.name) + '</strong></td>';
+            sh += '<td>' + a.stats.booked + '</td>';
+            sh += '<td>' + a.stats.showedUp + '</td>';
+            sh += '<td>' + a.stats.cancelled + '</td>';
+            sh += '<td><strong>' + rate + '%</strong></td>';
+            sh += '<td style="width:120px;"><div style="background:#f1f5f9;border-radius:4px;height:8px;overflow:hidden;"><div style="background:' + barColor + ';height:100%;width:' + rate + '%;border-radius:4px;transition:width 0.5s;"></div></div></td>';
+            sh += '</tr>';
+          });
+          sh += '</tbody></table>';
+        }
+        document.getElementById('apptAgentStats').innerHTML = sh;
+      } catch (e) {
+        document.getElementById('apptTabTable').innerHTML = '<div class="empty">Error loading appointments</div>';
       }
     }
 
