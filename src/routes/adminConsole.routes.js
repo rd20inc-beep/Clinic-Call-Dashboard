@@ -1064,7 +1064,7 @@ router.get('/admin/wa-sessions', (req, res) => {
 // -------------------------------------------------------------------------
 // GET /admin/appointments — today's appointments from tracking table
 // -------------------------------------------------------------------------
-router.get('/admin/appointments', async (req, res) => {
+router.get('/admin/appointments', (req, res) => {
   try {
     const { db } = require('../db/index');
     const period = req.query.period !== undefined ? req.query.period : 'today';
@@ -1096,37 +1096,11 @@ router.get('/admin/appointments', async (req, res) => {
       'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 500'
     ).all(...params);
 
-    // Build a map of Clinicea appointment statuses by fetching from API for relevant dates
-    const statusMap = {};
-    try {
-      const { isClinicaConfigured } = require('../config/env');
-      if (isClinicaConfigured()) {
-        const { getAppointmentsByDate } = require('../services/clinicea.service');
-        // Collect unique dates from the appointments
-        const dates = new Set();
-        for (const apt of rawAppointments) {
-          if (apt.appointment_date) {
-            const d = new Date(apt.appointment_date);
-            if (!isNaN(d)) dates.add(d.toISOString().split('T')[0]);
-          }
-        }
-        // Fetch Clinicea data for each unique date (max 7 to avoid overload)
-        const dateArr = Array.from(dates).slice(0, 7);
-        const results = await Promise.allSettled(dateArr.map(d => getAppointmentsByDate(d)));
-        for (const result of results) {
-          if (result.status === 'fulfilled' && Array.isArray(result.value)) {
-            for (const ca of result.value) {
-              if (ca.appointmentID) statusMap[String(ca.appointmentID)] = ca.status || 'Unknown';
-            }
-          }
-        }
-      }
-    } catch (e) { /* Clinicea enrichment is best-effort */ }
-
     // Detect overdue: appointment date is past and status is still scheduled
     const todayStr = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' })).toISOString().split('T')[0];
 
-    // Enrich each appointment with agent + Clinicea status + overdue flag
+    // Enrich with agent from call history + compute overdue flag
+    // Status comes from the local clinicea_status column (synced every 30 min)
     let appointments = rawAppointments.map(apt => {
       let attributed_agent = null;
       if (apt.patient_phone) {
@@ -1139,15 +1113,14 @@ router.get('/admin/appointments', async (req, res) => {
         } catch (e) { /* ignore */ }
       }
       const effective_agent = attributed_agent || apt.assigned_agent || null;
-      const clinicea_status = statusMap[String(apt.appointment_id)] || null;
-      const sl = (clinicea_status || '').toLowerCase();
+      const sl = (apt.clinicea_status || '').toLowerCase();
       const apptDateStr = apt.appointment_date ? new Date(apt.appointment_date).toISOString().split('T')[0] : null;
       const is_overdue = !!(apptDateStr && apptDateStr < todayStr &&
-        (!clinicea_status || sl.includes('scheduled')) &&
+        (!apt.clinicea_status || sl.includes('scheduled')) &&
         !sl.includes('check') && !sl.includes('complet') && !sl.includes('arrived') &&
         !sl.includes('cancel') && !sl.includes('no show') && !sl.includes('noshow') &&
         !sl.includes('engaged') && !sl.includes('confirmed'));
-      return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, clinicea_status, is_overdue };
+      return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, is_overdue };
     });
 
     // Agent filter: only show appointments attributed to the selected agent

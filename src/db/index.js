@@ -192,25 +192,36 @@ db.exec(`
     patient_name TEXT,
     patient_phone TEXT,
     appointment_date TEXT,
+    end_time TEXT,
+    duration INTEGER,
     doctor_name TEXT,
     service TEXT,
+    clinicea_status TEXT,
+    notes TEXT,
     confirmation_sent INTEGER DEFAULT 0,
     reminder_sent INTEGER DEFAULT 0,
     confirmation_sent_at DATETIME,
     reminder_sent_at DATETIME,
     created_by TEXT,
     assigned_agent TEXT,
+    status_updated_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
 try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN created_by TEXT"); } catch(e) { /* exists */ }
 try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN assigned_agent TEXT"); } catch(e) { /* exists */ }
+try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN clinicea_status TEXT"); } catch(e) { /* exists */ }
+try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN end_time TEXT"); } catch(e) { /* exists */ }
+try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN duration INTEGER"); } catch(e) { /* exists */ }
+try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN notes TEXT"); } catch(e) { /* exists */ }
+try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN status_updated_at DATETIME"); } catch(e) { /* exists */ }
 
 // Appointment tracking indexes
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_phone ON wa_appointment_tracking(patient_phone)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_date ON wa_appointment_tracking(appointment_date DESC)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_agent ON wa_appointment_tracking(assigned_agent)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_status ON wa_appointment_tracking(clinicea_status)'); } catch(e) {}
 
 // --- Users ---
 db.exec(`

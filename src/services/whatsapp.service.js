@@ -466,9 +466,10 @@ async function syncAppointmentsAndScheduleMessages() {
       const appointmentId = String(apt.AppointmentID || apt.ID || apt.Id || '');
       if (!appointmentId) continue;
 
-      const status = apt.AppointmentStatus || apt.Status || '';
-      if (status === 'Cancelled' || apt.IsDeleted) continue;
+      // Skip deleted but keep cancelled (we track all statuses now)
+      if (apt.IsDeleted) continue;
 
+      const status = apt.AppointmentStatus || apt.Status || '';
       const patientName =
         apt.AppointmentWithName ||
         apt.PatientName ||
@@ -483,6 +484,9 @@ async function syncAppointmentsAndScheduleMessages() {
       const service = apt.ServiceName || apt.ServiceCategory || apt.Service || '';
       const createdBy = apt.CreatedStaffName || apt.ModifiedStaffName || '';
       const aptDate = apt.StartDateTime || apt.AppointmentDateTime || '';
+      const endTime = apt.EndDateTime || apt.EndTime || '';
+      const duration = apt.Duration || null;
+      const notes = apt.Notes || apt.AppointmentNotes || '';
 
       // Normalize phone
       let phone = patientPhone.replace(/[\s\-()]/g, '');
@@ -492,8 +496,13 @@ async function syncAppointmentsAndScheduleMessages() {
         phone = '+' + phone;
       }
 
-      // Upsert tracking record
-      waRepo.upsertAppointmentTracking(appointmentId, patientId, patientName, phone, aptDate, doctorName, service, createdBy);
+      // Upsert tracking record with full details
+      waRepo.upsertAppointmentTracking(appointmentId, patientId, patientName, phone, aptDate, doctorName, service, createdBy, {
+        status: status || null,
+        endTime: endTime || null,
+        duration: duration,
+        notes: notes || null,
+      });
 
       // Save patient to local DB
       try {

@@ -258,6 +258,20 @@ router.get(
         data: appointments,
         expiry: Date.now() + CACHE_TTL,
       });
+
+      // Background: sync statuses to local DB so admin console reads are instant
+      try {
+        const { db } = require('../db/index');
+        const stmtStatus = db.prepare(
+          "UPDATE wa_appointment_tracking SET clinicea_status = ?, end_time = ?, duration = ?, status_updated_at = datetime('now') WHERE appointment_id = ?"
+        );
+        for (const apt of appointments) {
+          if (apt.appointmentID && apt.status) {
+            stmtStatus.run(apt.status, apt.endTime || null, apt.duration || null, String(apt.appointmentID));
+          }
+        }
+      } catch (e) { /* best-effort sync */ }
+
       return res.json({ appointments, date });
     } catch (err) {
       logEvent('error', 'Appointments by date fetch failed', err.message);
