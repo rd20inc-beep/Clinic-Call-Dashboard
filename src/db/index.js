@@ -16,8 +16,13 @@ db.pragma('journal_mode = WAL');
 const sessionDb = new Database(SESSIONS_DB_PATH);
 sessionDb.pragma('journal_mode = WAL');
 
-// --- Create tables ---
+// =========================================================================
+// TABLE DEFINITIONS
+// Each CREATE TABLE has the full canonical column set. ALTER TABLE statements
+// below each definition handle backward-compat for existing databases.
+// =========================================================================
 
+// --- Calls ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,21 +46,31 @@ db.exec(`
   )
 `);
 
-// Add columns that may be missing on existing databases
-try { db.exec('ALTER TABLE calls ADD COLUMN patient_name TEXT'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN patient_id TEXT'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN agent TEXT'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN routing_method TEXT'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN source_ip TEXT'); } catch (e) { /* already exists */ }
-try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* already exists */ }
-try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN disposition TEXT'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN notes TEXT'); } catch (e) { /* already exists */ }
-try { db.exec("ALTER TABLE calls ADD COLUMN source TEXT DEFAULT 'phone'"); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE calls ADD COLUMN call_ended_at DATETIME'); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN patient_name TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN patient_id TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN agent TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN routing_method TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN source_ip TEXT'); } catch (e) { /* exists */ }
+try { db.exec("ALTER TABLE calls ADD COLUMN direction TEXT DEFAULT 'inbound'"); } catch (e) { /* exists */ }
+try { db.exec("ALTER TABLE calls ADD COLUMN call_status TEXT DEFAULT 'unknown'"); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN duration INTEGER DEFAULT NULL'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN disposition TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN notes TEXT'); } catch (e) { /* exists */ }
+try { db.exec("ALTER TABLE calls ADD COLUMN source TEXT DEFAULT 'phone'"); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN call_started_at DATETIME'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE calls ADD COLUMN call_ended_at DATETIME'); } catch (e) { /* exists */ }
 
+// Calls indexes
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_sid ON calls(call_sid) WHERE call_sid IS NOT NULL'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_agent ON calls(agent)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_timestamp ON calls(timestamp DESC)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(call_status)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_direction ON calls(direction)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller_number)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_agent_ts ON calls(agent, timestamp DESC)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_status_ts ON calls(call_status, timestamp DESC)'); } catch(e) {}
+
+// --- WhatsApp messages ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS wa_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,23 +81,27 @@ db.exec(`
     message_type TEXT DEFAULT 'chat',
     status TEXT DEFAULT 'sent',
     agent TEXT,
+    sent_at DATETIME,
+    wa_message_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
-try { db.exec('ALTER TABLE wa_messages ADD COLUMN agent TEXT'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE wa_messages ADD COLUMN sent_at DATETIME'); } catch (e) { /* already exists */ }
-try { db.exec('ALTER TABLE wa_messages ADD COLUMN wa_message_id TEXT'); } catch (e) { /* already exists */ }
+try { db.exec('ALTER TABLE wa_messages ADD COLUMN agent TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE wa_messages ADD COLUMN sent_at DATETIME'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE wa_messages ADD COLUMN wa_message_id TEXT'); } catch (e) { /* exists */ }
+
+// WA messages indexes
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_phone ON wa_messages(phone)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_status ON wa_messages(status)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_dir ON wa_messages(direction, created_at DESC)'); } catch(e) {}
 
 // --- Local patients table (supplements Clinicea API cache) ---
-// Check if table exists and has UNIQUE on phone, recreate if not
 try {
-  // Test if UNIQUE constraint works
   const testStmt = db.prepare("INSERT INTO patients (name, phone) VALUES ('_test_', '_test_unique_check_') ON CONFLICT(phone) DO UPDATE SET name = name");
   testStmt.run();
   db.prepare("DELETE FROM patients WHERE phone = '_test_unique_check_'").run();
 } catch (e) {
-  // Table doesn't exist or lacks UNIQUE — recreate
   try { db.exec('ALTER TABLE patients RENAME TO patients_old'); } catch(e2) { /* doesn't exist */ }
   db.exec(`
     CREATE TABLE IF NOT EXISTS patients (
@@ -102,13 +121,16 @@ try {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  // Migrate data from old table if it existed
   try {
     db.exec("INSERT OR IGNORE INTO patients SELECT * FROM patients_old");
     db.exec("DROP TABLE patients_old");
     console.log('[MIGRATION] Recreated patients table with UNIQUE constraint');
   } catch(e3) { /* no old table */ }
 }
+
+// Patients indexes
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name)'); } catch(e) {}
 
 // Seed patients from existing appointment tracking (one-time migration)
 try {
@@ -126,7 +148,6 @@ try {
       }
       if (seeded > 0) console.log('[MIGRATION] Seeded ' + seeded + ' patients from appointments');
     }
-    // Also seed from calls
     const calls = db.prepare("SELECT DISTINCT caller_number, patient_name FROM calls WHERE caller_number IS NOT NULL AND caller_number != '' AND caller_number != 'Unknown' AND caller_number != 'Anonymous'").all();
     let callSeeded = 0;
     const cInsert = db.prepare("INSERT OR IGNORE INTO patients (name, phone, source) VALUES (?, ?, 'call')");
@@ -140,7 +161,7 @@ try {
   }
 } catch (e) { /* table may not exist on very first run */ }
 
-// --- WhatsApp settings (global toggle, persisted paused chats) ---
+// --- WhatsApp settings ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS wa_settings (
     key TEXT PRIMARY KEY,
@@ -149,7 +170,6 @@ db.exec(`
   )
 `);
 
-// Seed default: bot globally enabled
 db.exec(`
   INSERT OR IGNORE INTO wa_settings (key, value) VALUES ('bot_enabled', '1')
 `);
@@ -163,6 +183,7 @@ db.exec(`
   )
 `);
 
+// --- Appointment tracking ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS wa_appointment_tracking (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,11 +198,21 @@ db.exec(`
     reminder_sent INTEGER DEFAULT 0,
     confirmation_sent_at DATETIME,
     reminder_sent_at DATETIME,
+    created_by TEXT,
+    assigned_agent TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
-// --- Users table (DB-managed agents, supplements env vars) ---
+try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN created_by TEXT"); } catch(e) { /* exists */ }
+try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN assigned_agent TEXT"); } catch(e) { /* exists */ }
+
+// Appointment tracking indexes
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_phone ON wa_appointment_tracking(patient_phone)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_date ON wa_appointment_tracking(appointment_date DESC)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_agent ON wa_appointment_tracking(assigned_agent)'); } catch(e) {}
+
+// --- Users ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,12 +222,19 @@ db.exec(`
     role TEXT DEFAULT 'agent',
     active INTEGER DEFAULT 1,
     notes TEXT,
+    last_login DATETIME,
+    last_seen DATETIME,
+    status TEXT DEFAULT 'offline',
+    phone TEXT,
+    email TEXT,
+    activity_reset_at DATETIME,
+    device_info TEXT,
+    deleted_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 
-// User presence and status columns
 try { db.exec('ALTER TABLE users ADD COLUMN last_login DATETIME'); } catch (e) { /* exists */ }
 try { db.exec('ALTER TABLE users ADD COLUMN last_seen DATETIME'); } catch (e) { /* exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN status TEXT DEFAULT 'offline'"); } catch (e) { /* exists */ }
@@ -204,28 +242,9 @@ try { db.exec('ALTER TABLE users ADD COLUMN phone TEXT'); } catch (e) { /* exist
 try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch (e) { /* exists */ }
 try { db.exec('ALTER TABLE users ADD COLUMN activity_reset_at DATETIME'); } catch (e) { /* exists */ }
 try { db.exec('ALTER TABLE users ADD COLUMN device_info TEXT'); } catch (e) { /* exists */ }
+try { db.exec('ALTER TABLE users ADD COLUMN deleted_at DATETIME'); } catch (e) { /* exists */ }
 
-// Call dedup index + timing and source columns
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_sid ON calls(call_sid) WHERE call_sid IS NOT NULL'); } catch(e) {}
-
-// --- Performance indexes (prevents full table scans) ---
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_agent ON calls(agent)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_timestamp ON calls(timestamp DESC)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(call_status)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_direction ON calls(direction)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_caller ON calls(caller_number)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_agent_ts ON calls(agent, timestamp DESC)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_calls_status_ts ON calls(call_status, timestamp DESC)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_phone ON wa_messages(phone)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_status ON wa_messages(status)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_msg_dir ON wa_messages(direction, created_at DESC)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_wa_track_phone ON wa_appointment_tracking(patient_phone)'); } catch(e) {}
-// Migration: add created_by and assigned_agent columns to appointment tracking
-try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN created_by TEXT"); } catch(e) { /* already exists */ }
-try { db.exec("ALTER TABLE wa_appointment_tracking ADD COLUMN assigned_agent TEXT"); } catch(e) { /* already exists */ }
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_status ON callbacks(callback_status)'); } catch(e) {}
-
-// --- Login history (tracks all login events) ---
+// --- Login history ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS login_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -238,29 +257,25 @@ db.exec(`
     duration_mins INTEGER
   )
 `);
+
+try { db.exec("ALTER TABLE login_history ADD COLUMN logged_out_at DATETIME"); } catch(e) { /* exists */ }
+try { db.exec("ALTER TABLE login_history ADD COLUMN duration_mins INTEGER"); } catch(e) { /* exists */ }
+
+// Login history index
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_login_history_user ON login_history(username, logged_in_at DESC)'); } catch(e) {}
-try { db.exec("ALTER TABLE login_history ADD COLUMN logged_out_at DATETIME"); } catch(e) {}
-try { db.exec("ALTER TABLE login_history ADD COLUMN duration_mins INTEGER"); } catch(e) {}
 
-// --- Mobile app tokens (persisted across restarts) ---
-try {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS app_tokens (
-      token TEXT PRIMARY KEY,
-      agent TEXT NOT NULL,
-      role TEXT DEFAULT 'agent',
-      login_at INTEGER NOT NULL,
-      ip TEXT
-    )
-  `);
-} catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_caller ON callbacks(caller_number)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_phone ON patients(phone)'); } catch(e) {}
-try { db.exec('CREATE INDEX IF NOT EXISTS idx_patients_name ON patients(name)'); } catch(e) {}
+// --- Mobile app tokens ---
+db.exec(`
+  CREATE TABLE IF NOT EXISTS app_tokens (
+    token TEXT PRIMARY KEY,
+    agent TEXT NOT NULL,
+    role TEXT DEFAULT 'agent',
+    login_at INTEGER NOT NULL,
+    ip TEXT
+  )
+`);
 
-// (call timing and source columns now defined above with the CREATE TABLE)
-
-// --- Callbacks table (missed calls that need follow-up) ---
+// --- Callbacks ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS callbacks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -278,6 +293,10 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
+
+// Callbacks indexes
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_status ON callbacks(callback_status)'); } catch(e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_callbacks_caller ON callbacks(caller_number)'); } catch(e) {}
 
 // Seed callbacks from existing missed calls (one-time migration)
 try {
@@ -299,7 +318,7 @@ try {
   }
 } catch (e) { /* table may not exist yet on very first run */ }
 
-// --- Internal messaging table ---
+// --- Internal messaging ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS internal_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,10 +329,11 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
+
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_to ON internal_messages(to_user, read, created_at DESC)'); } catch(e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_chat_conv ON internal_messages(from_user, to_user, created_at DESC)'); } catch(e) {}
 
-// --- Audit log table ---
+// --- Audit log ---
 db.exec(`
   CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -325,11 +345,11 @@ db.exec(`
   )
 `);
 
-// --- Soft delete support for users ---
-try { db.exec('ALTER TABLE users ADD COLUMN deleted_at DATETIME'); } catch (e) { /* exists */ }
+// =========================================================================
+// ONE-TIME DATA MIGRATIONS
+// =========================================================================
 
-// --- One-time migration: seed env-based agents into DB ---
-// This makes the system fully database-driven. Env vars become fallback only.
+// Seed env-based agents into DB (makes the system fully database-driven)
 (function migrateEnvAgentsToDb() {
   const bcrypt = require('bcryptjs');
   const envDefaults = {
@@ -347,9 +367,8 @@ try { db.exec('ALTER TABLE users ADD COLUMN deleted_at DATETIME'); } catch (e) {
   );
 
   for (const [username, cfg] of Object.entries(envDefaults)) {
-    if (stmtCheck.get(username)) continue; // already in DB
+    if (stmtCheck.get(username)) continue;
 
-    // Try env var hash first, then env var pass, then default
     const envKey = username.toUpperCase().replace(/[^A-Z0-9]/g, '_');
     const envHash = process.env['USER_' + envKey + '_HASH'];
     const envPass = process.env['USER_' + envKey + '_PASS'];
@@ -367,7 +386,7 @@ try { db.exec('ALTER TABLE users ADD COLUMN deleted_at DATETIME'); } catch (e) {
   }
 })();
 
-// --- One-time migration: normalize 03XXX phone numbers to +92XXX ---
+// Normalize 03XXX phone numbers to +92XXX
 const oldNumbers = db
   .prepare(
     "SELECT id, caller_number FROM calls WHERE caller_number LIKE '03%' AND length(caller_number) = 11"
