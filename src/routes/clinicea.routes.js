@@ -219,6 +219,25 @@ router.get('/api/patients', requireAuth, apiLimiter, async (req, res) => {
   }
 });
 
+// Helper: convert a wa_appointment_tracking row to the calendar format
+function dbRowToAppointment(row) {
+  return {
+    appointmentID: row.appointment_id,
+    patientID: row.patient_id,
+    patientName: row.patient_name || 'Unknown',
+    startTime: row.appointment_date || '',
+    endTime: row.end_time || '',
+    duration: row.duration || null,
+    status: row.clinicea_status || (row.confirmation_sent ? 'Confirmed' : 'Scheduled'),
+    service: row.service || '',
+    doctor: row.doctor_name || '',
+    phone: row.patient_phone || '',
+    notes: row.notes || '',
+    createdBy: row.created_by || '',
+    _fromDb: true,
+  };
+}
+
 // GET /api/appointments-by-date
 router.get(
   '/api/appointments-by-date',
@@ -233,50 +252,75 @@ router.get(
       return res.json({ error: 'Invalid date format (expected YYYY-MM-DD)', appointments: [] });
     }
 
-    if (!isClinicaConfigured()) {
-      return res.json({ error: 'Clinicea API not configured', appointments: [] });
-    }
-
-    // Check cache (skip if refresh=1)
+    const { db } = require('../db/index');
     const forceRefresh = req.query.refresh === '1';
+    const todayStr = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' })).toISOString().split('T')[0];
+    const isPast = date < todayStr;
+    const isToday = date === todayStr;
+
+    // 1. Check in-memory cache first
     const cached = appointmentDateCache.get(date);
     if (cached && Date.now() < cached.expiry && !forceRefresh) {
       return res.json({ appointments: cached.data, date });
     }
 
-    try {
-      const data = await cliniceaFetch(
-        '/api/v3/appointments/getAppointmentsByDate?appointmentDate=' +
-          encodeURIComponent(date) +
-          '&pageNo=1&pageSize=100'
-      );
-      const appointments = (Array.isArray(data) ? data : []).map(
-        mapAppointmentFields
-      );
-
-      appointmentDateCache.set(date, {
-        data: appointments,
-        expiry: Date.now() + CACHE_TTL,
-      });
-
-      // Background: sync statuses to local DB so admin console reads are instant
-      try {
-        const { db } = require('../db/index');
-        const stmtStatus = db.prepare(
-          "UPDATE wa_appointment_tracking SET clinicea_status = ?, end_time = ?, duration = ?, status_updated_at = datetime('now') WHERE appointment_id = ?"
-        );
-        for (const apt of appointments) {
-          if (apt.appointmentID && apt.status) {
-            stmtStatus.run(apt.status, apt.endTime || null, apt.duration || null, String(apt.appointmentID));
-          }
-        }
-      } catch (e) { /* best-effort sync */ }
-
-      return res.json({ appointments, date });
-    } catch (err) {
-      logEvent('error', 'Appointments by date fetch failed', err.message);
-      return res.json({ error: 'Failed to load appointments. Please try again.', appointments: [] });
+    // 2. For past dates: always serve from local DB (statuses are final)
+    if (isPast && !forceRefresh) {
+      const rows = db.prepare(
+        "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
+      ).all(date);
+      if (rows.length > 0) {
+        const appointments = rows.map(dbRowToAppointment);
+        appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + 30 * 60 * 1000 });
+        return res.json({ appointments, date });
+      }
     }
+
+    // 3. For today/future or force refresh: try Clinicea API, save to DB
+    if (isClinicaConfigured()) {
+      try {
+        const data = await cliniceaFetch(
+          '/api/v3/appointments/getAppointmentsByDate?appointmentDate=' +
+            encodeURIComponent(date) + '&pageNo=1&pageSize=100'
+        );
+        const appointments = (Array.isArray(data) ? data : []).map(mapAppointmentFields);
+
+        appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + CACHE_TTL });
+
+        // Save everything to local DB for future instant reads
+        try {
+          const waRepo = require('../db/whatsapp.repo');
+          const { normalizePKPhone } = require('../utils/phone');
+          for (const apt of appointments) {
+            if (!apt.appointmentID) continue;
+            let phone = (apt.phone || '').replace(/[\s\-()]/g, '');
+            if (!phone) continue;
+            phone = normalizePKPhone(phone) || phone;
+            if (phone && !phone.startsWith('+')) phone = '+' + phone;
+            waRepo.upsertAppointmentTracking(
+              String(apt.appointmentID), apt.patientID || null, apt.patientName, phone,
+              apt.startTime, apt.doctor, apt.service, apt.createdBy,
+              { status: apt.status, endTime: apt.endTime, duration: apt.duration, notes: apt.notes }
+            );
+          }
+        } catch (e) { /* best-effort save */ }
+
+        return res.json({ appointments, date });
+      } catch (err) {
+        logEvent('error', 'Appointments by date fetch failed', err.message);
+        // API failed — fall through to serve from DB
+      }
+    }
+
+    // 4. Fallback: serve from local DB (API unavailable or not configured)
+    const rows = db.prepare(
+      "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
+    ).all(date);
+    const appointments = rows.map(dbRowToAppointment);
+    if (appointments.length > 0) {
+      appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + CACHE_TTL });
+    }
+    return res.json({ appointments, date });
   }
 );
 
