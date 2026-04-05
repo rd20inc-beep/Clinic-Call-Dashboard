@@ -406,67 +406,111 @@ function formatTimePK(d) {
  *
  * This should be called on a 30-minute interval.
  */
+// Track last sync time to enable incremental fetching
+let _lastAppointmentSync = null;
+
 async function syncAppointmentsAndScheduleMessages() {
   if (!isClinicaConfigured() || !cliniceaService) return;
 
   try {
-    // Fetch appointments for the next 7 days
+    const { db } = require('../db/index');
     const today = new Date();
-    // Step 1: Fetch appointments by date for next 7 days
-    const dates = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
-      dates.push(d.toISOString().split('T')[0]);
-    }
-
+    const todayStr = today.toISOString().split('T')[0];
     let allAppointments = [];
-    for (const date of dates) {
-      const data = await cliniceaService.cliniceaFetch(
-        `/api/v3/appointments/getAppointmentsByDate?appointmentDate=${date}&pageNo=1&pageSize=100`
-      );
-      if (Array.isArray(data)) allAppointments = allAppointments.concat(data);
-    }
 
-    // Step 2: Fetch recent changes (has CreatedStaffName) to enrich
-    let changesMap = {};
-    try {
-      const syncFrom = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
-      const syncDate = syncFrom.toISOString().split('.')[0];
-      for (let pageNo = 1; pageNo <= 20; pageNo++) {
+    // Determine if this is a full or incremental sync
+    const hasLocalData = db.prepare('SELECT COUNT(*) as c FROM wa_appointment_tracking').get().c > 0;
+    const isIncremental = hasLocalData && _lastAppointmentSync;
+
+    if (isIncremental) {
+      // INCREMENTAL: Only fetch changes since last sync + refresh today
+      // 1. getChanges for recently modified appointments (includes status changes)
+      const syncDate = _lastAppointmentSync;
+      for (let pageNo = 1; pageNo <= 30; pageNo++) {
         const data = await cliniceaService.cliniceaFetch(
           `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
         );
         if (!Array.isArray(data) || data.length === 0) break;
-        for (const p of data) {
-          const id = p.ID || p.QDID || '';
-          if (id) changesMap[id] = p;
-        }
+        allAppointments = allAppointments.concat(data);
         if (data.length < 100) break;
       }
-    } catch (e) {
-      logEvent('warn', 'getChanges enrichment failed', e.message);
-    }
 
-    // Merge CreatedStaffName from changes into appointments
-    for (const apt of allAppointments) {
-      const id = apt.ID || apt.QDID || '';
-      const change = changesMap[id];
-      if (change) {
-        if (!apt.CreatedStaffName && change.CreatedStaffName) apt.CreatedStaffName = change.CreatedStaffName;
-        if (!apt.ModifiedStaffName && change.ModifiedStaffName) apt.ModifiedStaffName = change.ModifiedStaffName;
+      // 2. Always refresh today (statuses change frequently during the day)
+      const todayData = await cliniceaService.cliniceaFetch(
+        `/api/v3/appointments/getAppointmentsByDate?appointmentDate=${todayStr}&pageNo=1&pageSize=100`
+      );
+      if (Array.isArray(todayData)) {
+        // Merge: changes take priority, add today's that aren't in changes
+        const changeIds = new Set(allAppointments.map(a => String(a.AppointmentID || a.ID || a.Id || '')));
+        for (const a of todayData) {
+          const id = String(a.AppointmentID || a.ID || a.Id || '');
+          if (id && !changeIds.has(id)) allAppointments.push(a);
+        }
       }
+
+      // 3. Refresh tomorrow (for upcoming confirmations/reminders)
+      const tomorrowStr = new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const tomorrowData = await cliniceaService.cliniceaFetch(
+        `/api/v3/appointments/getAppointmentsByDate?appointmentDate=${tomorrowStr}&pageNo=1&pageSize=100`
+      );
+      if (Array.isArray(tomorrowData)) {
+        const existingIds = new Set(allAppointments.map(a => String(a.AppointmentID || a.ID || a.Id || '')));
+        for (const a of tomorrowData) {
+          const id = String(a.AppointmentID || a.ID || a.Id || '');
+          if (id && !existingIds.has(id)) allAppointments.push(a);
+        }
+      }
+
+      logEvent('info', 'Appointment sync (incremental): ' + allAppointments.length + ' changed/today/tomorrow since ' + syncDate);
+    } else {
+      // FULL SYNC: First run or empty DB — fetch next 7 days
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
+        const dateStr = d.toISOString().split('T')[0];
+        const data = await cliniceaService.cliniceaFetch(
+          `/api/v3/appointments/getAppointmentsByDate?appointmentDate=${dateStr}&pageNo=1&pageSize=100`
+        );
+        if (Array.isArray(data)) allAppointments = allAppointments.concat(data);
+      }
+
+      // Enrich with CreatedStaffName from getChanges
+      try {
+        const syncFrom = new Date(today.getTime() - 90 * 24 * 60 * 60 * 1000);
+        const syncDate = syncFrom.toISOString().split('.')[0];
+        for (let pageNo = 1; pageNo <= 20; pageNo++) {
+          const data = await cliniceaService.cliniceaFetch(
+            `/api/v3/appointments/getChanges?lastSyncDTime=${syncDate}&pageNo=${pageNo}&pageSize=100`
+          );
+          if (!Array.isArray(data) || data.length === 0) break;
+          const enrichMap = {};
+          for (const p of data) {
+            const id = p.ID || p.QDID || '';
+            if (id) enrichMap[id] = p;
+          }
+          for (const apt of allAppointments) {
+            const id = apt.ID || apt.QDID || '';
+            const change = enrichMap[id];
+            if (change) {
+              if (!apt.CreatedStaffName && change.CreatedStaffName) apt.CreatedStaffName = change.CreatedStaffName;
+              if (!apt.ModifiedStaffName && change.ModifiedStaffName) apt.ModifiedStaffName = change.ModifiedStaffName;
+            }
+          }
+          if (data.length < 100) break;
+        }
+      } catch (e) {
+        logEvent('warn', 'getChanges enrichment failed', e.message);
+      }
+
+      logEvent('info', 'Appointment sync (full): ' + allAppointments.length + ' appointments for next 7 days');
     }
 
-    const appointments = allAppointments;
-    logEvent('info', 'Appointment sync: ' + appointments.length + ' appointments, ' + Object.keys(changesMap).length + ' changes enriched');
+    // Update last sync timestamp
+    _lastAppointmentSync = today.toISOString().split('.')[0];
 
-    {
-
-    for (const apt of appointments) {
+    // Process and upsert all fetched appointments
+    for (const apt of allAppointments) {
       const appointmentId = String(apt.AppointmentID || apt.ID || apt.Id || '');
       if (!appointmentId) continue;
-
-      // Skip deleted but keep cancelled (we track all statuses now)
       if (apt.IsDeleted) continue;
 
       const status = apt.AppointmentStatus || apt.Status || '';
@@ -488,7 +532,6 @@ async function syncAppointmentsAndScheduleMessages() {
       const duration = apt.Duration || null;
       const notes = apt.Notes || apt.AppointmentNotes || '';
 
-      // Normalize phone
       let phone = patientPhone.replace(/[\s\-()]/g, '');
       if (!phone) continue;
       phone = normalizePKPhone(phone);
@@ -496,7 +539,6 @@ async function syncAppointmentsAndScheduleMessages() {
         phone = '+' + phone;
       }
 
-      // Upsert tracking record with full details
       waRepo.upsertAppointmentTracking(appointmentId, patientId, patientName, phone, aptDate, doctorName, service, createdBy, {
         status: status || null,
         endTime: endTime || null,
@@ -504,12 +546,10 @@ async function syncAppointmentsAndScheduleMessages() {
         notes: notes || null,
       });
 
-      // Save patient to local DB
       try {
         const patientsRepo = require('../db/patients.repo');
         patientsRepo.upsertFromAppointment(patientId, patientName, phone, doctorName, service, aptDate);
       } catch (e) { console.error('[wa-sync] Patient upsert failed for ' + phone + ':', e.message); }
-    }
     }
 
     logEvent('info', 'Appointment sync complete');
