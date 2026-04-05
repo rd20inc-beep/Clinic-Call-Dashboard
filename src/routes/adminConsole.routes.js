@@ -1116,12 +1116,14 @@ router.get('/admin/appointments', (req, res) => {
       const apptDateStr = apt.appointment_date ? new Date(apt.appointment_date).toISOString().split('T')[0] : null;
       const isPast = !!(apptDateStr && apptDateStr < todayStr);
 
+      // Showed up: Check Out, Completed, Arrived, Engaged
+      const is_showed_up = sl.includes('check') || sl.includes('complet') || sl.includes('arrived') || sl.includes('engaged');
+
       // No-show: past appointment still marked "Scheduled" (patient never showed up)
-      const is_noshow = isPast &&
+      const is_noshow = isPast && !is_showed_up &&
         (!apt.clinicea_status || sl.includes('scheduled')) &&
-        !sl.includes('check') && !sl.includes('complet') && !sl.includes('arrived') &&
         !sl.includes('cancel') && !sl.includes('no show') && !sl.includes('noshow') &&
-        !sl.includes('engaged') && !sl.includes('confirmed');
+        !sl.includes('confirmed');
 
       // Cancelled: explicitly cancelled or no-show in Clinicea
       const is_cancelled = sl.includes('cancel') || sl.includes('no show') || sl.includes('noshow');
@@ -1129,7 +1131,7 @@ router.get('/admin/appointments', (req, res) => {
       // Needs callback: no-shows and cancellations need follow-up
       const is_overdue = is_noshow || is_cancelled;
 
-      return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, is_overdue, is_noshow, is_cancelled };
+      return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, is_overdue, is_noshow, is_cancelled, is_showed_up };
     });
 
     // Agent filter: only show appointments attributed to the selected agent
@@ -1152,6 +1154,26 @@ router.get('/admin/appointments', (req, res) => {
     res.json({ appointments, agents, services, doctors, bookedByList, total: appointments.length });
   } catch (err) {
     console.error('[admin-console] appointments error:', err.message); res.status(500).json({ error: 'Failed to load appointments.', appointments: [] });
+  }
+});
+
+// -------------------------------------------------------------------------
+// POST /admin/appointments/:id/status — manually update appointment status
+// -------------------------------------------------------------------------
+router.post('/admin/appointments/:id/status', (req, res) => {
+  try {
+    const { db } = require('../db/index');
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ error: 'Invalid appointment ID' });
+    const status = (req.body.status || '').trim();
+    const valid = ['Check Out', 'Completed', 'Arrived', 'Engaged', 'Confirmed', 'Scheduled', 'Cancelled', 'No Show'];
+    if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status. Valid: ' + valid.join(', ') });
+    db.prepare("UPDATE wa_appointment_tracking SET clinicea_status = ?, status_updated_at = datetime('now') WHERE id = ?").run(status, id);
+    auditRepo.log('appointment_status_updated', 'appointment:' + id, 'Status set to: ' + status, req.session.username);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[admin-console] update appointment status error:', err.message);
+    res.status(500).json({ error: 'Failed to update status.' });
   }
 });
 

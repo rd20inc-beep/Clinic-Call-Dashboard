@@ -600,7 +600,7 @@
       <!-- KPI Summary -->
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px;" class="ov-grid-4">
         <div class="stat-card blue" style="padding:12px;"><div class="stat-value" style="font-size:22px;" id="apptTabTotal">-</div><div class="stat-label">Total</div></div>
-        <div class="stat-card green" style="padding:12px;"><div class="stat-value" style="font-size:22px;" id="apptTabShowedUp">-</div><div class="stat-label">Showed Up</div></div>
+        <div class="stat-card green" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='showed';loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabShowedUp">-</div><div class="stat-label">Showed Up</div></div>
         <div class="stat-card orange" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='noshow';loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabNoShow">-</div><div class="stat-label">No-Show</div></div>
         <div class="stat-card red" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='cancelled';loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabCancelled">-</div><div class="stat-label">Cancelled</div></div>
         <div class="stat-card teal" style="padding:12px;"><div class="stat-value" style="font-size:22px;" id="apptTabShowRate">-</div><div class="stat-label">Show-Up Rate</div></div>
@@ -2101,13 +2101,18 @@
       return '<span class="badge" style="background:#fffbeb;color:#d97706;">' + esc(label) + '</span>';
     }
 
-    function isShowedUp(a) {
-      var s = (a.clinicea_status || '').toLowerCase();
-      return s.indexOf('check') >= 0 || s.indexOf('complet') >= 0 || s.indexOf('arrived') >= 0 || s.indexOf('engaged') >= 0;
-    }
-
+    function isShowedUp(a) { return !!a.is_showed_up; }
     function isNoShow(a) { return !!a.is_noshow; }
     function isCancelled(a) { return !!a.is_cancelled; }
+
+    async function updateApptStatus(apptId, status) {
+      try {
+        var r = await fetch('/admin/appointments/' + apptId + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: status }) });
+        var d = await r.json();
+        if (d.ok) loadAppointmentsTab();
+        else alert('Error: ' + (d.error || 'Unknown'));
+      } catch (e) { alert('Failed: ' + e.message); }
+    }
 
     async function assignApptAgent(apptId, agent) {
       try {
@@ -2198,12 +2203,15 @@
           html = '<div class="empty">No appointments match the selected filters</div>';
         } else {
           html += '<table><thead><tr>';
-          html += '<th>Date</th><th>Patient</th><th>Phone</th><th>Doctor</th><th>Service</th><th>Booked By</th><th>Agent</th><th>Status</th>';
+          html += '<th>Date</th><th>Patient</th><th>Phone</th><th>Doctor</th><th>Service</th><th>Booked By</th><th>Agent</th><th>Status</th><th>Update</th>';
           html += '</tr></thead><tbody>';
           filtered.forEach(function(a) {
             var apptDate = a.appointment_date ? new Date(a.appointment_date).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '-';
-            var rowClass = a.is_overdue ? ' style="background:#fef2f2;border-left:3px solid #ef4444;"' : '';
-            // Agent cell: show assigned or dropdown
+            var rowStyle = '';
+            if (a.is_noshow) rowStyle = ' style="background:#fef2f2;border-left:3px solid #f59e0b;"';
+            else if (a.is_cancelled) rowStyle = ' style="background:#fef2f2;border-left:3px solid #ef4444;"';
+            else if (a.is_showed_up) rowStyle = ' style="border-left:3px solid #22c55e;"';
+            // Agent cell
             var agentCell = '';
             if (a.attributed_agent) {
               agentCell = '<span class="badge badge-active">' + esc(a.attributed_agent) + '</span>';
@@ -2214,7 +2222,16 @@
               agents.forEach(function(ag) { agentCell += '<option value="' + esc(ag) + '">' + esc(ag) + '</option>'; });
               agentCell += '</select>';
             }
-            html += '<tr' + rowClass + '>';
+            // Status update dropdown
+            var curStatus = a.clinicea_status || '';
+            var statusCell = '<select class="filter-select" style="min-width:110px;font-size:11px;padding:3px 6px;" onchange="updateApptStatus(' + a.id + ',this.value)">';
+            statusCell += '<option value="">' + esc(curStatus || 'Set status...') + '</option>';
+            var statuses = ['Check Out','Completed','Arrived','Engaged','Confirmed','Scheduled','Cancelled','No Show'];
+            statuses.forEach(function(st) {
+              if (st !== curStatus) statusCell += '<option value="' + esc(st) + '">' + esc(st) + '</option>';
+            });
+            statusCell += '</select>';
+            html += '<tr' + rowStyle + '>';
             html += '<td class="meta" style="white-space:nowrap;">' + apptDate + '</td>';
             html += '<td><strong>' + esc(a.patient_name || '-') + '</strong></td>';
             html += '<td style="font-family:monospace;font-size:11px;">' + esc(a.patient_phone || '-') + '</td>';
@@ -2223,6 +2240,7 @@
             html += '<td>' + esc(a.created_by || '-') + '</td>';
             html += '<td>' + agentCell + '</td>';
             html += '<td>' + apptStatusBadge(a) + '</td>';
+            html += '<td>' + statusCell + '</td>';
             html += '</tr>';
           });
           html += '</tbody></table>';
