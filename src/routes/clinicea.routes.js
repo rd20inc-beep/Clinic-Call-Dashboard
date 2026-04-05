@@ -260,23 +260,36 @@ router.get(
 
     // 1. Check in-memory cache first
     const cached = appointmentDateCache.get(date);
-    if (cached && Date.now() < cached.expiry && !forceRefresh) {
+    if (cached && Date.now() < cached.expiry) {
       return res.json({ appointments: cached.data, date });
     }
 
-    // 2. For past dates: always serve from local DB (statuses are final)
-    if (isPast && !forceRefresh) {
+    // 2. Past dates: always serve from local DB — statuses are final, no API call
+    if (isPast) {
       const rows = db.prepare(
         "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
       ).all(date);
       if (rows.length > 0) {
         const appointments = rows.map(dbRowToAppointment);
-        appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + 30 * 60 * 1000 });
+        appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + 60 * 60 * 1000 });
+        return res.json({ appointments, date });
+      }
+      // No local data for this past date — fall through to try API once
+    }
+
+    // 3. Today: serve from DB first, refresh from API in background
+    if (isToday && !forceRefresh) {
+      const rows = db.prepare(
+        "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
+      ).all(date);
+      if (rows.length > 0) {
+        const appointments = rows.map(dbRowToAppointment);
+        appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + CACHE_TTL });
         return res.json({ appointments, date });
       }
     }
 
-    // 3. For today/future or force refresh: try Clinicea API, save to DB
+    // 4. Today (force refresh) / future / no local data: try Clinicea API
     if (isClinicaConfigured()) {
       try {
         const data = await cliniceaFetch(

@@ -960,7 +960,7 @@ async function loadCalendar() {
   countEl.textContent = '';
 
   try {
-    var data = await safeFetch('/api/appointments-by-date?date=' + encodeURIComponent(date) + '&refresh=1');
+    var data = await safeFetch('/api/appointments-by-date?date=' + encodeURIComponent(date));
 
     if (data.error && data.error !== 'Clinicea API not configured') {
       listEl.innerHTML = '<div class="empty-state"><p>Error: ' + escapeHtml(data.error) + '</p></div>';
