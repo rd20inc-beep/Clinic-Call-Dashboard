@@ -267,52 +267,9 @@ router.get(
         "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
       ).all(date);
       if (rows.length > 0) {
-        // Build a map of messages sent per phone+date from wa_messages
-        // Only match messages sent on the same day or day before the appointment
-        // (confirmations/reminders are sent 0-2 days before the appointment)
-        const phoneMessages = {}; // "last10digits|aptDate" → [types]
-        try {
-          const msgRows = db.prepare(
-            "SELECT phone, message_type, date(created_at) as msg_date FROM wa_messages " +
-            "WHERE direction = 'out' AND status IN ('sent','pending','approved','sending') " +
-            "AND message_type IN ('confirmation','reminder','review','aftercare')"
-          ).all();
-          for (const r of msgRows) {
-            const phoneKey = (r.phone || '').replace(/[\s\-+()]/g, '').slice(-10);
-            if (!phoneKey) continue;
-            // Store with message date for matching
-            const key = phoneKey + '|' + (r.msg_date || '');
-            if (!phoneMessages[key]) phoneMessages[key] = [];
-            if (!phoneMessages[key].includes(r.message_type)) phoneMessages[key].push(r.message_type);
-          }
-        } catch (e) { /* ignore */ }
-
-        const appointments = rows.map(function(row) {
-          const apt = dbRowToAppointment(row);
-          const phoneKey = (row.patient_phone || '').replace(/[\s\-+()]/g, '').slice(-10);
-          if (phoneKey) {
-            // Check the appointment_tracking flags first (set by mark-sent)
-            // Then check wa_messages sent on appointment date or 1-2 days before
-            const aptDate = row.appointment_date ? new Date(row.appointment_date) : null;
-            if (aptDate && !isNaN(aptDate)) {
-              const aptDateStr = aptDate.toISOString().split('T')[0];
-              const dayBefore = new Date(aptDate.getTime() - 24*60*60*1000).toISOString().split('T')[0];
-              const twoBefore = new Date(aptDate.getTime() - 2*24*60*60*1000).toISOString().split('T')[0];
-              // Collect message types from matching dates
-              const matchDates = [aptDateStr, dayBefore, twoBefore];
-              const msgs = [];
-              for (const d of matchDates) {
-                const types = phoneMessages[phoneKey + '|' + d] || [];
-                for (const t of types) { if (!msgs.includes(t)) msgs.push(t); }
-              }
-              if (msgs.includes('confirmation')) apt.confirmationSent = true;
-              if (msgs.includes('reminder')) apt.reminderSent = true;
-              if (msgs.includes('review')) apt.reviewSent = true;
-              if (msgs.includes('aftercare')) apt.aftercareSent = true;
-            }
-          }
-          return apt;
-        });
+        // Each appointment's flags come directly from its own DB row — no phone matching needed
+        // confirmation_sent/reminder_sent are set per appointment by /api/whatsapp/mark-sent
+        const appointments = rows.map(dbRowToAppointment);
         return res.json({ appointments, date });
       }
       // No local data — fall through to try API
@@ -352,6 +309,24 @@ router.get(
             );
           }
         } catch (e) { /* best-effort save */ }
+
+        // Enrich API results with per-appointment tracking flags from DB
+        try {
+          const aptIds = appointments.map(a => String(a.appointmentID)).filter(Boolean);
+          if (aptIds.length > 0) {
+            const ph = aptIds.map(() => '?').join(',');
+            const trackRows = db.prepare(
+              'SELECT appointment_id, confirmation_sent, reminder_sent FROM wa_appointment_tracking WHERE appointment_id IN (' + ph + ')'
+            ).all(...aptIds);
+            const trackMap = {};
+            for (const r of trackRows) trackMap[r.appointment_id] = r;
+            for (const apt of appointments) {
+              const tr = trackMap[String(apt.appointmentID)];
+              apt.confirmationSent = tr ? tr.confirmation_sent === 1 : false;
+              apt.reminderSent = tr ? tr.reminder_sent === 1 : false;
+            }
+          }
+        } catch (e) { /* ignore */ }
 
         return res.json({ appointments, date });
       } catch (err) {

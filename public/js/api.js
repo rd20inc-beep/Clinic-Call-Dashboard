@@ -996,13 +996,6 @@ async function loadCalendar() {
     svcSel.innerHTML = '<option value="">All Services</option>' + Object.keys(services).map(function(s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>'; }).join('');
     svcSel.value = curSvc;
 
-    // Fetch message tracking status
-    var tracking = {};
-    try {
-      var trackRes = await waFetch('/api/whatsapp/tracking-status');
-      tracking = trackRes.tracking || {};
-    } catch (e) { /* ignore — just won't show badges */ }
-
     // Sort by start time
     appointments.sort(function(a, b) { return new Date(a.startTime || 0) - new Date(b.startTime || 0); });
 
@@ -1023,21 +1016,13 @@ async function loadCalendar() {
       var endTimeStr = apt.endTime ? ' - ' + formatTime(apt.endTime) : '';
       var durationStr = apt.duration ? ' (' + apt.duration + ' min)' : '';
 
-      // Message tracking badges
-      // Priority: DB-embedded flags (most reliable) > per-appointment tracking > phone fallback
-      var aptId = apt.appointmentID || '';
-      var aptPhone = (apt.phone || apt.patientPhone || apt.mobile || '').replace(/[\s\-()]/g, '');
-      var trackInfo = null;
-
-      // 1. DB-embedded flags (set by backend from wa_messages + wa_appointment_tracking)
-      if (apt.confirmationSent || apt.reminderSent || apt.reviewSent || apt.aftercareSent || apt._fromDb) {
-        trackInfo = { confirmationSent: !!apt.confirmationSent, reminderSent: !!apt.reminderSent, reviewSent: !!apt.reviewSent, aftercareSent: !!apt.aftercareSent };
-      }
-      // 2. Per-appointment tracking from tracking-status API
-      if (!trackInfo) trackInfo = tracking['apt:' + aptId] || null;
-      // 3. Phone-based fallback
-      if (!trackInfo) trackInfo = tracking[aptPhone] || tracking['+' + aptPhone] || null;
-      if (!trackInfo && aptPhone.startsWith('+')) trackInfo = tracking[aptPhone.substring(1)] || null;
+      // Message tracking badges — per appointment, from DB flags
+      var trackInfo = {
+        confirmationSent: !!apt.confirmationSent,
+        reminderSent: !!apt.reminderSent,
+        reviewSent: !!apt.reviewSent,
+        aftercareSent: !!apt.aftercareSent,
+      };
       var msgBadges = '';
       if (trackInfo) {
         if (trackInfo.confirmationSent) msgBadges += '<span style="background:#2ecc71;color:white;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;">Confirmed</span>';
