@@ -1023,15 +1023,19 @@ async function loadCalendar() {
       var endTimeStr = apt.endTime ? ' - ' + formatTime(apt.endTime) : '';
       var durationStr = apt.duration ? ' (' + apt.duration + ' min)' : '';
 
-      // Message tracking badges — per appointment first, fallback to phone
+      // Message tracking badges
+      // Priority: DB-embedded flags (most reliable) > per-appointment tracking > phone fallback
       var aptId = apt.appointmentID || '';
       var aptPhone = (apt.phone || apt.patientPhone || apt.mobile || '').replace(/[\s\-()]/g, '');
-      var trackInfo = tracking['apt:' + aptId] || null;
-      // Also check DB-embedded flags (from local DB rows enriched with wa_messages)
-      if (!trackInfo && (apt.confirmationSent || apt.reminderSent || apt.reviewSent || apt.aftercareSent)) {
+      var trackInfo = null;
+
+      // 1. DB-embedded flags (set by backend from wa_messages + wa_appointment_tracking)
+      if (apt.confirmationSent || apt.reminderSent || apt.reviewSent || apt.aftercareSent || apt._fromDb) {
         trackInfo = { confirmationSent: !!apt.confirmationSent, reminderSent: !!apt.reminderSent, reviewSent: !!apt.reviewSent, aftercareSent: !!apt.aftercareSent };
       }
-      // Fallback to phone-based tracking
+      // 2. Per-appointment tracking from tracking-status API
+      if (!trackInfo) trackInfo = tracking['apt:' + aptId] || null;
+      // 3. Phone-based fallback
       if (!trackInfo) trackInfo = tracking[aptPhone] || tracking['+' + aptPhone] || null;
       if (!trackInfo && aptPhone.startsWith('+')) trackInfo = tracking[aptPhone.substring(1)] || null;
       var msgBadges = '';
