@@ -367,25 +367,51 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
-  // GET /api/whatsapp/tracking-status - message tracking status by phone
+  // GET /api/whatsapp/tracking-status - message tracking status per appointment
   // -----------------------------------------------------------------------
   router.get('/api/whatsapp/tracking-status', requireAuth, (req, res) => {
-    const tracking = waRepo.getTrackingByPhone();
-
-    // Also get sent message types per phone from wa_messages
+    // Per-appointment tracking from wa_appointment_tracking
+    const tracking = {};
     try {
       const { db } = require('../db/index');
-      const rows = db.prepare(
-        "SELECT phone, GROUP_CONCAT(DISTINCT message_type) as types FROM wa_messages WHERE direction = 'out' AND status IN ('sent','pending','approved','sending') GROUP BY phone"
+
+      // Get per-appointment confirmation/reminder flags
+      const aptRows = db.prepare(
+        "SELECT appointment_id, patient_phone, confirmation_sent, reminder_sent FROM wa_appointment_tracking WHERE patient_phone IS NOT NULL AND patient_phone != ''"
       ).all();
+      for (const r of aptRows) {
+        tracking['apt:' + r.appointment_id] = {
+          confirmationSent: !!r.confirmation_sent,
+          reminderSent: !!r.reminder_sent,
+          reviewSent: false,
+          aftercareSent: false,
+        };
+      }
+
+      // Get message types per phone+date from wa_messages (for review/aftercare)
+      const rows = db.prepare(
+        "SELECT phone, message_type, date(created_at) as msg_date FROM wa_messages WHERE direction = 'out' AND status IN ('sent','pending','approved','sending') AND message_type IN ('review','aftercare')"
+      ).all();
+      // Map review/aftercare to phone (these are post-visit, not per-appointment)
       for (const row of rows) {
         const phone = row.phone;
-        if (!tracking[phone]) tracking[phone] = { confirmationSent: false, reminderSent: false };
-        const types = (row.types || '').split(',');
-        if (types.includes('confirmation')) tracking[phone].confirmationSent = true;
-        if (types.includes('reminder')) tracking[phone].reminderSent = true;
-        if (types.includes('review')) tracking[phone].reviewSent = true;
-        if (types.includes('aftercare')) tracking[phone].aftercareSent = true;
+        // Apply to all appointments for this phone
+        for (const key of Object.keys(tracking)) {
+          const aptId = key.replace('apt:', '');
+          const aptRow = aptRows.find(r => r.appointment_id === aptId && r.patient_phone === phone);
+          if (aptRow) {
+            if (row.message_type === 'review') tracking[key].reviewSent = true;
+            if (row.message_type === 'aftercare') tracking[key].aftercareSent = true;
+          }
+        }
+      }
+
+      // Also keep phone-based tracking for backward compat
+      for (const r of aptRows) {
+        const phone = r.patient_phone;
+        if (!tracking[phone]) tracking[phone] = { confirmationSent: false, reminderSent: false, reviewSent: false, aftercareSent: false };
+        if (r.confirmation_sent) tracking[phone].confirmationSent = true;
+        if (r.reminder_sent) tracking[phone].reminderSent = true;
       }
     } catch (e) { console.error('[whatsapp] Tracking query failed:', e.message); }
 

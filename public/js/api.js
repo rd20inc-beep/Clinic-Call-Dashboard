@@ -1023,10 +1023,16 @@ async function loadCalendar() {
       var endTimeStr = apt.endTime ? ' - ' + formatTime(apt.endTime) : '';
       var durationStr = apt.duration ? ' (' + apt.duration + ' min)' : '';
 
-      // Message tracking badges
+      // Message tracking badges — per appointment first, fallback to phone
+      var aptId = apt.appointmentID || '';
       var aptPhone = (apt.phone || apt.patientPhone || apt.mobile || '').replace(/[\s\-()]/g, '');
-      var trackInfo = tracking[aptPhone] || tracking['+' + aptPhone] || null;
-      // Also try with + prefix stripped
+      var trackInfo = tracking['apt:' + aptId] || null;
+      // Also check DB-embedded flags (from local DB rows)
+      if (!trackInfo && (apt.confirmationSent || apt.reminderSent)) {
+        trackInfo = { confirmationSent: apt.confirmationSent, reminderSent: apt.reminderSent, reviewSent: false, aftercareSent: false };
+      }
+      // Fallback to phone-based tracking
+      if (!trackInfo) trackInfo = tracking[aptPhone] || tracking['+' + aptPhone] || null;
       if (!trackInfo && aptPhone.startsWith('+')) trackInfo = tracking[aptPhone.substring(1)] || null;
       var msgBadges = '';
       if (trackInfo) {
