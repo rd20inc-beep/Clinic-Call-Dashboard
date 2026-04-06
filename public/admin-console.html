@@ -2142,6 +2142,8 @@
         var data = await res.json();
         var appts = data.appointments || [];
         var agents = data.agents || [];
+        var names = data.agentNames || {};
+        var callsByAgent = data.callsByAgent || {};
 
         // Apply client-side status filter
         var filtered = appts;
@@ -2253,9 +2255,7 @@
         }
         document.getElementById('apptTabTable').innerHTML = html;
 
-        // Agent name resolver
-        var names = data.agentNames || {};
-        var callsByAgent = data.callsByAgent || {};
+        // Agent name resolver (names + callsByAgent declared above after data parse)
         function agentDisplayName(username) {
           return names[username] || username;
         }
