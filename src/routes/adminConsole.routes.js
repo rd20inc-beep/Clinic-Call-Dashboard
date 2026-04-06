@@ -65,11 +65,11 @@ router.get('/admin/analytics/overview', async (req, res) => {
     let appointmentsByAgents = 0;
     const agentAppointments = {};
     try {
-      appointmentsToday = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking WHERE date(appointment_date) = date('now')").get().c;
+      appointmentsToday = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking WHERE date(appointment_date, '+5 hours') = date('now', '+5 hours')").get().c;
 
       // Count today's appointments that match an agent's handled call
       const todayAppts = db.prepare(
-        "SELECT DISTINCT patient_phone FROM wa_appointment_tracking WHERE date(appointment_date) = date('now') AND patient_phone IS NOT NULL AND patient_phone != ''"
+        "SELECT DISTINCT patient_phone FROM wa_appointment_tracking WHERE date(appointment_date, '+5 hours') = date('now', '+5 hours') AND patient_phone IS NOT NULL AND patient_phone != ''"
       ).all();
       for (const row of todayAppts) {
         const phone = row.patient_phone.replace(/[\s\-()]/g, '');
@@ -83,13 +83,15 @@ router.get('/admin/analytics/overview', async (req, res) => {
       }
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
-    const callsToday = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now')").c;
-    const answeredToday = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'answered'").c;
-    const missedToday = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'missed'").c;
-    const rejectedToday = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'rejected'").c;
-    const outgoingToday = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND direction = 'outbound'").c;
-    const talkTimeToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp) = date('now') AND duration IS NOT NULL").s;
-    const avgDuration = q("SELECT COALESCE(AVG(duration),0) as a FROM calls WHERE date(timestamp) = date('now') AND duration IS NOT NULL AND duration > 0").a;
+    // Use PKT (+5 hours) for "today" — SQLite date('now') is UTC
+    const TODAY = "date(timestamp, '+5 hours') = date('now', '+5 hours')";
+    const callsToday = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY).c;
+    const answeredToday = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND call_status = 'answered'").c;
+    const missedToday = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND call_status = 'missed'").c;
+    const rejectedToday = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND call_status = 'rejected'").c;
+    const outgoingToday = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND direction = 'outbound'").c;
+    const talkTimeToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE " + TODAY + " AND duration IS NOT NULL").s;
+    const avgDuration = q("SELECT COALESCE(AVG(duration),0) as a FROM calls WHERE " + TODAY + " AND duration IS NOT NULL AND duration > 0").a;
     const answerRate = callsToday > 0 ? Math.round((answeredToday / callsToday) * 100) : 0;
 
     // Agent stats
@@ -114,11 +116,11 @@ router.get('/admin/analytics/overview', async (req, res) => {
 
       let todayCalls = 0, todayAnswered = 0, todayMissed = 0, todayTalkTime = 0, weekCalls = 0;
       try {
-        todayCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now')").get(username).c;
-        todayAnswered = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'answered'").get(username).c;
-        todayMissed = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'missed'").get(username).c;
-        todayTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL").get(username).s;
-        weekCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days')").get(username).c;
+        todayCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY).get(username).c;
+        todayAnswered = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND call_status = 'answered'").get(username).c;
+        todayMissed = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND call_status = 'missed'").get(username).c;
+        todayTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND " + TODAY + " AND duration IS NOT NULL").get(username).s;
+        weekCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND timestamp >= datetime('now', '+5 hours', '-7 days')").get(username).c;
       } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
       // Get DB ID and last_seen
@@ -126,7 +128,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
       try {
         const dbUser = usersRepo.getByUsername(username);
         if (dbUser) { dbId = dbUser.id; lastSeen = dbUser.last_seen; }
-        avgDur = todayCalls > 0 ? db.prepare("SELECT COALESCE(AVG(duration),0) as a FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL AND duration > 0").get(username).a : 0;
+        avgDur = todayCalls > 0 ? db.prepare("SELECT COALESCE(AVG(duration),0) as a FROM calls WHERE agent = ? AND " + TODAY + " AND duration IS NOT NULL AND duration > 0").get(username).a : 0;
       } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
       agentStats.push({
@@ -154,10 +156,10 @@ router.get('/admin/analytics/overview', async (req, res) => {
     // Week + month totals for status strip
     let callsWeek = 0, callsMonth = 0, inboundTalkToday = 0, outboundTalkToday = 0;
     try {
-      callsWeek = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '-7 days')").c;
-      callsMonth = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '-30 days')").c;
-      inboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp) = date('now') AND direction = 'inbound' AND duration IS NOT NULL").s;
-      outboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp) = date('now') AND direction = 'outbound' AND duration IS NOT NULL").s;
+      callsWeek = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '+5 hours', '-7 days')").c;
+      callsMonth = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '+5 hours', '-30 days')").c;
+      inboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE " + TODAY + " AND direction = 'inbound' AND duration IS NOT NULL").s;
+      outboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE " + TODAY + " AND direction = 'outbound' AND duration IS NOT NULL").s;
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
     // Response matches exact field names expected by remote_admin.html
@@ -556,7 +558,7 @@ router.get('/admin/analytics/peak-hours', requireAuth, requireAdminOrDoctor, (re
     const { db } = require('../db/index');
     const period = req.query.period || 'week';
     let dateFilter = "timestamp >= datetime('now', '-7 days')";
-    if (period === 'today') dateFilter = "date(timestamp) = date('now')";
+    if (period === 'today') dateFilter = "date(timestamp, '+5 hours') = date('now', '+5 hours')";
     else if (period === 'month') dateFilter = "timestamp >= datetime('now', '-30 days')";
 
     // Calls per hour (0-23)
@@ -609,11 +611,11 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
     const period = req.query.period || 'month';
     let dateFilter = "timestamp >= datetime('now', '-30 days')";
     if (period === 'week') dateFilter = "timestamp >= datetime('now', '-7 days')";
-    else if (period === 'today') dateFilter = "date(timestamp) = date('now')";
+    else if (period === 'today') dateFilter = "date(timestamp, '+5 hours') = date('now', '+5 hours')";
 
-    let aptDateFilter = "appointment_date >= datetime('now', '-30 days')";
-    if (period === 'week') aptDateFilter = "appointment_date >= datetime('now', '-7 days')";
-    else if (period === 'today') aptDateFilter = "date(appointment_date) = date('now')";
+    let aptDateFilter = "appointment_date >= datetime('now', '+5 hours', '-30 days')";
+    if (period === 'week') aptDateFilter = "appointment_date >= datetime('now', '+5 hours', '-7 days')";
+    else if (period === 'today') aptDateFilter = "date(appointment_date, '+5 hours') = date('now', '+5 hours')";
 
     // === CALL SOURCE BREAKDOWN (Phone vs WhatsApp) ===
     const callSources = db.prepare(
@@ -816,7 +818,7 @@ router.get('/admin/analytics/login-history', requireAuth, requireAdmin, (req, re
     const todaySummary = db.prepare(
       "SELECT username, source, COUNT(*) as sessions, " +
       "COALESCE(SUM(duration_mins), 0) as total_mins " +
-      "FROM login_history WHERE date(logged_in_at) = date('now') GROUP BY username, source"
+      "FROM login_history WHERE date(logged_in_at, '+5 hours') = date('now', '+5 hours') GROUP BY username, source"
     ).all();
 
     // Live presence for online status
@@ -1350,9 +1352,9 @@ router.get('/admin/analytics/export', (req, res) => {
     const range = req.query.range || 'week';
     const agent = req.query.agent || '';
 
-    let dateFilter = "timestamp >= datetime('now', '-7 days')";
-    if (range === 'today') dateFilter = "date(timestamp) = date('now')";
-    else if (range === 'month') dateFilter = "timestamp >= datetime('now', '-30 days')";
+    let dateFilter = "timestamp >= datetime('now', '+5 hours', '-7 days')";
+    if (range === 'today') dateFilter = "date(timestamp, '+5 hours') = date('now', '+5 hours')";
+    else if (range === 'month') dateFilter = "timestamp >= datetime('now', '+5 hours', '-30 days')";
     else if (range === 'all') dateFilter = '1=1';
 
     let where = 'WHERE ' + dateFilter;

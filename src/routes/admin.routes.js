@@ -78,11 +78,11 @@ module.exports = function setupAdminRoutes(io) {
         answered = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'answered'").c;
         missed = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'missed'").c;
         avgDuration = q('SELECT AVG(duration) as a FROM calls WHERE duration IS NOT NULL').a;
-        todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now')").c;
-        todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND direction = 'inbound'").c;
-        todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND direction = 'outbound'").c;
-        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'answered'").c;
-        todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now') AND call_status = 'missed'").c;
+        todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp, '+5 hours') = date('now', '+5 hours')").c;
+        todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp, '+5 hours') = date('now', '+5 hours') AND direction = 'inbound'").c;
+        todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp, '+5 hours') = date('now', '+5 hours') AND direction = 'outbound'").c;
+        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp, '+5 hours') = date('now', '+5 hours') AND call_status = 'answered'").c;
+        todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE date(timestamp, '+5 hours') = date('now', '+5 hours') AND call_status = 'missed'").c;
       } else {
         total = q('SELECT COUNT(*) as c FROM calls WHERE agent = ?', agent).c;
         inbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND direction = 'inbound'", agent).c;
@@ -90,17 +90,17 @@ module.exports = function setupAdminRoutes(io) {
         answered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered'", agent).c;
         missed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'missed'", agent).c;
         avgDuration = q('SELECT AVG(duration) as a FROM calls WHERE agent = ? AND duration IS NOT NULL', agent).a;
-        todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now')", agent).c;
-        todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND direction = 'inbound'", agent).c;
-        todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND direction = 'outbound'", agent).c;
-        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'answered'", agent).c;
-        todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'missed'", agent).c;
+        todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp, '+5 hours') = date('now', '+5 hours')", agent).c;
+        todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp, '+5 hours') = date('now', '+5 hours') AND direction = 'inbound'", agent).c;
+        todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp, '+5 hours') = date('now', '+5 hours') AND direction = 'outbound'", agent).c;
+        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp, '+5 hours') = date('now', '+5 hours') AND call_status = 'answered'", agent).c;
+        todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp, '+5 hours') = date('now', '+5 hours') AND call_status = 'missed'", agent).c;
       }
 
       // Extra admin data
       let todayTalkTime = 0, agentSnapshot = [], recentCalls = [], alerts = [];
       if (isAdmin) {
-        todayTalkTime = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp) = date('now') AND duration IS NOT NULL").s;
+        todayTalkTime = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE date(timestamp, '+5 hours') = date('now', '+5 hours') AND duration IS NOT NULL").s;
 
         // Agent snapshot
         const presence = getAllPresence();
@@ -160,7 +160,7 @@ module.exports = function setupAdminRoutes(io) {
 
       // 1. Calls per hour today (0-23)
       const hourlyRows = db.prepare(
-        "SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, COUNT(*) as count FROM calls WHERE date(timestamp) = date('now') GROUP BY hour ORDER BY hour"
+        "SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, COUNT(*) as count FROM calls WHERE date(timestamp, '+5 hours') = date('now', '+5 hours') GROUP BY hour ORDER BY hour"
       ).all();
       const hourly = Array(24).fill(0);
       hourlyRows.forEach(function(r) { hourly[r.hour] = r.count; });
@@ -169,7 +169,7 @@ module.exports = function setupAdminRoutes(io) {
       const answeredHourly = Array(24).fill(0);
       const missedHourly = Array(24).fill(0);
       db.prepare(
-        "SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, call_status, COUNT(*) as count FROM calls WHERE date(timestamp) = date('now') AND call_status IN ('answered','missed') GROUP BY hour, call_status"
+        "SELECT CAST(strftime('%H', timestamp, '+5 hours') AS INTEGER) as hour, call_status, COUNT(*) as count FROM calls WHERE date(timestamp, '+5 hours') = date('now', '+5 hours') AND call_status IN ('answered','missed') GROUP BY hour, call_status"
       ).all().forEach(function(r) {
         if (r.call_status === 'answered') answeredHourly[r.hour] = r.count;
         else missedHourly[r.hour] = r.count;
@@ -206,14 +206,14 @@ module.exports = function setupAdminRoutes(io) {
       let avgDuration = 0, todayTalkTime = 0, weekTalkTime = 0, totalTalkTime = 0;
       let lastCallAt = null;
       try {
-        todayCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now')").get(username).c;
+        todayCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp, '+5 hours') = date('now', '+5 hours')").get(username).c;
         totalCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ?").get(username).c;
         answeredCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered'").get(username).c;
         missedCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'missed'").get(username).c;
         weekCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days')").get(username).c;
         weekAnswered = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered' AND timestamp >= datetime('now', '-7 days')").get(username).c;
         avgDuration = db.prepare("SELECT AVG(duration) as a FROM calls WHERE agent = ? AND duration IS NOT NULL").get(username).a || 0;
-        todayTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL").get(username).s;
+        todayTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND date(timestamp, '+5 hours') = date('now', '+5 hours') AND duration IS NOT NULL").get(username).s;
         weekTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days') AND duration IS NOT NULL").get(username).s;
         totalTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND duration IS NOT NULL").get(username).s;
         const lastRow = db.prepare("SELECT timestamp FROM calls WHERE agent = ? ORDER BY timestamp DESC LIMIT 1").get(username);
@@ -223,9 +223,9 @@ module.exports = function setupAdminRoutes(io) {
       // Extra metrics
       let longestToday = 0, longestWeek = 0, todayAnswered = 0;
       try {
-        longestToday = db.prepare("SELECT COALESCE(MAX(duration),0) as m FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND duration IS NOT NULL").get(username).m;
+        longestToday = db.prepare("SELECT COALESCE(MAX(duration),0) as m FROM calls WHERE agent = ? AND date(timestamp, '+5 hours') = date('now', '+5 hours') AND duration IS NOT NULL").get(username).m;
         longestWeek = db.prepare("SELECT COALESCE(MAX(duration),0) as m FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days') AND duration IS NOT NULL").get(username).m;
-        todayAnswered = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp) = date('now') AND call_status = 'answered'").get(username).c;
+        todayAnswered = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND date(timestamp, '+5 hours') = date('now', '+5 hours') AND call_status = 'answered'").get(username).c;
       } catch (e) { console.error('[admin] Operation failed:', e.message); }
 
       // Performance score: answered +2, missed -3, talk time bonus
