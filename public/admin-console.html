@@ -2292,35 +2292,25 @@
         var periodLabel = s.date ? s.date : (s.period === 'today' ? 'Today' : s.period === 'week' ? 'This Week' : s.period === 'month' ? 'This Month' : 'All Time');
         document.getElementById('apptPerfPeriodLabel').textContent = '(' + periodLabel + ')';
 
-        // --- Table 1: Period performance (filtered by current date/period) ---
-        var agentMap = {};
-        appts.forEach(function(a) {
-          var ag = a.attributed_agent || a.created_by || 'Unassigned';
-          if (!agentMap[ag]) agentMap[ag] = { booked: 0, showedUp: 0, noshow: 0, cancelled: 0 };
-          agentMap[ag].booked++;
-          if (isShowedUp(a)) agentMap[ag].showedUp++;
-          if (isNoShow(a)) agentMap[ag].noshow++;
-          if (isCancelled(a)) agentMap[ag].cancelled++;
-        });
-        var agentArr = Object.keys(agentMap).map(function(ag) { return { id: ag, stats: agentMap[ag] }; })
-          .sort(function(a, b) { return b.stats.booked - a.stats.booked; });
+        // --- Table 1: Period performance (from server, computed on ALL rows not just current page) ---
+        var agentPerf = data.agentPerf || [];
 
         var sh = '';
-        if (agentArr.length === 0) {
+        if (agentPerf.length === 0) {
           sh = '<div class="empty">No data for this period</div>';
         } else {
           sh += '<table><thead><tr><th>Name</th><th>Appointments</th><th>Showed Up</th><th>No-Show</th><th>Cancelled</th><th>Show-Up Rate</th><th></th></tr></thead><tbody>';
-          agentArr.forEach(function(a) {
-            var rate = a.stats.booked > 0 ? Math.round((a.stats.showedUp / a.stats.booked) * 100) : 0;
+          agentPerf.forEach(function(a) {
+            var rate = a.booked > 0 ? Math.round((a.showedUp / a.booked) * 100) : 0;
             var barColor = rate >= 70 ? '#22c55e' : rate >= 40 ? '#f59e0b' : '#ef4444';
             sh += '<tr>';
-            sh += '<td><strong>' + esc(agentDisplayName(a.id)) + '</strong>';
-            if (names[a.id]) sh += '<div style="font-size:11px;color:#94a3b8;">' + esc(a.id) + '</div>';
+            sh += '<td><strong>' + esc(agentDisplayName(a.name)) + '</strong>';
+            if (names[a.name]) sh += '<div style="font-size:11px;color:#94a3b8;">' + esc(a.name) + '</div>';
             sh += '</td>';
-            sh += '<td>' + a.stats.booked + '</td>';
-            sh += '<td style="color:#22c55e;font-weight:600;">' + a.stats.showedUp + '</td>';
-            sh += '<td style="color:' + (a.stats.noshow > 0 ? '#f59e0b' : '#94a3b8') + ';font-weight:600;">' + a.stats.noshow + '</td>';
-            sh += '<td style="color:' + (a.stats.cancelled > 0 ? '#ef4444' : '#94a3b8') + ';font-weight:600;">' + a.stats.cancelled + '</td>';
+            sh += '<td>' + a.booked + '</td>';
+            sh += '<td style="color:#22c55e;font-weight:600;">' + a.showedUp + '</td>';
+            sh += '<td style="color:' + (a.noshow > 0 ? '#f59e0b' : '#94a3b8') + ';font-weight:600;">' + a.noshow + '</td>';
+            sh += '<td style="color:' + (a.cancelled > 0 ? '#ef4444' : '#94a3b8') + ';font-weight:600;">' + a.cancelled + '</td>';
             sh += '<td><strong>' + rate + '%</strong></td>';
             sh += '<td style="width:120px;"><div style="background:#f1f5f9;border-radius:4px;height:8px;overflow:hidden;"><div style="background:' + barColor + ';height:100%;width:' + rate + '%;border-radius:4px;transition:width 0.5s;"></div></div></td>';
             sh += '</tr>';

@@ -1155,27 +1155,52 @@ router.get('/admin/appointments', (req, res) => {
       }
     } catch (e) { /* ignore */ }
 
-    // Compute KPI stats from all rows (not paginated)
+    // Compute KPI stats + per-agent breakdown from all rows (not paginated)
     let kpiShowedUp = 0, kpiNoShow = 0, kpiCancelled = 0;
+    const agentPerfMap = {}; // agent → { booked, showedUp, noshow, cancelled }
+
+    // We need agent attribution for stats rows too — build a phone→agent cache
+    const phoneAgentCache = {};
+    try {
+      db.prepare("SELECT caller_number, agent FROM calls WHERE agent IS NOT NULL ORDER BY timestamp DESC").all().forEach(r => {
+        const p = r.caller_number ? r.caller_number.replace(/[\s\-()]/g, '').slice(-10) : '';
+        if (p && !phoneAgentCache[p]) phoneAgentCache[p] = r.agent;
+      });
+    } catch (e) { /* ignore */ }
+
     for (const apt of allForStats) {
       const sl = (apt.clinicea_status || '').toLowerCase();
       const apptDateStr = apt.appointment_date ? new Date(apt.appointment_date).toISOString().split('T')[0] : null;
       const isPast = !!(apptDateStr && apptDateStr < todayStr);
+      const cleanPhone = apt.patient_phone ? apt.patient_phone.replace(/[\s\-()]/g, '') : '';
+
+      // Determine agent for this appointment
+      const agentFromCalls = cleanPhone ? phoneAgentCache[cleanPhone.slice(-10)] : null;
+      const ag = agentFromCalls || apt.assigned_agent || apt.created_by || 'Unassigned';
+      if (!agentPerfMap[ag]) agentPerfMap[ag] = { booked: 0, showedUp: 0, noshow: 0, cancelled: 0 };
+      agentPerfMap[ag].booked++;
+
       const showed = sl.includes('check') || sl.includes('complet') || sl.includes('arrived') || sl.includes('engaged');
-      if (showed) { kpiShowedUp++; continue; }
-      const cancelled = sl.includes('cancel') || sl.includes('no show') || sl.includes('noshow');
-      if (cancelled) {
-        const cleanPhone = apt.patient_phone ? apt.patient_phone.replace(/[\s\-()]/g, '') : '';
+      if (showed) { kpiShowedUp++; agentPerfMap[ag].showedUp++; continue; }
+
+      const isCancelledStatus = sl.includes('cancel') || sl.includes('no show') || sl.includes('noshow');
+      if (isCancelledStatus) {
         const laterDate = patientShowedUpAfter[cleanPhone];
-        if (!(laterDate && laterDate > apt.appointment_date)) kpiCancelled++;
+        const suppressed = laterDate && laterDate > apt.appointment_date;
+        if (!suppressed) { kpiCancelled++; agentPerfMap[ag].cancelled++; }
         continue;
       }
       if (isPast && (!apt.clinicea_status || sl.includes('scheduled')) && !sl.includes('confirmed')) {
-        const cleanPhone = apt.patient_phone ? apt.patient_phone.replace(/[\s\-()]/g, '') : '';
         const laterDate = patientShowedUpAfter[cleanPhone];
-        if (!(laterDate && laterDate > apt.appointment_date)) kpiNoShow++;
+        const suppressed = laterDate && laterDate > apt.appointment_date;
+        if (!suppressed) { kpiNoShow++; agentPerfMap[ag].noshow++; }
       }
     }
+
+    // Convert to sorted array
+    const agentPerf = Object.entries(agentPerfMap)
+      .map(([name, stats]) => ({ name, ...stats }))
+      .sort((a, b) => b.booked - a.booked);
 
     // Enrich paginated rows with agent from call history + compute flags
     let appointments = rawAppointments.map(apt => {
@@ -1258,7 +1283,8 @@ router.get('/admin/appointments', (req, res) => {
     res.json({
       appointments, agents, agentNames, callsByAgent, services, doctors, bookedByList,
       total: totalCount, page, pageSize, totalPages: Math.ceil(totalCount / pageSize) || 1,
-      kpi: { total: totalCount, showedUp: kpiShowedUp, noShow: kpiNoShow, cancelled: kpiCancelled }
+      kpi: { total: totalCount, showedUp: kpiShowedUp, noShow: kpiNoShow, cancelled: kpiCancelled },
+      agentPerf
     });
   } catch (err) {
     console.error('[admin-console] appointments error:', err.message); res.status(500).json({ error: 'Failed to load appointments.', appointments: [] });
