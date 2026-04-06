@@ -1072,11 +1072,12 @@ router.get('/admin/appointments', (req, res) => {
     const service = req.query.service || '';
     const specificDate = req.query.date || '';
 
-    let dateFilter = "date(appointment_date) = date('now')";
+    // Use PKT (+5 hours) for date comparisons — SQLite date('now') is UTC
+    let dateFilter = "date(appointment_date) = date('now', '+5 hours')";
     if (specificDate && /^\d{4}-\d{2}-\d{2}$/.test(specificDate)) {
       dateFilter = "date(appointment_date) = ?";
-    } else if (period === 'week') dateFilter = "appointment_date >= datetime('now', '-7 days')";
-    else if (period === 'month') dateFilter = "appointment_date >= datetime('now', '-30 days')";
+    } else if (period === 'week') dateFilter = "appointment_date >= datetime('now', '+5 hours', '-7 days')";
+    else if (period === 'month') dateFilter = "appointment_date >= datetime('now', '+5 hours', '-30 days')";
     else if (period === '' || period === 'all') dateFilter = '1=1';
 
     let where = 'WHERE ' + dateFilter;
