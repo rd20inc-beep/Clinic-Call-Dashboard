@@ -600,9 +600,9 @@
       <!-- KPI Summary -->
       <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:12px;" class="ov-grid-4">
         <div class="stat-card blue" style="padding:12px;"><div class="stat-value" style="font-size:22px;" id="apptTabTotal">-</div><div class="stat-label">Total</div></div>
-        <div class="stat-card green" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='showed';loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabShowedUp">-</div><div class="stat-label">Showed Up</div></div>
-        <div class="stat-card orange" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='noshow';loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabNoShow">-</div><div class="stat-label">No-Show</div></div>
-        <div class="stat-card red" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='cancelled';loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabCancelled">-</div><div class="stat-label">Cancelled</div></div>
+        <div class="stat-card green" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='showed';apptTabState.page=1;loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabShowedUp">-</div><div class="stat-label">Showed Up</div></div>
+        <div class="stat-card orange" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='noshow';apptTabState.page=1;loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabNoShow">-</div><div class="stat-label">No-Show</div></div>
+        <div class="stat-card red" style="padding:12px;cursor:pointer;" onclick="apptTabState.statusFilter='cancelled';apptTabState.page=1;loadAppointmentsTab()"><div class="stat-value" style="font-size:22px;" id="apptTabCancelled">-</div><div class="stat-label">Cancelled</div></div>
         <div class="stat-card teal" style="padding:12px;"><div class="stat-value" style="font-size:22px;" id="apptTabShowRate">-</div><div class="stat-label">Show-Up Rate</div></div>
       </div>
       <!-- Filters + Table -->
@@ -2139,6 +2139,7 @@
       if (s.service) params.set('service', s.service);
       if (s.doctor) params.set('doctor', s.doctor);
       if (s.bookedBy) params.set('bookedBy', s.bookedBy);
+      if (s.statusFilter && s.statusFilter !== 'overdue') params.set('statusFilter', s.statusFilter);
 
       try {
         var res = await fetch('/admin/appointments?' + params.toString());
@@ -2152,13 +2153,9 @@
         var totalPages = data.totalPages || 1;
         var curPage = data.page || 1;
 
-        // Apply client-side status filter on the paginated rows
+        // "overdue" = noshow + cancelled combined — only this one stays client-side
         var filtered = appts;
-        if (s.statusFilter === 'noshow') filtered = appts.filter(isNoShow);
-        else if (s.statusFilter === 'cancelled') filtered = appts.filter(isCancelled);
-        else if (s.statusFilter === 'overdue') filtered = appts.filter(function(a) { return a.is_overdue; });
-        else if (s.statusFilter === 'showed') filtered = appts.filter(isShowedUp);
-        else if (s.statusFilter === 'scheduled') filtered = appts.filter(function(a) { var sl = (a.clinicea_status||'').toLowerCase(); return !sl || sl.indexOf('scheduled') >= 0; });
+        if (s.statusFilter === 'overdue') filtered = appts.filter(function(a) { return a.is_overdue; });
 
         // KPI stats from server (computed from ALL rows, not just this page)
         var total = kpi.total || totalCount;
@@ -2183,7 +2180,7 @@
         fb += '<input type="date" value="' + esc(s.date) + '" onchange="setApptTabDate(this.value)" style="padding:5px 10px;border:1px solid ' + (s.date?'#6366f1':'#e2e8f0') + ';border-radius:6px;font-size:13px;' + (s.date?'background:#eef2ff;':'') + '">';
         fb += '<span style="color:#e2e8f0;margin:0 2px;">|</span>';
         // Status filter
-        fb += '<select class="filter-select" onchange="apptTabState.statusFilter=this.value;loadAppointmentsTab()">';
+        fb += '<select class="filter-select" onchange="apptTabState.statusFilter=this.value;apptTabState.page=1;loadAppointmentsTab()">';
         fb += '<option value="">All Statuses</option>';
         fb += '<option value="showed"' + (s.statusFilter==='showed'?' selected':'') + '>Showed Up (' + showedUp + ')</option>';
         fb += '<option value="noshow"' + (s.statusFilter==='noshow'?' selected':'') + '>No-Show (' + noShowCount + ')</option>';

@@ -1093,6 +1093,18 @@ router.get('/admin/appointments', (req, res) => {
     const bookedBy = req.query.bookedBy || '';
     if (bookedBy) { where += ' AND created_by LIKE ?'; params.push('%' + bookedBy + '%'); }
 
+    // Status filter (server-side so pagination works correctly)
+    const statusFilter = req.query.statusFilter || '';
+    if (statusFilter === 'showed') {
+      where += " AND (LOWER(clinicea_status) LIKE '%check%' OR LOWER(clinicea_status) LIKE '%complet%' OR LOWER(clinicea_status) LIKE '%arrived%' OR LOWER(clinicea_status) LIKE '%engaged%')";
+    } else if (statusFilter === 'cancelled') {
+      where += " AND (LOWER(clinicea_status) LIKE '%cancel%' OR LOWER(clinicea_status) LIKE '%no show%' OR LOWER(clinicea_status) LIKE '%noshow%')";
+    } else if (statusFilter === 'noshow') {
+      where += " AND (clinicea_status IS NULL OR LOWER(clinicea_status) LIKE '%scheduled%') AND date(appointment_date) < date('now', '+5 hours')";
+    } else if (statusFilter === 'scheduled') {
+      where += " AND (clinicea_status IS NULL OR LOWER(clinicea_status) LIKE '%scheduled%')";
+    }
+
     // Pagination
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const pageSize = Math.min(200, Math.max(10, parseInt(req.query.pageSize, 10) || 50));
