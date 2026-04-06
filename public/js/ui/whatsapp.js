@@ -502,7 +502,7 @@ function waApproveAllMessages() {
 
 // ===== HELPER: fetch template from server, preview in modal, then send =====
 
-function _applyAndSend(templateKey, vars, title, phone, name, type) {
+function _applyAndSend(templateKey, vars, title, phone, name, type, appointmentId) {
   // Fetch the rendered template to preview it
   waFetch('/api/whatsapp/preview-template', { method: 'POST', body: JSON.stringify({ template: templateKey, vars: vars }) })
     .then(function(d) {
@@ -516,7 +516,13 @@ function _applyAndSend(templateKey, vars, title, phone, name, type) {
     .then(function(d) {
       if (!d) return; // cancelled
       if (d.ok) {
-        showErrorToast(title + ' sent to ' + name, 'success');
+        showErrorToast(title + ' queued for ' + name, 'success');
+        // Mark confirmation/reminder as sent on this appointment
+        if (appointmentId && (type === 'confirmation' || type === 'reminder')) {
+          waFetch('/api/whatsapp/mark-sent', { method: 'POST', body: JSON.stringify({ appointmentId: appointmentId, type: type }) })
+            .then(function() { if (typeof loadCalendar === 'function') loadCalendar(); })
+            .catch(function() {});
+        }
       } else {
         showErrorToast('Error: ' + (d.error || 'Unknown'));
       }
@@ -531,8 +537,14 @@ function _applyAndSend(templateKey, vars, title, phone, name, type) {
           })
           .then(function(d) {
             if (!d) return;
-            if (d.ok) showErrorToast(title + ' sent to ' + name, 'success');
-            else showErrorToast('Error: ' + (d.error || 'Unknown'));
+            if (d.ok) {
+              showErrorToast(title + ' queued for ' + name, 'success');
+              if (appointmentId && (type === 'confirmation' || type === 'reminder')) {
+                waFetch('/api/whatsapp/mark-sent', { method: 'POST', body: JSON.stringify({ appointmentId: appointmentId, type: type }) })
+                  .then(function() { if (typeof loadCalendar === 'function') loadCalendar(); })
+                  .catch(function() {});
+              }
+            } else showErrorToast('Error: ' + (d.error || 'Unknown'));
           })
           .catch(function(e) { showErrorToast('Error: ' + e.message); });
         return;
@@ -613,7 +625,7 @@ function waShowPreview(title, phone, name, msg) {
 
 // ===== CALENDAR SEND ACTIONS =====
 
-function calSendConfirmation(phone, name, date, time, service, doctor) {
+function calSendConfirmation(phone, name, date, time, service, doctor, appointmentId) {
   var dateObj = new Date(date + 'T00:00:00');
   var dateStr = dateObj.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   var aptLine = dateStr + ' at ' + time;
@@ -623,10 +635,10 @@ function calSendConfirmation(phone, name, date, time, service, doctor) {
   _applyAndSend('confirmation', {
     name: name, date: dateStr, time: time, service: service || '', doctor: doctor || '',
     appointments: aptLine,
-  }, 'Send Confirmation', phone, name, 'confirmation');
+  }, 'Send Confirmation', phone, name, 'confirmation', appointmentId);
 }
 
-function calSendReminder(phone, name, date, time, service, doctor) {
+function calSendReminder(phone, name, date, time, service, doctor, appointmentId) {
   var aptDate = new Date(date + 'T00:00:00');
   var dateStr = aptDate.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   var aptLine = dateStr + ' at ' + time;
@@ -636,7 +648,7 @@ function calSendReminder(phone, name, date, time, service, doctor) {
   _applyAndSend('reminder', {
     date: dateStr, time: time, service: service || '', doctor: doctor || '',
     appointments: aptLine,
-  }, 'Send Reminder', phone, name, 'reminder');
+  }, 'Send Reminder', phone, name, 'reminder', appointmentId);
 }
 
 function calSendMessage(phone, name) {

@@ -1061,9 +1061,13 @@ async function loadCalendar() {
           html += '<button onclick="event.stopPropagation();calSendReview(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\',\'' + escapeHtml(apt.service || '') + '\',\'' + escapeHtml(apt.doctor || '') + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#8b5cf6;color:white;font-size:11px;font-weight:600;cursor:pointer;">Review</button>';
           html += '<button onclick="event.stopPropagation();calSendAftercare(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\',\'' + escapeHtml(apt.service || '') + '\',\'' + escapeHtml(apt.doctor || '') + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#059669;color:white;font-size:11px;font-weight:600;cursor:pointer;">Aftercare</button>';
         } else {
-          // Pre-visit: Confirm + Remind
-          html += '<button onclick="event.stopPropagation();calSendConfirmation(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\',\'' + escapeHtml(date) + '\',\'' + escapeHtml(timeStr) + '\',\'' + escapeHtml(apt.service || '') + '\',\'' + escapeHtml(apt.doctor || '') + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:11px;font-weight:600;cursor:pointer;">Confirm</button>';
-          html += '<button onclick="event.stopPropagation();calSendReminder(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\',\'' + escapeHtml(date) + '\',\'' + escapeHtml(timeStr) + '\',\'' + escapeHtml(apt.service || '') + '\',\'' + escapeHtml(apt.doctor || '') + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:11px;font-weight:600;cursor:pointer;">Remind</button>';
+          // Pre-visit: Confirm + Remind (pass appointmentID for tracking, hide if already sent)
+          if (!trackInfo || !trackInfo.confirmationSent) {
+            html += '<button onclick="event.stopPropagation();calSendConfirmation(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\',\'' + escapeHtml(date) + '\',\'' + escapeHtml(timeStr) + '\',\'' + escapeHtml(apt.service || '') + '\',\'' + escapeHtml(apt.doctor || '') + '\',\'' + escapeHtml(String(apt.appointmentID || '')) + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:11px;font-weight:600;cursor:pointer;">Confirm</button>';
+          }
+          if (!trackInfo || !trackInfo.reminderSent) {
+            html += '<button onclick="event.stopPropagation();calSendReminder(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\',\'' + escapeHtml(date) + '\',\'' + escapeHtml(timeStr) + '\',\'' + escapeHtml(apt.service || '') + '\',\'' + escapeHtml(apt.doctor || '') + '\',\'' + escapeHtml(String(apt.appointmentID || '')) + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:11px;font-weight:600;cursor:pointer;">Remind</button>';
+          }
         }
         html += '<button onclick="event.stopPropagation();calSendMessage(\'' + escapeHtml(aptPhone) + '\',\'' + escapeHtml(apt.patientName) + '\')" style="padding:3px 8px;border:none;border-radius:4px;background:#3498db;color:white;font-size:11px;font-weight:600;cursor:pointer;">Message</button>';
         html += '</div>';

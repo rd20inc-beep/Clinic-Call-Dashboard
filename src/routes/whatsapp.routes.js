@@ -99,6 +99,25 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
+  // POST /api/whatsapp/mark-sent — mark confirmation/reminder as sent for an appointment
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/mark-sent', requireAuth, (req, res) => {
+    const { appointmentId, type } = req.body;
+    if (!appointmentId || !type) return res.json({ error: 'appointmentId and type required' });
+    try {
+      const { db } = require('../db/index');
+      if (type === 'confirmation') {
+        db.prepare("UPDATE wa_appointment_tracking SET confirmation_sent = 1, confirmation_sent_at = datetime('now') WHERE appointment_id = ?").run(String(appointmentId));
+      } else if (type === 'reminder') {
+        db.prepare("UPDATE wa_appointment_tracking SET reminder_sent = 1, reminder_sent_at = datetime('now') WHERE appointment_id = ?").run(String(appointmentId));
+      }
+      return res.json({ ok: true });
+    } catch (e) {
+      return res.json({ error: e.message });
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // POST /api/whatsapp/preview-template - render template for preview
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/preview-template', requireAuth, (req, res) => {
