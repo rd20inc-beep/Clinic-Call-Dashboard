@@ -163,8 +163,12 @@ router.get('/admin/analytics/overview', async (req, res) => {
       outboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE " + TODAY + " AND direction = 'outbound' AND duration IS NOT NULL").s;
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
+    // Debug: log the actual values
+    console.log('[admin-console] Overview:', { callsToday, answeredToday, missedToday, outgoingToday, talkTimeToday, TODAY });
+
     // Response matches exact field names expected by remote_admin.html
     res.json({
+      _v: 'fd3-debug2',
       callsToday: callsToday,
       answeredToday: answeredToday,
       missedToday: missedToday,

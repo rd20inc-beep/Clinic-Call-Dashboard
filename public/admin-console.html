@@ -790,7 +790,7 @@
         var ct = res.headers.get('content-type') || '';
         if (!ct.includes('application/json')) { console.warn('Overview not JSON'); return; }
         var data = await res.json();
-        console.log('[overview] Response:', JSON.stringify({ callsToday: data.callsToday, answered: data.answeredToday, missed: data.missedToday, error: data.error, debug: data.debug }));
+        console.log('[overview] Response v=' + data._v + ':', JSON.stringify({ callsToday: data.callsToday, answered: data.answeredToday, missed: data.missedToday, error: data.error, debug: data.debug }));
         if (data.error) { console.error('[overview] Server error:', data.error, data.debug); }
         overviewData = data;
         // KPI cards
