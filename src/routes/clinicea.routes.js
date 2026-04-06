@@ -234,6 +234,9 @@ function dbRowToAppointment(row) {
     phone: row.patient_phone || '',
     notes: row.notes || '',
     createdBy: row.created_by || '',
+    confirmationSent: row.confirmation_sent === 1,
+    reminderSent: row.reminder_sent === 1,
+    assignedAgent: row.assigned_agent || '',
     _fromDb: true,
   };
 }

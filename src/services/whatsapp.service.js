@@ -414,6 +414,7 @@ let _backfillComplete = false;
 let _lastDailyRefreshDate = null;
 
 // Shared: process raw Clinicea appointments and upsert to local DB
+// Field extraction aligned with mapAppointmentFields in clinicea.service.js
 function _processAndSaveAppointments(rawAppointments) {
   let saved = 0;
   for (const apt of rawAppointments) {
@@ -432,10 +433,13 @@ function _processAndSaveAppointments(rawAppointments) {
     const patientPhone = apt.AppointmentWithPhone || apt.PatientMobile || apt.Mobile || '';
     const patientId = String(apt.PatientID || apt.patientID || '');
     const doctorName = apt.DoctorName || apt.Doctor ||
-      [apt.StaffTitle, apt.StaffFirstName, apt.StaffLastName].filter(Boolean).join(' ').trim() || '';
-    const service = apt.ServiceName || apt.ServiceCategory || apt.Service || '';
-    const createdBy = apt.CreatedStaffName || apt.ModifiedStaffName || '';
-    const aptDate = apt.StartDateTime || apt.AppointmentDateTime || '';
+      [apt.StaffTitle, apt.StaffFirstName, apt.StaffLastName].filter(Boolean).join(' ').trim() ||
+      apt.ResourceName || apt.ProviderName || '';
+    const service = apt.ServiceName || apt.ServiceCategory || apt.Service ||
+      apt.TreatmentName || apt.ProcedureName || '';
+    const createdBy = apt.CreatedStaffName || apt.ModifiedStaffName ||
+      apt.CreatedBy || apt.BookedBy || '';
+    const aptDate = apt.StartDateTime || apt.AppointmentDateTime || apt.StartTime || '';
     const endTime = apt.EndDateTime || apt.EndTime || '';
     const duration = apt.Duration || null;
     const notes = apt.Notes || apt.AppointmentNotes || '';
