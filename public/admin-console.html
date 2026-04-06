@@ -336,9 +336,18 @@
     <!-- ===== OVERVIEW TAB ===== -->
     <div class="tab-panel active" id="panel-overview">
 
+      <!-- Period selector -->
+      <div style="display:flex;gap:6px;margin-bottom:12px;align-items:center;">
+        <button class="filter-btn active" onclick="setOverviewPeriod('today')" data-ov="today">Today</button>
+        <button class="filter-btn" onclick="setOverviewPeriod('yesterday')" data-ov="yesterday">Yesterday</button>
+        <button class="filter-btn" onclick="setOverviewPeriod('week')" data-ov="week">This Week</button>
+        <button class="filter-btn" onclick="setOverviewPeriod('month')" data-ov="month">This Month</button>
+        <span id="ovPeriodLabel" style="font-size:12px;color:#94a3b8;margin-left:8px;"></span>
+      </div>
+
       <!-- ROW 1: Primary Call KPIs (CLICKABLE) -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;" class="ov-grid-4">
-        <div class="stat-card blue kpi-click" onclick="drillDown('calls')"><div class="stat-value" id="statCallsToday">-</div><div class="stat-label">Calls Today</div></div>
+        <div class="stat-card blue kpi-click" onclick="drillDown('calls')"><div class="stat-value" id="statCallsToday">-</div><div class="stat-label" id="lblCalls">Calls Today</div></div>
         <div class="stat-card green kpi-click" onclick="drillDown('answered')"><div class="stat-value" id="statAnsweredToday">-</div><div class="stat-label">Answered</div></div>
         <div class="stat-card red kpi-click" onclick="drillDown('missed')"><div class="stat-value" id="statMissedToday">-</div><div class="stat-label">Missed</div></div>
         <div class="stat-card teal"><div class="stat-value" id="statAnswerRate">-</div><div class="stat-label">Answer Rate</div></div>
@@ -347,7 +356,7 @@
       <!-- ROW 2: Conversion + Performance KPIs -->
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;" class="ov-grid-4">
         <div class="stat-card purple kpi-click" onclick="drillDown('appointments')"><div class="stat-value" id="statConversions">-</div><div class="stat-label">Appointments</div></div>
-        <div class="stat-card orange kpi-click" onclick="drillDown('talktime')"><div class="stat-value" id="statTalkTimeTotal">-</div><div class="stat-label">Talk Time Today</div></div>
+        <div class="stat-card orange kpi-click" onclick="drillDown('talktime')"><div class="stat-value" id="statTalkTimeTotal">-</div><div class="stat-label" id="lblTalkTime">Talk Time Today</div></div>
         <div class="stat-card blue kpi-click" onclick="drillDown('talktime')"><div class="stat-value" id="statAvgDuration">-</div><div class="stat-label">Avg Duration</div></div>
         <div class="stat-card red kpi-click" onclick="drillDown('callbacks')"><div class="stat-value" id="statPendingCallbacks">-</div><div class="stat-label">Pending Callbacks</div></div>
       </div>
@@ -783,15 +792,25 @@
         : '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#ccc;margin-right:2px;" title="Offline"></span>';
     }
 
+    var overviewPeriod = 'today';
+    function setOverviewPeriod(p) {
+      overviewPeriod = p;
+      document.querySelectorAll('[data-ov]').forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-ov') === p); });
+      var labels = { today: 'Today', yesterday: 'Yesterday', week: 'This Week', month: 'This Month' };
+      document.getElementById('lblCalls').textContent = 'Calls ' + (labels[p] || '');
+      try { document.getElementById('lblTalkTime').textContent = 'Talk Time ' + (labels[p] || ''); } catch(e){}
+      document.getElementById('ovPeriodLabel').textContent = '';
+      loadOverview();
+    }
+
     async function loadOverview() {
       try {
-        var res = await fetch('/admin/analytics/overview');
+        var res = await fetch('/admin/analytics/overview?period=' + overviewPeriod);
         if (!res.ok) { console.warn('Overview HTTP', res.status); return; }
         var ct = res.headers.get('content-type') || '';
         if (!ct.includes('application/json')) { console.warn('Overview not JSON'); return; }
         var data = await res.json();
-        console.log('[overview] Response v=' + data._v + ':', JSON.stringify({ callsToday: data.callsToday, answered: data.answeredToday, missed: data.missedToday, error: data.error, debug: data.debug }));
-        if (data.error) { console.error('[overview] Server error:', data.error, data.debug); }
+        if (data.error) { console.error('[overview] Server error:', data.error); return; }
         overviewData = data;
         // KPI cards
         // Row 1: Primary KPIs
