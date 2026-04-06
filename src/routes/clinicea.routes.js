@@ -267,31 +267,50 @@ router.get(
         "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
       ).all(date);
       if (rows.length > 0) {
-        // Build a map of messages sent per phone (last 10 digits) from wa_messages
-        // Phone formats vary: +923001234567, 923001234567, 03001234567 — normalize to last 10
-        const phoneMessages = {}; // last10digits → [types]
+        // Build a map of messages sent per phone+date from wa_messages
+        // Only match messages sent on the same day or day before the appointment
+        // (confirmations/reminders are sent 0-2 days before the appointment)
+        const phoneMessages = {}; // "last10digits|aptDate" → [types]
         try {
           const msgRows = db.prepare(
-            "SELECT phone, GROUP_CONCAT(DISTINCT message_type) as types FROM wa_messages " +
+            "SELECT phone, message_type, date(created_at) as msg_date FROM wa_messages " +
             "WHERE direction = 'out' AND status IN ('sent','pending','approved','sending') " +
-            "AND message_type IN ('confirmation','reminder','review','aftercare') " +
-            "GROUP BY phone"
+            "AND message_type IN ('confirmation','reminder','review','aftercare')"
           ).all();
           for (const r of msgRows) {
-            const key = (r.phone || '').replace(/[\s\-+()]/g, '').slice(-10);
-            if (key) phoneMessages[key] = (r.types || '').split(',');
+            const phoneKey = (r.phone || '').replace(/[\s\-+()]/g, '').slice(-10);
+            if (!phoneKey) continue;
+            // Store with message date for matching
+            const key = phoneKey + '|' + (r.msg_date || '');
+            if (!phoneMessages[key]) phoneMessages[key] = [];
+            if (!phoneMessages[key].includes(r.message_type)) phoneMessages[key].push(r.message_type);
           }
         } catch (e) { /* ignore */ }
 
         const appointments = rows.map(function(row) {
           const apt = dbRowToAppointment(row);
-          // Match by last 10 digits of phone
           const phoneKey = (row.patient_phone || '').replace(/[\s\-+()]/g, '').slice(-10);
-          const msgs = phoneKey ? (phoneMessages[phoneKey] || []) : [];
-          if (msgs.includes('confirmation')) apt.confirmationSent = true;
-          if (msgs.includes('reminder')) apt.reminderSent = true;
-          if (msgs.includes('review')) apt.reviewSent = true;
-          if (msgs.includes('aftercare')) apt.aftercareSent = true;
+          if (phoneKey) {
+            // Check the appointment_tracking flags first (set by mark-sent)
+            // Then check wa_messages sent on appointment date or 1-2 days before
+            const aptDate = row.appointment_date ? new Date(row.appointment_date) : null;
+            if (aptDate && !isNaN(aptDate)) {
+              const aptDateStr = aptDate.toISOString().split('T')[0];
+              const dayBefore = new Date(aptDate.getTime() - 24*60*60*1000).toISOString().split('T')[0];
+              const twoBefore = new Date(aptDate.getTime() - 2*24*60*60*1000).toISOString().split('T')[0];
+              // Collect message types from matching dates
+              const matchDates = [aptDateStr, dayBefore, twoBefore];
+              const msgs = [];
+              for (const d of matchDates) {
+                const types = phoneMessages[phoneKey + '|' + d] || [];
+                for (const t of types) { if (!msgs.includes(t)) msgs.push(t); }
+              }
+              if (msgs.includes('confirmation')) apt.confirmationSent = true;
+              if (msgs.includes('reminder')) apt.reminderSent = true;
+              if (msgs.includes('review')) apt.reviewSent = true;
+              if (msgs.includes('aftercare')) apt.aftercareSent = true;
+            }
+          }
           return apt;
         });
         return res.json({ appointments, date });
