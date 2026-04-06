@@ -163,8 +163,17 @@ router.get('/admin/analytics/overview', async (req, res) => {
       outboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE " + TODAY + " AND direction = 'outbound' AND duration IS NOT NULL").s;
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
-    // Debug: log the actual values
-    console.log('[admin-console] Overview:', { callsToday, answeredToday, missedToday, outgoingToday, talkTimeToday, TODAY });
+    // Debug: check timestamp storage format
+    const dbg = {};
+    try {
+      dbg.sampleTs = db.prepare("SELECT timestamp FROM calls ORDER BY id DESC LIMIT 1").get();
+      dbg.dateNow = db.prepare("SELECT date('now') as d").get().d;
+      dbg.dateNowPKT = db.prepare("SELECT date('now', '+5 hours') as d").get().d;
+      dbg.countNoOffset = db.prepare("SELECT COUNT(*) as c FROM calls WHERE date(timestamp) = date('now')").get().c;
+      dbg.countWithOffset = db.prepare("SELECT COUNT(*) as c FROM calls WHERE date(timestamp, '+5 hours') = date('now', '+5 hours')").get().c;
+      dbg.totalCalls = db.prepare("SELECT COUNT(*) as c FROM calls").get().c;
+    } catch(e) { dbg.error = e.message; }
+    console.log('[admin-console] DEBUG timestamps:', JSON.stringify(dbg));
 
     // Response matches exact field names expected by remote_admin.html
     res.json({
