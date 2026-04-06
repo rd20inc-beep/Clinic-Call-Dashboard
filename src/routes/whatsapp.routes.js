@@ -99,6 +99,22 @@ function setupWhatsAppRoutes(io) {
   });
 
   // -----------------------------------------------------------------------
+  // POST /api/whatsapp/preview-template - render template for preview
+  // -----------------------------------------------------------------------
+  router.post('/api/whatsapp/preview-template', requireAuth, (req, res) => {
+    const { template, vars } = req.body;
+    if (!template) return res.json({ error: 'template required' });
+    try {
+      const templates = require('../services/messageTemplates');
+      const message = templates.applyTemplate(template, vars || {});
+      if (!message) return res.json({ error: 'Template not found: ' + template });
+      return res.json({ ok: true, message });
+    } catch (e) {
+      return res.json({ error: e.message });
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // POST /api/whatsapp/send - manual message from dashboard (auth-protected)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/send', requireAuth, (req, res) => {

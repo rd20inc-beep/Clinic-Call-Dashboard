@@ -500,16 +500,45 @@ function waApproveAllMessages() {
     .catch(function() {});
 }
 
-// ===== HELPER: fetch template from server, preview, then send =====
+// ===== HELPER: fetch template from server, preview in modal, then send =====
 
 function _applyAndSend(templateKey, vars, title, phone, name, type) {
-  if (!confirm(title + '\nTo: ' + phone + ' (' + name + ')\n\nSend this message?')) return;
-  waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, template: templateKey, vars: vars, type: type }) })
+  // Fetch the rendered template to preview it
+  waFetch('/api/whatsapp/preview-template', { method: 'POST', body: JSON.stringify({ template: templateKey, vars: vars }) })
     .then(function(d) {
-      if (d.ok) alert(title + ' queued successfully.');
-      else alert('Error: ' + (d.error || 'Unknown'));
+      var msg = d.message || d.text || (title + ' message for ' + name);
+      return waShowPreview(title, phone, name, msg);
     })
-    .catch(function(err) { alert('Error: ' + err.message); });
+    .then(function(confirmed) {
+      if (!confirmed) return;
+      return waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, template: templateKey, vars: vars, type: type }) });
+    })
+    .then(function(d) {
+      if (!d) return; // cancelled
+      if (d.ok) {
+        showErrorToast(title + ' sent to ' + name, 'success');
+      } else {
+        showErrorToast('Error: ' + (d.error || 'Unknown'));
+      }
+    })
+    .catch(function(err) {
+      // If preview endpoint doesn't exist, fall back to simple confirm dialog
+      if (err.message && err.message.indexOf('Non-JSON') >= 0) {
+        waShowPreview(title, phone, name, 'Message will be sent using the "' + templateKey + '" template.')
+          .then(function(confirmed) {
+            if (!confirmed) return;
+            return waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, template: templateKey, vars: vars, type: type }) });
+          })
+          .then(function(d) {
+            if (!d) return;
+            if (d.ok) showErrorToast(title + ' sent to ' + name, 'success');
+            else showErrorToast('Error: ' + (d.error || 'Unknown'));
+          })
+          .catch(function(e) { showErrorToast('Error: ' + e.message); });
+        return;
+      }
+      showErrorToast('Error: ' + err.message);
+    });
 }
 
 // ===== POST-VISIT: REVIEW REQUEST =====
@@ -614,12 +643,17 @@ function calSendMessage(phone, name) {
   var msg = prompt('Message to ' + name + ' (' + phone + '):');
   if (!msg || !msg.trim()) return;
 
-  waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg.trim() }) })
-    .then(function(data) {
-      if (data.ok) alert('Message queued for approval.');
-      else alert('Error: ' + (data.error || 'Unknown'));
+  waShowPreview('Custom Message', phone, name, msg.trim())
+    .then(function(confirmed) {
+      if (!confirmed) return;
+      return waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, message: msg.trim() }) });
     })
-    .catch(function(err) { alert('Error: ' + err.message); });
+    .then(function(data) {
+      if (!data) return;
+      if (data.ok) showErrorToast('Message sent to ' + name, 'success');
+      else showErrorToast('Error: ' + (data.error || 'Unknown'));
+    })
+    .catch(function(err) { showErrorToast('Error: ' + err.message); });
 }
 
 // ===== WHATSAPP CONNECTION =====
