@@ -417,4 +417,37 @@ if (oldNumbers.length > 0) {
   );
 }
 
+// Backfill confirmation_sent/reminder_sent from wa_messages
+// Matches messages to appointments by last 10 digits of phone
+try {
+  const unflagged = db.prepare(
+    "SELECT id, patient_phone FROM wa_appointment_tracking WHERE (confirmation_sent = 0 OR reminder_sent = 0) AND patient_phone IS NOT NULL AND patient_phone != ''"
+  ).all();
+  if (unflagged.length > 0) {
+    // Build phone→message types map from wa_messages
+    const msgMap = {};
+    db.prepare(
+      "SELECT phone, GROUP_CONCAT(DISTINCT message_type) as types FROM wa_messages " +
+      "WHERE direction = 'out' AND message_type IN ('confirmation','reminder') GROUP BY phone"
+    ).all().forEach(r => {
+      const key = (r.phone || '').replace(/[\s\-+()]/g, '').slice(-10);
+      if (key) msgMap[key] = (r.types || '').split(',');
+    });
+
+    let confFixed = 0, remFixed = 0;
+    const stmtConf = db.prepare("UPDATE wa_appointment_tracking SET confirmation_sent = 1, confirmation_sent_at = COALESCE(confirmation_sent_at, datetime('now')) WHERE id = ?");
+    const stmtRem = db.prepare("UPDATE wa_appointment_tracking SET reminder_sent = 1, reminder_sent_at = COALESCE(reminder_sent_at, datetime('now')) WHERE id = ?");
+
+    for (const row of unflagged) {
+      const key = (row.patient_phone || '').replace(/[\s\-+()]/g, '').slice(-10);
+      const types = msgMap[key] || [];
+      if (types.includes('confirmation')) { stmtConf.run(row.id); confFixed++; }
+      if (types.includes('reminder')) { stmtRem.run(row.id); remFixed++; }
+    }
+    if (confFixed > 0 || remFixed > 0) {
+      console.log(`[MIGRATION] Backfilled message flags: ${confFixed} confirmations, ${remFixed} reminders`);
+    }
+  }
+} catch (e) { /* tables may not exist yet */ }
+
 module.exports = { db, sessionDb };
