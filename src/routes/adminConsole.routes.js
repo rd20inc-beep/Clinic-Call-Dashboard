@@ -1093,9 +1093,23 @@ router.get('/admin/appointments', (req, res) => {
     const bookedBy = req.query.bookedBy || '';
     if (bookedBy) { where += ' AND created_by LIKE ?'; params.push('%' + bookedBy + '%'); }
 
-    const rawAppointments = db.prepare(
-      'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 500'
+    // Pagination
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(200, Math.max(10, parseInt(req.query.pageSize, 10) || 50));
+    const offset = (page - 1) * pageSize;
+
+    // Total count (for KPIs and pagination — no limit)
+    const totalCount = db.prepare('SELECT COUNT(*) as c FROM wa_appointment_tracking ' + where).get(...params).c;
+
+    // All rows for KPI calculation (no pagination limit, but cap at 5000 for safety)
+    const allForStats = db.prepare(
+      'SELECT id, patient_phone, clinicea_status, appointment_date, assigned_agent, created_by, confirmation_sent FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT 5000'
     ).all(...params);
+
+    // Paginated rows for display
+    const rawAppointments = db.prepare(
+      'SELECT * FROM wa_appointment_tracking ' + where + ' ORDER BY appointment_date DESC LIMIT ? OFFSET ?'
+    ).all(...params, pageSize, offset);
 
     const todayStr = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' })).toISOString().split('T')[0];
 
@@ -1117,7 +1131,53 @@ router.get('/admin/appointments', (req, res) => {
       }
     } catch (e) { /* ignore */ }
 
-    // Enrich with agent from call history + compute flags
+    // Build patient highlight maps:
+    // 1. Patients with no future appointment (last appointment is in the past)
+    // 2. Patients whose last appointment was a no-show
+    const patientLastAppt = {}; // phone → { date, status }
+    try {
+      const lastRows = db.prepare(
+        "SELECT patient_phone, MAX(appointment_date) as last_date, " +
+        "(SELECT clinicea_status FROM wa_appointment_tracking t2 WHERE t2.patient_phone = t1.patient_phone ORDER BY appointment_date DESC LIMIT 1) as last_status " +
+        "FROM wa_appointment_tracking t1 WHERE patient_phone IS NOT NULL GROUP BY patient_phone"
+      ).all();
+      for (const r of lastRows) {
+        if (r.patient_phone) {
+          const phone = r.patient_phone.replace(/[\s\-()]/g, '');
+          const lastDate = r.last_date ? new Date(r.last_date).toISOString().split('T')[0] : null;
+          const ls = (r.last_status || '').toLowerCase();
+          const noFuture = lastDate && lastDate < todayStr;
+          const lastWasNoshow = noFuture && (!r.last_status || ls.includes('scheduled')) &&
+            !ls.includes('check') && !ls.includes('complet') && !ls.includes('arrived') &&
+            !ls.includes('engaged') && !ls.includes('confirmed');
+          patientLastAppt[phone] = { noFuture, lastWasNoshow };
+        }
+      }
+    } catch (e) { /* ignore */ }
+
+    // Compute KPI stats from all rows (not paginated)
+    let kpiShowedUp = 0, kpiNoShow = 0, kpiCancelled = 0;
+    for (const apt of allForStats) {
+      const sl = (apt.clinicea_status || '').toLowerCase();
+      const apptDateStr = apt.appointment_date ? new Date(apt.appointment_date).toISOString().split('T')[0] : null;
+      const isPast = !!(apptDateStr && apptDateStr < todayStr);
+      const showed = sl.includes('check') || sl.includes('complet') || sl.includes('arrived') || sl.includes('engaged');
+      if (showed) { kpiShowedUp++; continue; }
+      const cancelled = sl.includes('cancel') || sl.includes('no show') || sl.includes('noshow');
+      if (cancelled) {
+        const cleanPhone = apt.patient_phone ? apt.patient_phone.replace(/[\s\-()]/g, '') : '';
+        const laterDate = patientShowedUpAfter[cleanPhone];
+        if (!(laterDate && laterDate > apt.appointment_date)) kpiCancelled++;
+        continue;
+      }
+      if (isPast && (!apt.clinicea_status || sl.includes('scheduled')) && !sl.includes('confirmed')) {
+        const cleanPhone = apt.patient_phone ? apt.patient_phone.replace(/[\s\-()]/g, '') : '';
+        const laterDate = patientShowedUpAfter[cleanPhone];
+        if (!(laterDate && laterDate > apt.appointment_date)) kpiNoShow++;
+      }
+    }
+
+    // Enrich paginated rows with agent from call history + compute flags
     let appointments = rawAppointments.map(apt => {
       let attributed_agent = null;
       const cleanPhone = apt.patient_phone ? apt.patient_phone.replace(/[\s\-()]/g, '') : '';
@@ -1158,7 +1218,12 @@ router.get('/admin/appointments', (req, res) => {
 
       const is_overdue = is_noshow || is_cancelled;
 
-      return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, is_overdue, is_noshow, is_cancelled, is_showed_up };
+      // Patient highlight: no future appointment or last appointment was no-show
+      const pInfo = cleanPhone ? patientLastAppt[cleanPhone] : null;
+      const patient_no_future = pInfo ? pInfo.noFuture : false;
+      const patient_last_noshow = pInfo ? pInfo.lastWasNoshow : false;
+
+      return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, is_overdue, is_noshow, is_cancelled, is_showed_up, patient_no_future, patient_last_noshow };
     });
 
     // Agent filter: only show appointments attributed to the selected agent
@@ -1190,7 +1255,11 @@ router.get('/admin/appointments', (req, res) => {
       });
     } catch (e) { /* ignore */ }
 
-    res.json({ appointments, agents, agentNames, callsByAgent, services, doctors, bookedByList, total: appointments.length });
+    res.json({
+      appointments, agents, agentNames, callsByAgent, services, doctors, bookedByList,
+      total: totalCount, page, pageSize, totalPages: Math.ceil(totalCount / pageSize) || 1,
+      kpi: { total: totalCount, showedUp: kpiShowedUp, noShow: kpiNoShow, cancelled: kpiCancelled }
+    });
   } catch (err) {
     console.error('[admin-console] appointments error:', err.message); res.status(500).json({ error: 'Failed to load appointments.', appointments: [] });
   }

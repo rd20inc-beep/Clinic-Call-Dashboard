@@ -2088,10 +2088,11 @@
     }
 
     // ===== APPOINTMENTS TAB =====
-    var apptTabState = { period: 'month', date: '', agent: '', service: '', doctor: '', bookedBy: '', statusFilter: '' };
+    var apptTabState = { period: 'month', date: '', agent: '', service: '', doctor: '', bookedBy: '', statusFilter: '', page: 1, pageSize: 50 };
 
-    function setApptTabPeriod(p) { apptTabState.period = p; apptTabState.date = ''; loadAppointmentsTab(); }
-    function setApptTabDate(d) { apptTabState.date = d; if (d) apptTabState.period = ''; loadAppointmentsTab(); }
+    function setApptTabPeriod(p) { apptTabState.period = p; apptTabState.date = ''; apptTabState.page = 1; loadAppointmentsTab(); }
+    function setApptTabDate(d) { apptTabState.date = d; if (d) apptTabState.period = ''; apptTabState.page = 1; loadAppointmentsTab(); }
+    function setApptTabPage(p) { apptTabState.page = p; loadAppointmentsTab(); }
 
     function apptStatusBadge(a) {
       var rawStatus = (a.clinicea_status || '').toLowerCase();
@@ -2131,6 +2132,8 @@
       var s = apptTabState;
       var params = new URLSearchParams();
       params.set('period', s.date ? '' : s.period);
+      params.set('page', s.page);
+      params.set('pageSize', s.pageSize);
       if (s.date) params.set('date', s.date);
       if (s.agent) params.set('agent', s.agent);
       if (s.service) params.set('service', s.service);
@@ -2144,8 +2147,12 @@
         var agents = data.agents || [];
         var names = data.agentNames || {};
         var callsByAgent = data.callsByAgent || {};
+        var kpi = data.kpi || {};
+        var totalCount = data.total || appts.length;
+        var totalPages = data.totalPages || 1;
+        var curPage = data.page || 1;
 
-        // Apply client-side status filter
+        // Apply client-side status filter on the paginated rows
         var filtered = appts;
         if (s.statusFilter === 'noshow') filtered = appts.filter(isNoShow);
         else if (s.statusFilter === 'cancelled') filtered = appts.filter(isCancelled);
@@ -2153,18 +2160,18 @@
         else if (s.statusFilter === 'showed') filtered = appts.filter(isShowedUp);
         else if (s.statusFilter === 'scheduled') filtered = appts.filter(function(a) { var sl = (a.clinicea_status||'').toLowerCase(); return !sl || sl.indexOf('scheduled') >= 0; });
 
-        // KPI stats (from full appts, not filtered)
-        var total = appts.length;
-        var showedUp = appts.filter(isShowedUp).length;
-        var noShowCount = appts.filter(isNoShow).length;
-        var cancelledCount = appts.filter(isCancelled).length;
+        // KPI stats from server (computed from ALL rows, not just this page)
+        var total = kpi.total || totalCount;
+        var showedUp = kpi.showedUp || 0;
+        var noShowCount = kpi.noShow || 0;
+        var cancelledCount = kpi.cancelled || 0;
         var showRate = total > 0 ? Math.round((showedUp / total) * 100) + '%' : '-';
         document.getElementById('apptTabTotal').textContent = total;
         document.getElementById('apptTabShowedUp').textContent = showedUp;
         document.getElementById('apptTabNoShow').textContent = noShowCount;
         document.getElementById('apptTabCancelled').textContent = cancelledCount;
         document.getElementById('apptTabShowRate').textContent = showRate;
-        document.getElementById('apptTabCount').textContent = '(' + filtered.length + (filtered.length !== total ? ' of ' + total : '') + ')';
+        document.getElementById('apptTabCount').textContent = '(page ' + curPage + ' of ' + totalPages + ', ' + totalCount + ' total)';
 
         // Filter bar
         var fb = '';
@@ -2200,7 +2207,7 @@
         (data.doctors||[]).forEach(function(doc) { fb += '<option value="' + esc(doc) + '"' + (s.doctor===doc?' selected':'') + '>' + esc(doc) + '</option>'; });
         fb += '</select>';
         if (s.agent || s.service || s.doctor || s.bookedBy || s.statusFilter || s.date) {
-          fb += '<button class="filter-btn" onclick="apptTabState={period:\'month\',date:\'\',agent:\'\',service:\'\',doctor:\'\',bookedBy:\'\',statusFilter:\'\'};loadAppointmentsTab()" style="color:#ef4444;font-size:12px;">Clear All</button>';
+          fb += '<button class="filter-btn" onclick="apptTabState={period:\'month\',date:\'\',agent:\'\',service:\'\',doctor:\'\',bookedBy:\'\',statusFilter:\'\',page:1,pageSize:50};loadAppointmentsTab()" style="color:#ef4444;font-size:12px;">Clear All</button>';
         }
         document.getElementById('apptTabFilterBar').innerHTML = fb;
 
@@ -2240,8 +2247,13 @@
             });
             statusCell += '</select>';
             html += '<tr' + rowStyle + '>';
+            // Patient highlight badges
+            var patientBadge = '';
+            if (a.patient_last_noshow) patientBadge = '<div style="font-size:10px;margin-top:2px;"><span style="background:#fef2f2;color:#dc2626;padding:1px 5px;border-radius:3px;">Last visit: No-Show</span></div>';
+            else if (a.patient_no_future) patientBadge = '<div style="font-size:10px;margin-top:2px;"><span style="background:#fffbeb;color:#d97706;padding:1px 5px;border-radius:3px;">No future appointment</span></div>';
+
             html += '<td class="meta" style="white-space:nowrap;">' + apptDate + '</td>';
-            html += '<td><strong>' + esc(a.patient_name || '-') + '</strong></td>';
+            html += '<td><strong>' + esc(a.patient_name || '-') + '</strong>' + patientBadge + '</td>';
             html += '<td style="font-family:monospace;font-size:11px;">' + esc(a.patient_phone || '-') + '</td>';
             html += '<td>' + esc(a.doctor_name || '-') + '</td>';
             html += '<td>' + esc(a.service || '-') + '</td>';
@@ -2252,6 +2264,22 @@
             html += '</tr>';
           });
           html += '</tbody></table>';
+
+          // Pagination controls
+          if (totalPages > 1) {
+            html += '<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:14px;">';
+            html += '<button class="filter-btn" onclick="setApptTabPage(1)" ' + (curPage <= 1 ? 'disabled' : '') + '>&laquo;</button>';
+            html += '<button class="filter-btn" onclick="setApptTabPage(' + (curPage - 1) + ')" ' + (curPage <= 1 ? 'disabled' : '') + '>&lsaquo; Prev</button>';
+            html += '<span style="font-size:13px;color:#64748b;">Page ' + curPage + ' of ' + totalPages + '</span>';
+            html += '<button class="filter-btn" onclick="setApptTabPage(' + (curPage + 1) + ')" ' + (curPage >= totalPages ? 'disabled' : '') + '>Next &rsaquo;</button>';
+            html += '<button class="filter-btn" onclick="setApptTabPage(' + totalPages + ')" ' + (curPage >= totalPages ? 'disabled' : '') + '>&raquo;</button>';
+            html += '<select class="filter-select" style="font-size:12px;padding:4px 8px;" onchange="apptTabState.pageSize=parseInt(this.value);apptTabState.page=1;loadAppointmentsTab()">';
+            [50, 100, 200].forEach(function(sz) {
+              html += '<option value="' + sz + '"' + (s.pageSize === sz ? ' selected' : '') + '>' + sz + ' per page</option>';
+            });
+            html += '</select>';
+            html += '</div>';
+          }
         }
         document.getElementById('apptTabTable').innerHTML = html;
 
