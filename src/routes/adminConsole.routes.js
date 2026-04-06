@@ -1145,13 +1145,25 @@ router.get('/admin/appointments', (req, res) => {
     const bookedByList = db.prepare("SELECT DISTINCT created_by FROM wa_appointment_tracking WHERE created_by IS NOT NULL AND created_by != '' ORDER BY created_by").all().map(r => r.created_by);
     // Get all agents (from users table + call history) for assignment dropdown
     const agentSet = new Set();
+    const agentNames = {}; // username → display_name
     try {
       db.prepare("SELECT DISTINCT agent FROM calls WHERE agent IS NOT NULL").all().forEach(r => agentSet.add(r.agent));
-      db.prepare("SELECT username FROM users WHERE active = 1 AND deleted_at IS NULL").all().forEach(r => agentSet.add(r.username));
+      db.prepare("SELECT username, display_name FROM users WHERE active = 1 AND deleted_at IS NULL").all().forEach(r => {
+        agentSet.add(r.username);
+        if (r.display_name && r.display_name !== r.username) agentNames[r.username] = r.display_name;
+      });
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
     const agents = Array.from(agentSet).sort();
 
-    res.json({ appointments, agents, services, doctors, bookedByList, total: appointments.length });
+    // Call counts per agent (for appointments-to-calls ratio)
+    const callsByAgent = {};
+    try {
+      db.prepare("SELECT agent, COUNT(*) as c FROM calls WHERE agent IS NOT NULL GROUP BY agent").all().forEach(r => {
+        callsByAgent[r.agent] = r.c;
+      });
+    } catch (e) { /* ignore */ }
+
+    res.json({ appointments, agents, agentNames, callsByAgent, services, doctors, bookedByList, total: appointments.length });
   } catch (err) {
     console.error('[admin-console] appointments error:', err.message); res.status(500).json({ error: 'Failed to load appointments.', appointments: [] });
   }

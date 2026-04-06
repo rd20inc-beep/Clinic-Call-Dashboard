@@ -611,10 +611,15 @@
         <div id="apptTabFilterBar" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px;"></div>
         <div style="overflow-x:auto;" id="apptTabTable"><div class="empty"><div class="loading-spinner"></div></div></div>
       </div>
-      <!-- Agent Performance -->
+      <!-- Agent Performance: Period stats -->
       <div class="card" style="margin-top:12px;">
-        <h2>Agent Booking Performance</h2>
+        <h2>Agent Performance <span class="card-muted" id="apptPerfPeriodLabel">(selected period)</span></h2>
         <div style="overflow-x:auto;" id="apptAgentStats"><div class="empty"><div class="loading-spinner"></div></div></div>
+      </div>
+      <!-- Agent Performance: All-time totals -->
+      <div class="card" style="margin-top:12px;">
+        <h2>All-Time Agent Summary</h2>
+        <div style="overflow-x:auto;" id="apptAgentAllTime"><div class="empty"><div class="loading-spinner"></div></div></div>
       </div>
     </div>
 
@@ -2211,15 +2216,16 @@
             if (a.is_noshow) rowStyle = ' style="background:#fef2f2;border-left:3px solid #f59e0b;"';
             else if (a.is_cancelled) rowStyle = ' style="background:#fef2f2;border-left:3px solid #ef4444;"';
             else if (a.is_showed_up) rowStyle = ' style="border-left:3px solid #22c55e;"';
-            // Agent cell
+            // Agent cell — show display name
             var agentCell = '';
             if (a.attributed_agent) {
-              agentCell = '<span class="badge badge-active">' + esc(a.attributed_agent) + '</span>';
+              var aName = names[a.attributed_agent] || a.attributed_agent;
+              agentCell = '<span class="badge badge-active">' + esc(aName) + '</span>';
               if (a.manually_assigned) agentCell += ' <span style="font-size:10px;color:#94a3b8;">(assigned)</span>';
             } else {
               agentCell = '<select class="filter-select" style="min-width:100px;font-size:11px;padding:3px 6px;" onchange="assignApptAgent(' + a.id + ',this.value)">';
               agentCell += '<option value="">Assign...</option>';
-              agents.forEach(function(ag) { agentCell += '<option value="' + esc(ag) + '">' + esc(ag) + '</option>'; });
+              agents.forEach(function(ag) { agentCell += '<option value="' + esc(ag) + '">' + esc(names[ag] || ag) + '</option>'; });
               agentCell += '</select>';
             }
             // Status update dropdown
@@ -2247,7 +2253,18 @@
         }
         document.getElementById('apptTabTable').innerHTML = html;
 
-        // Agent booking performance stats
+        // Agent name resolver
+        var names = data.agentNames || {};
+        var callsByAgent = data.callsByAgent || {};
+        function agentDisplayName(username) {
+          return names[username] || username;
+        }
+
+        // Period label
+        var periodLabel = s.date ? s.date : (s.period === 'today' ? 'Today' : s.period === 'week' ? 'This Week' : s.period === 'month' ? 'This Month' : 'All Time');
+        document.getElementById('apptPerfPeriodLabel').textContent = '(' + periodLabel + ')';
+
+        // --- Table 1: Period performance (filtered by current date/period) ---
         var agentMap = {};
         appts.forEach(function(a) {
           var ag = a.attributed_agent || a.created_by || 'Unassigned';
@@ -2257,19 +2274,21 @@
           if (isNoShow(a)) agentMap[ag].noshow++;
           if (isCancelled(a)) agentMap[ag].cancelled++;
         });
-        var agentArr = Object.keys(agentMap).map(function(ag) { return { name: ag, stats: agentMap[ag] }; })
+        var agentArr = Object.keys(agentMap).map(function(ag) { return { id: ag, stats: agentMap[ag] }; })
           .sort(function(a, b) { return b.stats.booked - a.stats.booked; });
 
         var sh = '';
         if (agentArr.length === 0) {
-          sh = '<div class="empty">No data</div>';
+          sh = '<div class="empty">No data for this period</div>';
         } else {
-          sh += '<table><thead><tr><th>Agent</th><th>Booked</th><th>Showed Up</th><th>No-Show</th><th>Cancelled</th><th>Show-Up Rate</th><th></th></tr></thead><tbody>';
+          sh += '<table><thead><tr><th>Name</th><th>Appointments</th><th>Showed Up</th><th>No-Show</th><th>Cancelled</th><th>Show-Up Rate</th><th></th></tr></thead><tbody>';
           agentArr.forEach(function(a) {
             var rate = a.stats.booked > 0 ? Math.round((a.stats.showedUp / a.stats.booked) * 100) : 0;
             var barColor = rate >= 70 ? '#22c55e' : rate >= 40 ? '#f59e0b' : '#ef4444';
             sh += '<tr>';
-            sh += '<td><strong>' + esc(a.name) + '</strong></td>';
+            sh += '<td><strong>' + esc(agentDisplayName(a.id)) + '</strong>';
+            if (names[a.id]) sh += '<div style="font-size:11px;color:#94a3b8;">' + esc(a.id) + '</div>';
+            sh += '</td>';
             sh += '<td>' + a.stats.booked + '</td>';
             sh += '<td style="color:#22c55e;font-weight:600;">' + a.stats.showedUp + '</td>';
             sh += '<td style="color:' + (a.stats.noshow > 0 ? '#f59e0b' : '#94a3b8') + ';font-weight:600;">' + a.stats.noshow + '</td>';
@@ -2281,6 +2300,58 @@
           sh += '</tbody></table>';
         }
         document.getElementById('apptAgentStats').innerHTML = sh;
+
+        // --- Table 2: All-time summary (total appointments vs total calls) ---
+        // Fetch all-time appointments in background
+        try {
+          var allRes = await fetch('/admin/appointments?period=all');
+          var allData = await allRes.json();
+          var allAppts = allData.appointments || [];
+          var allNames = allData.agentNames || {};
+          var allCalls = allData.callsByAgent || {};
+
+          var allMap = {};
+          allAppts.forEach(function(a) {
+            var ag = a.attributed_agent || a.created_by || 'Unassigned';
+            if (!allMap[ag]) allMap[ag] = { booked: 0, showedUp: 0, noshow: 0, cancelled: 0 };
+            allMap[ag].booked++;
+            if (a.is_showed_up) allMap[ag].showedUp++;
+            if (a.is_noshow) allMap[ag].noshow++;
+            if (a.is_cancelled) allMap[ag].cancelled++;
+          });
+          var allArr = Object.keys(allMap).map(function(ag) { return { id: ag, stats: allMap[ag] }; })
+            .sort(function(a, b) { return b.stats.booked - a.stats.booked; });
+
+          var ah = '';
+          if (allArr.length === 0) {
+            ah = '<div class="empty">No data</div>';
+          } else {
+            ah += '<table><thead><tr><th>Name</th><th>Total Calls</th><th>Total Appointments</th><th>Showed Up</th><th>No-Show</th><th>Cancelled</th><th>Show-Up Rate</th><th>Conversion</th><th></th></tr></thead><tbody>';
+            allArr.forEach(function(a) {
+              var calls = allCalls[a.id] || 0;
+              var rate = a.stats.booked > 0 ? Math.round((a.stats.showedUp / a.stats.booked) * 100) : 0;
+              var conversion = calls > 0 ? Math.round((a.stats.booked / calls) * 100) : 0;
+              var barColor = rate >= 70 ? '#22c55e' : rate >= 40 ? '#f59e0b' : '#ef4444';
+              ah += '<tr>';
+              ah += '<td><strong>' + esc((allNames[a.id] || names[a.id]) ? (allNames[a.id] || names[a.id]) : a.id) + '</strong>';
+              if (allNames[a.id] || names[a.id]) ah += '<div style="font-size:11px;color:#94a3b8;">' + esc(a.id) + '</div>';
+              ah += '</td>';
+              ah += '<td>' + calls + '</td>';
+              ah += '<td><strong>' + a.stats.booked + '</strong></td>';
+              ah += '<td style="color:#22c55e;font-weight:600;">' + a.stats.showedUp + '</td>';
+              ah += '<td style="color:' + (a.stats.noshow > 0 ? '#f59e0b' : '#94a3b8') + ';font-weight:600;">' + a.stats.noshow + '</td>';
+              ah += '<td style="color:' + (a.stats.cancelled > 0 ? '#ef4444' : '#94a3b8') + ';font-weight:600;">' + a.stats.cancelled + '</td>';
+              ah += '<td><strong>' + rate + '%</strong></td>';
+              ah += '<td>' + (calls > 0 ? conversion + '%' : '-') + '</td>';
+              ah += '<td style="width:120px;"><div style="background:#f1f5f9;border-radius:4px;height:8px;overflow:hidden;"><div style="background:' + barColor + ';height:100%;width:' + rate + '%;border-radius:4px;transition:width 0.5s;"></div></div></td>';
+              ah += '</tr>';
+            });
+            ah += '</tbody></table>';
+          }
+          document.getElementById('apptAgentAllTime').innerHTML = ah;
+        } catch (e) {
+          document.getElementById('apptAgentAllTime').innerHTML = '<div class="empty">Failed to load</div>';
+        }
       } catch (e) {
         document.getElementById('apptTabTable').innerHTML = '<div class="empty">Error loading appointments</div>';
       }
