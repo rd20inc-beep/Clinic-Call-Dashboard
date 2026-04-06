@@ -182,8 +182,8 @@ router.get('/admin/analytics/overview', async (req, res) => {
       agentStats: agentStats,
     });
   } catch (err) {
-    console.error('[admin-console] OVERVIEW ERROR:', err.message, err.stack);
-    res.status(500).json({ error: 'An internal error occurred. Please try again.', debug: err.message });
+    console.error('[admin-console]', err.message);
+    res.status(500).json({ error: 'An internal error occurred. Please try again.' });
   }
 });
 
