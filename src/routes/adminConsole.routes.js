@@ -1099,16 +1099,33 @@ router.get('/admin/appointments', (req, res) => {
 
     const todayStr = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Karachi' })).toISOString().split('T')[0];
 
+    // Build a map of patients who showed up in a later appointment.
+    // If a patient no-showed on April 1 but checked out on April 5,
+    // the April 1 no-show doesn't need a callback — they came back.
+    const patientShowedUpAfter = {}; // phone → earliest showed-up date
+    try {
+      const showedRows = db.prepare(
+        "SELECT patient_phone, MIN(appointment_date) as earliest FROM wa_appointment_tracking " +
+        "WHERE clinicea_status IS NOT NULL AND (" +
+          "LOWER(clinicea_status) LIKE '%check%' OR LOWER(clinicea_status) LIKE '%complet%' OR " +
+          "LOWER(clinicea_status) LIKE '%arrived%' OR LOWER(clinicea_status) LIKE '%engaged%' OR " +
+          "LOWER(clinicea_status) LIKE '%confirmed%'" +
+        ") GROUP BY patient_phone"
+      ).all();
+      for (const r of showedRows) {
+        if (r.patient_phone) patientShowedUpAfter[r.patient_phone.replace(/[\s\-()]/g, '')] = r.earliest;
+      }
+    } catch (e) { /* ignore */ }
+
     // Enrich with agent from call history + compute flags
-    // Status comes from the local clinicea_status column (synced every 30 min)
     let appointments = rawAppointments.map(apt => {
       let attributed_agent = null;
-      if (apt.patient_phone) {
-        const phone = apt.patient_phone.replace(/[\s\-()]/g, '');
+      const cleanPhone = apt.patient_phone ? apt.patient_phone.replace(/[\s\-()]/g, '') : '';
+      if (cleanPhone) {
         try {
           const match = db.prepare(
             "SELECT agent FROM calls WHERE caller_number LIKE ? AND agent IS NOT NULL ORDER BY timestamp DESC LIMIT 1"
-          ).get('%' + phone.slice(-10) + '%');
+          ).get('%' + cleanPhone.slice(-10) + '%');
           if (match) attributed_agent = match.agent;
         } catch (e) { /* ignore */ }
       }
@@ -1121,15 +1138,24 @@ router.get('/admin/appointments', (req, res) => {
       const is_showed_up = sl.includes('check') || sl.includes('complet') || sl.includes('arrived') || sl.includes('engaged');
 
       // No-show: past appointment still marked "Scheduled" (patient never showed up)
-      const is_noshow = isPast && !is_showed_up &&
+      let is_noshow = isPast && !is_showed_up &&
         (!apt.clinicea_status || sl.includes('scheduled')) &&
         !sl.includes('cancel') && !sl.includes('no show') && !sl.includes('noshow') &&
         !sl.includes('confirmed');
 
       // Cancelled: explicitly cancelled or no-show in Clinicea
-      const is_cancelled = sl.includes('cancel') || sl.includes('no show') || sl.includes('noshow');
+      let is_cancelled = sl.includes('cancel') || sl.includes('no show') || sl.includes('noshow');
 
-      // Needs callback: no-shows and cancellations need follow-up
+      // If patient came back later (showed up/confirmed after this appointment),
+      // suppress the no-show/cancelled alert — they rescheduled and showed up
+      if ((is_noshow || is_cancelled) && cleanPhone && apptDateStr) {
+        const laterDate = patientShowedUpAfter[cleanPhone];
+        if (laterDate && laterDate > apt.appointment_date) {
+          is_noshow = false;
+          is_cancelled = false;
+        }
+      }
+
       const is_overdue = is_noshow || is_cancelled;
 
       return { ...apt, attributed_agent: effective_agent, manually_assigned: !attributed_agent && !!apt.assigned_agent, is_overdue, is_noshow, is_cancelled, is_showed_up };
