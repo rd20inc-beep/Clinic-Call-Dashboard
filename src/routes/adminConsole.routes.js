@@ -65,11 +65,11 @@ router.get('/admin/analytics/overview', async (req, res) => {
     let appointmentsByAgents = 0;
     const agentAppointments = {};
     try {
-      appointmentsToday = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking WHERE date(appointment_date, '+5 hours') = date('now', '+5 hours')").get().c;
+      appointmentsToday = db.prepare("SELECT COUNT(*) as c FROM wa_appointment_tracking WHERE date(appointment_date) = date('now')").get().c;
 
       // Count today's appointments that match an agent's handled call
       const todayAppts = db.prepare(
-        "SELECT DISTINCT patient_phone FROM wa_appointment_tracking WHERE date(appointment_date, '+5 hours') = date('now', '+5 hours') AND patient_phone IS NOT NULL AND patient_phone != ''"
+        "SELECT DISTINCT patient_phone FROM wa_appointment_tracking WHERE date(appointment_date) = date('now') AND patient_phone IS NOT NULL AND patient_phone != ''"
       ).all();
       for (const row of todayAppts) {
         const phone = row.patient_phone.replace(/[\s\-()]/g, '');
@@ -83,7 +83,8 @@ router.get('/admin/analytics/overview', async (req, res) => {
       }
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
-    // Use PKT (+5 hours) for "today" — SQLite date('now') is UTC
+    // SQLite stores timestamps in UTC (CURRENT_TIMESTAMP is always UTC).
+    // Convert both sides to PKT for correct "today" matching.
     const TODAY = "date(timestamp, '+5 hours') = date('now', '+5 hours')";
     const callsToday = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY).c;
     const answeredToday = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND call_status = 'answered'").c;
@@ -120,7 +121,7 @@ router.get('/admin/analytics/overview', async (req, res) => {
         todayAnswered = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND call_status = 'answered'").get(username).c;
         todayMissed = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND call_status = 'missed'").get(username).c;
         todayTalkTime = db.prepare("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE agent = ? AND " + TODAY + " AND duration IS NOT NULL").get(username).s;
-        weekCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND timestamp >= datetime('now', '+5 hours', '-7 days')").get(username).c;
+        weekCalls = db.prepare("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND timestamp >= datetime('now', '-7 days')").get(username).c;
       } catch (e) { console.error('[admin-console] Query failed:', e.message); }
 
       // Get DB ID and last_seen
@@ -156,8 +157,8 @@ router.get('/admin/analytics/overview', async (req, res) => {
     // Week + month totals for status strip
     let callsWeek = 0, callsMonth = 0, inboundTalkToday = 0, outboundTalkToday = 0;
     try {
-      callsWeek = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '+5 hours', '-7 days')").c;
-      callsMonth = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '+5 hours', '-30 days')").c;
+      callsWeek = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '-7 days')").c;
+      callsMonth = q("SELECT COUNT(*) as c FROM calls WHERE timestamp >= datetime('now', '-30 days')").c;
       inboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE " + TODAY + " AND direction = 'inbound' AND duration IS NOT NULL").s;
       outboundTalkToday = q("SELECT COALESCE(SUM(duration),0) as s FROM calls WHERE " + TODAY + " AND direction = 'outbound' AND duration IS NOT NULL").s;
     } catch (e) { console.error('[admin-console] Query failed:', e.message); }
@@ -613,9 +614,9 @@ router.get('/admin/analytics/insights', requireAuth, requireAdminOrDoctor, (req,
     if (period === 'week') dateFilter = "timestamp >= datetime('now', '-7 days')";
     else if (period === 'today') dateFilter = "date(timestamp, '+5 hours') = date('now', '+5 hours')";
 
-    let aptDateFilter = "appointment_date >= datetime('now', '+5 hours', '-30 days')";
-    if (period === 'week') aptDateFilter = "appointment_date >= datetime('now', '+5 hours', '-7 days')";
-    else if (period === 'today') aptDateFilter = "date(appointment_date, '+5 hours') = date('now', '+5 hours')";
+    let aptDateFilter = "appointment_date >= datetime('now', '-30 days')";
+    if (period === 'week') aptDateFilter = "appointment_date >= datetime('now', '-7 days')";
+    else if (period === 'today') aptDateFilter = "date(appointment_date) = date('now')";
 
     // === CALL SOURCE BREAKDOWN (Phone vs WhatsApp) ===
     const callSources = db.prepare(
@@ -1078,8 +1079,8 @@ router.get('/admin/appointments', (req, res) => {
     let dateFilter = "date(appointment_date) = date('now', '+5 hours')";
     if (specificDate && /^\d{4}-\d{2}-\d{2}$/.test(specificDate)) {
       dateFilter = "date(appointment_date) = ?";
-    } else if (period === 'week') dateFilter = "appointment_date >= datetime('now', '+5 hours', '-7 days')";
-    else if (period === 'month') dateFilter = "appointment_date >= datetime('now', '+5 hours', '-30 days')";
+    } else if (period === 'week') dateFilter = "appointment_date >= datetime('now', '-7 days')";
+    else if (period === 'month') dateFilter = "appointment_date >= datetime('now', '-30 days')";
     else if (period === '' || period === 'all') dateFilter = '1=1';
 
     let where = 'WHERE ' + dateFilter;
@@ -1352,9 +1353,9 @@ router.get('/admin/analytics/export', (req, res) => {
     const range = req.query.range || 'week';
     const agent = req.query.agent || '';
 
-    let dateFilter = "timestamp >= datetime('now', '+5 hours', '-7 days')";
+    let dateFilter = "timestamp >= datetime('now', '-7 days')";
     if (range === 'today') dateFilter = "date(timestamp, '+5 hours') = date('now', '+5 hours')";
-    else if (range === 'month') dateFilter = "timestamp >= datetime('now', '+5 hours', '-30 days')";
+    else if (range === 'month') dateFilter = "timestamp >= datetime('now', '-30 days')";
     else if (range === 'all') dateFilter = '1=1';
 
     let where = 'WHERE ' + dateFilter;
