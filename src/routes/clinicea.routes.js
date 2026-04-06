@@ -267,27 +267,27 @@ router.get(
         "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
       ).all(date);
       if (rows.length > 0) {
-        // Build a map of messages sent per phone from wa_messages
-        const phoneMessages = {};
+        // Build a map of messages sent per phone (last 10 digits) from wa_messages
+        // Phone formats vary: +923001234567, 923001234567, 03001234567 — normalize to last 10
+        const phoneMessages = {}; // last10digits → [types]
         try {
-          const phones = rows.map(r => r.patient_phone).filter(Boolean);
-          if (phones.length > 0) {
-            const placeholders = phones.map(() => '?').join(',');
-            const msgRows = db.prepare(
-              "SELECT phone, GROUP_CONCAT(DISTINCT message_type) as types FROM wa_messages " +
-              "WHERE phone IN (" + placeholders + ") AND direction = 'out' AND status IN ('sent','pending','approved','sending') " +
-              "GROUP BY phone"
-            ).all(...phones);
-            for (const r of msgRows) {
-              phoneMessages[r.phone] = (r.types || '').split(',');
-            }
+          const msgRows = db.prepare(
+            "SELECT phone, GROUP_CONCAT(DISTINCT message_type) as types FROM wa_messages " +
+            "WHERE direction = 'out' AND status IN ('sent','pending','approved','sending') " +
+            "AND message_type IN ('confirmation','reminder','review','aftercare') " +
+            "GROUP BY phone"
+          ).all();
+          for (const r of msgRows) {
+            const key = (r.phone || '').replace(/[\s\-+()]/g, '').slice(-10);
+            if (key) phoneMessages[key] = (r.types || '').split(',');
           }
         } catch (e) { /* ignore */ }
 
         const appointments = rows.map(function(row) {
           const apt = dbRowToAppointment(row);
-          // Enrich with actual message status from wa_messages
-          const msgs = phoneMessages[row.patient_phone] || [];
+          // Match by last 10 digits of phone
+          const phoneKey = (row.patient_phone || '').replace(/[\s\-+()]/g, '').slice(-10);
+          const msgs = phoneKey ? (phoneMessages[phoneKey] || []) : [];
           if (msgs.includes('confirmation')) apt.confirmationSent = true;
           if (msgs.includes('reminder')) apt.reminderSent = true;
           if (msgs.includes('review')) apt.reviewSent = true;
