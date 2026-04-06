@@ -1027,9 +1027,9 @@ async function loadCalendar() {
       var aptId = apt.appointmentID || '';
       var aptPhone = (apt.phone || apt.patientPhone || apt.mobile || '').replace(/[\s\-()]/g, '');
       var trackInfo = tracking['apt:' + aptId] || null;
-      // Also check DB-embedded flags (from local DB rows)
-      if (!trackInfo && (apt.confirmationSent || apt.reminderSent)) {
-        trackInfo = { confirmationSent: apt.confirmationSent, reminderSent: apt.reminderSent, reviewSent: false, aftercareSent: false };
+      // Also check DB-embedded flags (from local DB rows enriched with wa_messages)
+      if (!trackInfo && (apt.confirmationSent || apt.reminderSent || apt.reviewSent || apt.aftercareSent)) {
+        trackInfo = { confirmationSent: !!apt.confirmationSent, reminderSent: !!apt.reminderSent, reviewSent: !!apt.reviewSent, aftercareSent: !!apt.aftercareSent };
       }
       // Fallback to phone-based tracking
       if (!trackInfo) trackInfo = tracking[aptPhone] || tracking['+' + aptPhone] || null;

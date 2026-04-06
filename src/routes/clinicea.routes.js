@@ -267,7 +267,33 @@ router.get(
         "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
       ).all(date);
       if (rows.length > 0) {
-        const appointments = rows.map(dbRowToAppointment);
+        // Build a map of messages sent per phone from wa_messages
+        const phoneMessages = {};
+        try {
+          const phones = rows.map(r => r.patient_phone).filter(Boolean);
+          if (phones.length > 0) {
+            const placeholders = phones.map(() => '?').join(',');
+            const msgRows = db.prepare(
+              "SELECT phone, GROUP_CONCAT(DISTINCT message_type) as types FROM wa_messages " +
+              "WHERE phone IN (" + placeholders + ") AND direction = 'out' AND status IN ('sent','pending','approved','sending') " +
+              "GROUP BY phone"
+            ).all(...phones);
+            for (const r of msgRows) {
+              phoneMessages[r.phone] = (r.types || '').split(',');
+            }
+          }
+        } catch (e) { /* ignore */ }
+
+        const appointments = rows.map(function(row) {
+          const apt = dbRowToAppointment(row);
+          // Enrich with actual message status from wa_messages
+          const msgs = phoneMessages[row.patient_phone] || [];
+          if (msgs.includes('confirmation')) apt.confirmationSent = true;
+          if (msgs.includes('reminder')) apt.reminderSent = true;
+          if (msgs.includes('review')) apt.reviewSent = true;
+          if (msgs.includes('aftercare')) apt.aftercareSent = true;
+          return apt;
+        });
         return res.json({ appointments, date });
       }
       // No local data — fall through to try API
