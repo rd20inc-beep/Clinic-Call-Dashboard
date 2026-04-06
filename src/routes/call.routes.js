@@ -462,7 +462,7 @@ router.post('/api/calls/send-confirmation', requireAuth, (req, res) => {
       appointments: fullLine,
     });
 
-    waRepo.insertMessage(apt.patient_phone, null, 'out', msg, 'confirmation', 'approved', req.session.username || null);
+    waRepo.insertMessage(apt.patient_phone, null, 'out', msg, 'confirmation', 'pending', req.session.username || null);
     db.prepare("UPDATE wa_appointment_tracking SET confirmation_sent = 1, confirmation_sent_at = datetime('now') WHERE id = ?").run(appointmentId);
 
     logEvent('info', `Instant confirmation sent by ${req.session.username} for ${apt.patient_name} (${apt.patient_phone})`);

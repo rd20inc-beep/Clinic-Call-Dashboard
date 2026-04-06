@@ -220,8 +220,8 @@ function sendInstantConfirmation(btn, appointmentId) {
   }).then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.ok) {
-      btn.textContent = 'Sent ✓';
-      btn.style.background = '#64748b';
+      btn.textContent = 'Queued for Approval ✓';
+      btn.style.background = '#3b82f6';
       // Auto-dismiss after 3 seconds
       setTimeout(function() {
         var toast = btn.closest('.error-toast');

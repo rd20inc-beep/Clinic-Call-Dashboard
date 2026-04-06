@@ -245,7 +245,7 @@ function showAppointmentBookedDialog(callId, disposition) {
             '</div>'
           : '<div style="display:flex;gap:8px;">' +
               '<button id="confirmSendBtn_' + callId + '" onclick="sendInstantConfirmation(this,' + (apt.id || 0) + ')" ' +
-                'style="flex:1;padding:10px 16px;border:none;border-radius:8px;background:#10b981;color:white;font-weight:700;font-size:14px;cursor:pointer;">Send Confirmation</button>' +
+                'style="flex:1;padding:10px 16px;border:none;border-radius:8px;background:#10b981;color:white;font-weight:700;font-size:14px;cursor:pointer;">Queue Confirmation for Approval</button>' +
               '<button onclick="this.closest(\'.error-toast\').remove()" style="padding:10px 16px;border:1px solid #e2e8f0;border-radius:8px;background:white;color:#64748b;font-size:13px;cursor:pointer;">Skip</button>' +
             '</div>'
         ) +
