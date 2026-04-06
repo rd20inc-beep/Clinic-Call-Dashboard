@@ -186,12 +186,13 @@ const stmtStatsByAgent = db.prepare(`
     SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expiredMessages
   FROM wa_messages WHERE agent = ?
 `);
+// Count confirmations/reminders from wa_messages (actual sent messages)
+// plus from wa_appointment_tracking (queued but maybe not yet sent)
 const stmtTrackingStats = db.prepare(`
   SELECT
-    SUM(CASE WHEN confirmation_sent = 1 THEN 1 ELSE 0 END) AS totalConfirmations,
-    SUM(CASE WHEN reminder_sent = 1 THEN 1 ELSE 0 END) AS totalReminders,
-    SUM(CASE WHEN confirmation_sent = 0 AND patient_phone IS NOT NULL AND patient_phone != '' THEN 1 ELSE 0 END) AS pendingConfirmations
-  FROM wa_appointment_tracking
+    (SELECT COUNT(*) FROM wa_messages WHERE message_type = 'confirmation' AND direction = 'out') AS totalConfirmations,
+    (SELECT COUNT(*) FROM wa_messages WHERE message_type = 'reminder' AND direction = 'out') AS totalReminders,
+    (SELECT COUNT(*) FROM wa_messages WHERE message_type IN ('confirmation','reminder') AND status = 'pending' AND direction = 'out') AS pendingConfirmations
 `);
 
 module.exports = {
