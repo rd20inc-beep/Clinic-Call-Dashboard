@@ -261,35 +261,22 @@ router.get(
     const isPast = date < todayStr;
     const isToday = date === todayStr;
 
-    // 1. Check in-memory cache first
+    // 1. Past dates + today: always serve fresh from local DB (fast, reflects mark-sent updates)
+    if (isPast || isToday) {
+      const rows = db.prepare(
+        "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
+      ).all(date);
+      if (rows.length > 0) {
+        const appointments = rows.map(dbRowToAppointment);
+        return res.json({ appointments, date });
+      }
+      // No local data — fall through to try API
+    }
+
+    // 2. Future dates: check in-memory cache (from previous API fetch)
     const cached = appointmentDateCache.get(date);
     if (cached && Date.now() < cached.expiry) {
       return res.json({ appointments: cached.data, date });
-    }
-
-    // 2. Past dates: always serve from local DB — statuses are final, no API call
-    if (isPast) {
-      const rows = db.prepare(
-        "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
-      ).all(date);
-      if (rows.length > 0) {
-        const appointments = rows.map(dbRowToAppointment);
-        appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + 60 * 60 * 1000 });
-        return res.json({ appointments, date });
-      }
-      // No local data for this past date — fall through to try API once
-    }
-
-    // 3. Today: serve from DB first, refresh from API in background
-    if (isToday && !forceRefresh) {
-      const rows = db.prepare(
-        "SELECT * FROM wa_appointment_tracking WHERE date(appointment_date) = ? ORDER BY appointment_date ASC"
-      ).all(date);
-      if (rows.length > 0) {
-        const appointments = rows.map(dbRowToAppointment);
-        appointmentDateCache.set(date, { data: appointments, expiry: Date.now() + CACHE_TTL });
-        return res.json({ appointments, date });
-      }
     }
 
     // 4. Today (force refresh) / future / no local data: try Clinicea API
