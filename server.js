@@ -2273,18 +2273,24 @@ async function syncAppointmentsAndScheduleMessages() {
       }
     }
 
-    // --- Send Confirmation Messages (with dedup) ---
+    // --- Send Confirmation Messages (dedup per appointment_id) ---
     const unsent = getUnsentConfirmations.all();
-    const recentConfirmPhones = new Set();
+    // Build set of appointment_ids that already have a confirmation message
+    const confirmedAptIds = new Set();
     try {
-      // Get phones that already have a confirmation in the last 7 days
-      db.prepare("SELECT DISTINCT phone FROM wa_messages WHERE message_type = 'confirmation' AND direction = 'out' AND created_at >= datetime('now', '-7 days')").all()
-        .forEach(r => recentConfirmPhones.add(r.phone));
+      // Check wa_messages for confirmations that reference specific appointment dates+phones
+      // Use appointment_id tracking: if this exact appointment already has a message, skip
+      db.prepare(
+        "SELECT t.appointment_id FROM wa_appointment_tracking t " +
+        "INNER JOIN wa_messages m ON m.phone = t.patient_phone AND m.message_type = 'confirmation' AND m.direction = 'out' " +
+        "AND date(m.created_at) >= date(t.created_at) " +
+        "WHERE t.confirmation_sent = 0"
+      ).all().forEach(r => confirmedAptIds.add(r.appointment_id));
     } catch(e) {}
     for (const apt of unsent) {
-      // Skip if this phone already got a confirmation recently
-      if (recentConfirmPhones.has(apt.patient_phone)) {
-        markConfirmationSent.run(apt.id); // mark as sent to prevent re-queuing
+      // Skip if this specific appointment already has a confirmation message
+      if (confirmedAptIds.has(apt.appointment_id)) {
+        markConfirmationSent.run(apt.id);
         continue;
       }
       const aptDate = new Date(apt.appointment_date);
@@ -2301,16 +2307,19 @@ async function syncAppointmentsAndScheduleMessages() {
 
       insertWaMessage.run(apt.patient_phone, null, 'out', msg, 'confirmation', 'pending', null);
       markConfirmationSent.run(apt.id);
-      recentConfirmPhones.add(apt.patient_phone); // prevent dupes within same cycle
-      logEvent('info', `WA confirmation queued for ${apt.patient_name} (${apt.patient_phone})`);
+      logEvent('info', `WA confirmation queued for ${apt.patient_name} (${apt.patient_phone}) apt:${apt.appointment_id}`);
     }
 
-    // --- Send Reminder Messages (2 days before, with dedup) ---
+    // --- Send Reminder Messages (2 days before, dedup per appointment_id) ---
     const reminderCandidates = getUnsentReminders.all();
-    const recentReminderPhones = new Set();
+    const remindedAptIds = new Set();
     try {
-      db.prepare("SELECT DISTINCT phone FROM wa_messages WHERE message_type = 'reminder' AND direction = 'out' AND created_at >= datetime('now', '-3 days')").all()
-        .forEach(r => recentReminderPhones.add(r.phone));
+      db.prepare(
+        "SELECT t.appointment_id FROM wa_appointment_tracking t " +
+        "INNER JOIN wa_messages m ON m.phone = t.patient_phone AND m.message_type = 'reminder' AND m.direction = 'out' " +
+        "AND date(m.created_at) >= date(t.created_at) " +
+        "WHERE t.reminder_sent = 0"
+      ).all().forEach(r => remindedAptIds.add(r.appointment_id));
     } catch(e) {}
 
     for (const apt of reminderCandidates) {
@@ -2319,8 +2328,7 @@ async function syncAppointmentsAndScheduleMessages() {
       const daysUntil = Math.ceil((aptDate - today) / (24 * 60 * 60 * 1000));
 
       if (daysUntil <= 2 && daysUntil >= 0) {
-        // Skip if this phone already got a reminder recently
-        if (recentReminderPhones.has(apt.patient_phone)) {
+        if (remindedAptIds.has(apt.appointment_id)) {
           markReminderSent.run(apt.id);
           continue;
         }
@@ -2339,8 +2347,7 @@ async function syncAppointmentsAndScheduleMessages() {
 
         insertWaMessage.run(apt.patient_phone, null, 'out', msg, 'reminder', 'pending', null);
         markReminderSent.run(apt.id);
-        recentReminderPhones.add(apt.patient_phone);
-        logEvent('info', `WA reminder queued for ${apt.patient_name} (${apt.patient_phone}) - appointment ${dayWord}`);
+        logEvent('info', `WA reminder queued for ${apt.patient_name} (${apt.patient_phone}) apt:${apt.appointment_id} - ${dayWord}`);
       }
     }
 
