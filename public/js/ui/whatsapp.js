@@ -680,7 +680,6 @@ function waUpdateConnectionUI(status, qrDataUrl) {
   var dot = document.getElementById('waConnDot');
   var statusText = document.getElementById('waConnectionStatusText');
   var bar = document.getElementById('waConnectionBar');
-  // Reset reconnect button and timer on any real status change
   if (typeof _waReconnectTimer !== 'undefined' && _waReconnectTimer) { clearTimeout(_waReconnectTimer); _waReconnectTimer = null; }
   var reconnectBtnEl = document.getElementById('waReconnectBtn');
   if (reconnectBtnEl) { reconnectBtnEl.disabled = false; reconnectBtnEl.textContent = 'Reconnect'; }
@@ -688,7 +687,8 @@ function waUpdateConnectionUI(status, qrDataUrl) {
   var reconnectBtn = document.getElementById('waReconnectBtn');
   var qrSection = document.getElementById('waQRSection');
   var qrImage = document.getElementById('waQRImage');
-  var isAdmin = typeof myRole !== 'undefined' && myRole === 'admin';
+  // Admin and agent1 can manage WhatsApp
+  var canManage = (typeof myRole !== 'undefined' && myRole === 'admin') || (typeof myUsername !== 'undefined' && myUsername === 'agent1');
 
   if (status === 'ready') {
     dot.style.background = '#2ecc71';
@@ -696,10 +696,10 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     bar.style.borderColor = 'rgba(46,204,113,0.3)';
     statusText.textContent = 'CONNECTED';
     statusText.style.color = '#2ecc71';
-    logoutBtn.style.display = isAdmin ? '' : 'none';
+    // Connected: show disconnect only, hide reconnect
+    logoutBtn.style.display = canManage ? '' : 'none';
     reconnectBtn.style.display = 'none';
     qrSection.style.display = 'none';
-    // Clear stale QR image so it doesn't show again on disconnect
     if (qrImage) qrImage.src = '';
     var expiredMsg = document.getElementById('waQRExpired');
     if (expiredMsg) expiredMsg.remove();
@@ -707,11 +707,11 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     dot.style.background = '#f39c12';
     bar.style.background = 'rgba(243,156,18,0.15)';
     bar.style.borderColor = 'rgba(243,156,18,0.3)';
-    statusText.textContent = isAdmin ? 'SCAN QR CODE' : 'LINKING...';
+    statusText.textContent = canManage ? 'SCAN QR CODE' : 'LINKING...';
     statusText.style.color = '#f39c12';
     logoutBtn.style.display = 'none';
-    reconnectBtn.style.display = isAdmin ? '' : 'none';
-    qrSection.style.display = isAdmin ? '' : 'none';
+    reconnectBtn.style.display = 'none'; // No reconnect during QR — already connecting
+    qrSection.style.display = canManage ? '' : 'none';
     if (qrDataUrl && qrImage) qrImage.src = qrDataUrl;
     var expiredMsg = document.getElementById('waQRExpired');
     if (expiredMsg) expiredMsg.remove();
@@ -722,16 +722,17 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     statusText.textContent = status === 'authenticating' ? 'INITIALIZING...' : 'AUTHENTICATING...';
     statusText.style.color = '#3498db';
     logoutBtn.style.display = 'none';
-    reconnectBtn.style.display = 'none';
+    reconnectBtn.style.display = 'none'; // Connecting in progress — no reconnect needed
     qrSection.style.display = 'none';
   } else {
+    // Disconnected — show reconnect button, system will also auto-reconnect
     dot.style.background = '#e74c3c';
     bar.style.background = 'rgba(231,76,60,0.15)';
     bar.style.borderColor = 'rgba(231,76,60,0.3)';
-    statusText.textContent = 'DISCONNECTED';
+    statusText.textContent = 'DISCONNECTED — reconnecting...';
     statusText.style.color = '#e74c3c';
     logoutBtn.style.display = 'none';
-    reconnectBtn.style.display = isAdmin ? '' : 'none';
+    reconnectBtn.style.display = canManage ? '' : 'none';
     qrSection.style.display = 'none';
     if (qrImage) qrImage.src = '';
   }

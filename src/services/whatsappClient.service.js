@@ -135,8 +135,11 @@ async function initialize() {
     restartOnAuthFail: true,
     takeoverOnConflict: true,
     takeoverTimeoutMs: 10000,
+    webVersionCache: { type: 'remote', remotePath: 'https://raw.githubusercontent.com/nicoverali/nicoverali.github.io/refs/heads/master/nicoverali/nicoverali.github.io/main/AltWebVersion' },
     puppeteer: {
       headless: true,
+      handleSIGINT: false,
+      handleSIGTERM: false,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -147,6 +150,7 @@ async function initialize() {
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
         '--disable-backgrounding-occluded-windows',
+        '--single-process',
       ],
     },
   });
@@ -177,27 +181,40 @@ async function initialize() {
     emitWA('wa_connection', { status: 'ready' });
     logEvent('info', 'WA client ready and connected');
 
-    // Start keepalive — check connection every 2 minutes
+    // Start keepalive — check connection every 3 minutes
+    // Only reconnect after 2 consecutive failures (avoids false positives)
+    let keepaliveFailCount = 0;
     if (keepaliveInterval) clearInterval(keepaliveInterval);
     keepaliveInterval = setInterval(async () => {
       if (connectionStatus !== 'ready' || !client) return;
       try {
         const state = await client.getState();
-        if (state !== 'CONNECTED') {
-          logEvent('warn', 'WA keepalive: state is ' + state + ', triggering reconnect');
-          connectionStatus = 'disconnected';
-          emitWA('wa_connection', { status: 'disconnected', reason: 'keepalive_stale' });
-          clearInterval(keepaliveInterval);
-          initialize().catch(e => logEvent('error', 'WA keepalive reconnect failed: ' + e.message));
+        if (state === 'CONNECTED') {
+          keepaliveFailCount = 0; // healthy
+        } else {
+          keepaliveFailCount++;
+          logEvent('warn', 'WA keepalive: state is ' + state + ' (fail ' + keepaliveFailCount + '/2)');
+          if (keepaliveFailCount >= 2) {
+            logEvent('warn', 'WA keepalive: confirmed disconnected, reconnecting');
+            connectionStatus = 'disconnected';
+            emitWA('wa_connection', { status: 'disconnected', reason: 'keepalive_stale' });
+            clearInterval(keepaliveInterval);
+            keepaliveFailCount = 0;
+            initialize().catch(e => logEvent('error', 'WA keepalive reconnect failed: ' + e.message));
+          }
         }
       } catch (e) {
-        logEvent('warn', 'WA keepalive check failed: ' + e.message + ' — triggering reconnect');
-        connectionStatus = 'disconnected';
-        emitWA('wa_connection', { status: 'disconnected', reason: 'keepalive_error' });
-        clearInterval(keepaliveInterval);
-        initialize().catch(err => logEvent('error', 'WA keepalive reconnect failed: ' + err.message));
+        keepaliveFailCount++;
+        logEvent('warn', 'WA keepalive error: ' + e.message + ' (fail ' + keepaliveFailCount + '/2)');
+        if (keepaliveFailCount >= 2) {
+          connectionStatus = 'disconnected';
+          emitWA('wa_connection', { status: 'disconnected', reason: 'keepalive_error' });
+          clearInterval(keepaliveInterval);
+          keepaliveFailCount = 0;
+          initialize().catch(err => logEvent('error', 'WA keepalive reconnect failed: ' + err.message));
+        }
       }
-    }, 2 * 60 * 1000);
+    }, 3 * 60 * 1000);
   });
 
   // --- Disconnected ---
