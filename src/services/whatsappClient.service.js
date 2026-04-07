@@ -114,19 +114,12 @@ async function initialize() {
     reinitTimeout = null;
   }
 
-  // Kill any orphaned Chrome processes using the session directory
+  // Remove stale browser lock file (prevents "already running" errors)
   try {
-    const { execSync } = require('child_process');
     const authPath = require('path').resolve('.wwebjs_auth/session');
-    // Find and kill Chrome processes using this data dir
-    execSync(`pkill -f "${authPath}" 2>/dev/null || true`, { timeout: 5000 });
-    // Also remove the stale lock file if present
     const lockFile = require('path').join(authPath, 'SingletonLock');
     try { require('fs').unlinkSync(lockFile); } catch (_) {}
-    logEvent('info', 'WA cleaned up stale browser processes');
-  } catch (e) {
-    logEvent('warn', 'WA browser cleanup: ' + e.message);
-  }
+  } catch (_) {}
 
   connectionStatus = 'disconnected';
 
