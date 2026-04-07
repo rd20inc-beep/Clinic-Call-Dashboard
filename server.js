@@ -2273,9 +2273,20 @@ async function syncAppointmentsAndScheduleMessages() {
       }
     }
 
-    // --- Send Confirmation Messages ---
+    // --- Send Confirmation Messages (with dedup) ---
     const unsent = getUnsentConfirmations.all();
+    const recentConfirmPhones = new Set();
+    try {
+      // Get phones that already have a confirmation in the last 7 days
+      db.prepare("SELECT DISTINCT phone FROM wa_messages WHERE message_type = 'confirmation' AND direction = 'out' AND created_at >= datetime('now', '-7 days')").all()
+        .forEach(r => recentConfirmPhones.add(r.phone));
+    } catch(e) {}
     for (const apt of unsent) {
+      // Skip if this phone already got a confirmation recently
+      if (recentConfirmPhones.has(apt.patient_phone)) {
+        markConfirmationSent.run(apt.id); // mark as sent to prevent re-queuing
+        continue;
+      }
       const aptDate = new Date(apt.appointment_date);
       const dateStr = aptDate.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
       const timeStr = aptDate.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -2288,25 +2299,31 @@ async function syncAppointmentsAndScheduleMessages() {
       msg += `\nLocation: GPC 11, Rojhan Street, Block 5, Clifton, Karachi\n`;
       msg += `\nPlease reply "CONFIRM" to confirm or call +92-300-2105374 to reschedule. We look forward to seeing you!`;
 
-      // Queue the message
       insertWaMessage.run(apt.patient_phone, null, 'out', msg, 'confirmation', 'pending', null);
       markConfirmationSent.run(apt.id);
+      recentConfirmPhones.add(apt.patient_phone); // prevent dupes within same cycle
       logEvent('info', `WA confirmation queued for ${apt.patient_name} (${apt.patient_phone})`);
     }
 
-    // --- Send Reminder Messages (2 days before) ---
+    // --- Send Reminder Messages (2 days before, with dedup) ---
     const reminderCandidates = getUnsentReminders.all();
-    const twoDaysFromNow = new Date(today.getTime() + 2 * 24 * 60 * 60 * 1000);
-    const twoDaysDate = twoDaysFromNow.toISOString().split('T')[0];
+    const recentReminderPhones = new Set();
+    try {
+      db.prepare("SELECT DISTINCT phone FROM wa_messages WHERE message_type = 'reminder' AND direction = 'out' AND created_at >= datetime('now', '-3 days')").all()
+        .forEach(r => recentReminderPhones.add(r.phone));
+    } catch(e) {}
 
     for (const apt of reminderCandidates) {
       const aptDateStr = apt.appointment_date.split('T')[0];
-
-      // Only send reminder if appointment is exactly 2 days away (or tomorrow/today if we missed it)
       const aptDate = new Date(aptDateStr);
       const daysUntil = Math.ceil((aptDate - today) / (24 * 60 * 60 * 1000));
 
       if (daysUntil <= 2 && daysUntil >= 0) {
+        // Skip if this phone already got a reminder recently
+        if (recentReminderPhones.has(apt.patient_phone)) {
+          markReminderSent.run(apt.id);
+          continue;
+        }
         const dateDisplay = aptDate.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long' });
         const timeStr = new Date(apt.appointment_date).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true });
 
@@ -2322,6 +2339,7 @@ async function syncAppointmentsAndScheduleMessages() {
 
         insertWaMessage.run(apt.patient_phone, null, 'out', msg, 'reminder', 'pending', null);
         markReminderSent.run(apt.id);
+        recentReminderPhones.add(apt.patient_phone);
         logEvent('info', `WA reminder queued for ${apt.patient_name} (${apt.patient_phone}) - appointment ${dayWord}`);
       }
     }
