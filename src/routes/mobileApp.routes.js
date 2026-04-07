@@ -137,6 +137,18 @@ router.post('/api/agent/login', loginLimiter, (req, res) => {
     agent: agent_id,
     role: user.role,
     name: user.displayName || agent_id,
+    serverUrl: 'https://skinclinic.com.pk',
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/app/config — returns current server URL (for app migration)
+// ---------------------------------------------------------------------------
+router.get('/api/app/config', (req, res) => {
+  res.json({
+    serverUrl: 'https://skinclinic.com.pk',
+    appVersion: '1.5',
+    downloadUrl: 'https://skinclinic.com.pk/downloads/CallerID-v1.5.apk',
   });
 });
 
