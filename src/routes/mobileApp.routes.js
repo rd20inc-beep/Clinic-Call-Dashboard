@@ -147,9 +147,37 @@ router.post('/api/agent/login', loginLimiter, (req, res) => {
 router.get('/api/app/config', (req, res) => {
   res.json({
     serverUrl: 'https://skinclinic.com.pk',
-    appVersion: '1.5',
-    downloadUrl: 'https://skinclinic.com.pk/downloads/CallerID-v1.5.apk',
+    appVersion: '2.0',
+    downloadUrl: 'https://skinclinic.com.pk/downloads/CallerID-v2.0.apk',
   });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/app/auth-session — bridge Bearer token to express-session for WebView
+// Creates a real session cookie so the WebView can access the dashboard
+// ---------------------------------------------------------------------------
+router.get('/api/app/auth-session', (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(400).json({ error: 'token required' });
+
+  const entry = appTokens.get(token);
+  if (!entry) return res.status(401).json({ error: 'Invalid token' });
+  if (Date.now() - entry.loginAt > TOKEN_TTL_MS) {
+    appTokens.delete(token);
+    return res.status(401).json({ error: 'Token expired' });
+  }
+
+  // Create a real express-session
+  req.session.loggedIn = true;
+  req.session.username = entry.agent;
+  req.session.role = entry.role || 'agent';
+
+  // Redirect to the requested page or return success
+  const redirect = req.query.redirect;
+  if (redirect && redirect.startsWith('/')) {
+    return res.redirect(redirect);
+  }
+  return res.json({ success: true, username: entry.agent, role: entry.role });
 });
 
 // ---------------------------------------------------------------------------
