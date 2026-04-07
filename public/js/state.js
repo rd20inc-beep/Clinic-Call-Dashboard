@@ -41,11 +41,18 @@ fetch('/api/me').then(function(r) { return r.json(); }).then(function(data) {
     // Update agent info display
     var el = document.getElementById('agentInfo');
     if (el) el.textContent = data.role === 'admin' ? 'Admin' : data.username.charAt(0).toUpperCase() + data.username.slice(1);
-    // Show admin-only elements (admin + agent1 who has approval rights)
-    if (data.role === 'admin' || data.username === 'agent1') {
+    // Show admin-only elements (admin exclusive)
+    if (data.role === 'admin') {
       var items = document.querySelectorAll('.admin-only');
       for (var i = 0; i < items.length; i++) {
         items[i].style.display = items[i].dataset.display || '';
+      }
+    }
+    // Show wa-manager elements (admin + agent1 for WhatsApp management)
+    if (data.role === 'admin' || data.username === 'agent1') {
+      var waItems = document.querySelectorAll('.wa-manager');
+      for (var j = 0; j < waItems.length; j++) {
+        waItems[j].style.display = waItems[j].dataset.display || '';
       }
     }
     // Re-apply WhatsApp connection UI now that role is known

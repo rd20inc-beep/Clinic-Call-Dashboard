@@ -687,7 +687,7 @@ function waUpdateConnectionUI(status, qrDataUrl) {
   var reconnectBtn = document.getElementById('waReconnectBtn');
   var qrSection = document.getElementById('waQRSection');
   var qrImage = document.getElementById('waQRImage');
-  // Admin and agent1 can manage WhatsApp
+  // Admin and agent1 can manage WhatsApp (wa-manager class elements are shown for both)
   var canManage = (typeof myRole !== 'undefined' && myRole === 'admin') || (typeof myUsername !== 'undefined' && myUsername === 'agent1');
 
   if (status === 'ready') {
