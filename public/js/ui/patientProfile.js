@@ -121,7 +121,7 @@ function updateTabCounts() {
 
 function getAptStatusClass(status) {
   var sl = (status || '').toLowerCase();
-  if (sl.includes('complet') || sl.includes('checked') || sl.includes('arrived')) return 'completed';
+  if (sl.includes('check') || sl.includes('complet') || sl.includes('arrived') || sl.includes('engaged')) return 'completed';
   if (sl.includes('cancel')) return 'cancelled';
   if (sl.includes('no show') || sl.includes('noshow')) return 'noshow';
   return 'upcoming';
