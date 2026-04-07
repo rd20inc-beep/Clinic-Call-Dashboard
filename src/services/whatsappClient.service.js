@@ -34,6 +34,13 @@ function setIO(socketIO) {
   io = socketIO;
 }
 
+// Emit to admin + agent1 (both have WA management rights)
+function emitWA(event, data) {
+  if (!io) return;
+  io.to('role:admin').emit(event, data);
+  io.to('agent:agent1').emit(event, data);
+}
+
 function getStatus() {
   return connectionStatus;
 }
@@ -149,7 +156,7 @@ async function initialize() {
     try {
       const qrDataUrl = await QRCode.toDataURL(qr, { width: 280, margin: 2 });
       connectionStatus = 'qr';
-      if (io) io.to('role:admin').emit('wa_connection', { status: 'qr', qrDataUrl });
+      emitWA('wa_connection', { status: 'qr', qrDataUrl });
       logEvent('info', 'WA QR code generated — waiting for scan');
     } catch (err) {
       logEvent('error', 'WA QR generation error: ' + err.message);
@@ -159,7 +166,7 @@ async function initialize() {
   // --- Authenticated ---
   client.on('authenticated', () => {
     connectionStatus = 'authenticated';
-    if (io) io.to('role:admin').emit('wa_connection', { status: 'authenticated' });
+    emitWA('wa_connection', { status: 'authenticated' });
     logEvent('info', 'WA client authenticated');
   });
 
@@ -167,7 +174,7 @@ async function initialize() {
   client.on('ready', () => {
     connectionStatus = 'ready';
     reconnectAttempts = 0;
-    if (io) io.to('role:admin').emit('wa_connection', { status: 'ready' });
+    emitWA('wa_connection', { status: 'ready' });
     logEvent('info', 'WA client ready and connected');
 
     // Start keepalive — check connection every 2 minutes
@@ -179,14 +186,14 @@ async function initialize() {
         if (state !== 'CONNECTED') {
           logEvent('warn', 'WA keepalive: state is ' + state + ', triggering reconnect');
           connectionStatus = 'disconnected';
-          if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'keepalive_stale' });
+          emitWA('wa_connection', { status: 'disconnected', reason: 'keepalive_stale' });
           clearInterval(keepaliveInterval);
           initialize().catch(e => logEvent('error', 'WA keepalive reconnect failed: ' + e.message));
         }
       } catch (e) {
         logEvent('warn', 'WA keepalive check failed: ' + e.message + ' — triggering reconnect');
         connectionStatus = 'disconnected';
-        if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'keepalive_error' });
+        emitWA('wa_connection', { status: 'disconnected', reason: 'keepalive_error' });
         clearInterval(keepaliveInterval);
         initialize().catch(err => logEvent('error', 'WA keepalive reconnect failed: ' + err.message));
       }
@@ -196,13 +203,13 @@ async function initialize() {
   // --- Disconnected ---
   client.on('disconnected', (reason) => {
     connectionStatus = 'disconnected';
-    if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason });
+    emitWA('wa_connection', { status: 'disconnected', reason });
     logEvent('warn', 'WA client disconnected: ' + reason);
 
     // Exponential backoff reconnection
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       logEvent('error', `WA reconnection abandoned after ${MAX_RECONNECT_ATTEMPTS} attempts — manual restart required`);
-      if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'max_retries_exceeded' });
+      emitWA('wa_connection', { status: 'disconnected', reason: 'max_retries_exceeded' });
       return;
     }
     const delay = Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttempts), 5 * 60 * 1000); // max 5 min
@@ -218,7 +225,7 @@ async function initialize() {
   // --- Auth failure ---
   client.on('auth_failure', (msg) => {
     connectionStatus = 'disconnected';
-    if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'auth_failure: ' + msg });
+    emitWA('wa_connection', { status: 'disconnected', reason: 'auth_failure: ' + msg });
     logEvent('error', 'WA auth failure: ' + msg);
   });
 
@@ -250,7 +257,7 @@ async function initialize() {
 
       // Notify admin dashboard of incoming message (no auto-reply)
       // System only sends queued messages (confirmations, reminders, manual sends)
-      if (io) io.to('role:admin').emit('wa_message', {
+      emitWA('wa_message', {
         phone, chatName, direction: 'in', text,
         reply: null, timestamp: new Date().toISOString(),
       });
@@ -261,7 +268,7 @@ async function initialize() {
 
   // Start the client
   logEvent('info', 'WA client initializing...');
-  if (io) io.to('role:admin').emit('wa_connection', { status: 'authenticating' });
+  emitWA('wa_connection', { status: 'authenticating' });
   await client.initialize();
 
   // Start the send loop
@@ -285,7 +292,7 @@ async function logout() {
     client = null;
   }
   connectionStatus = 'disconnected';
-  if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'manual_logout' });
+  emitWA('wa_connection', { status: 'disconnected', reason: 'manual_logout' });
 }
 
 // ---------------------------------------------------------------------------

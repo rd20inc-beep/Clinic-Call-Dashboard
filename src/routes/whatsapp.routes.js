@@ -48,10 +48,9 @@ function setupWhatsAppRoutes(io) {
 
     // No auto-reply — system only sends scheduled messages (confirmations, reminders, aftercare)
     // Incoming messages are stored and shown to admin for reference
-    io.to('role:admin').emit('wa_message', {
-      phone: contactId, chatName, direction: 'in', text,
-      reply: null, timestamp: new Date().toISOString(),
-    });
+    const waMsg = { phone: contactId, chatName, direction: 'in', text, reply: null, timestamp: new Date().toISOString() };
+    io.to('role:admin').emit('wa_message', waMsg);
+    io.to('agent:agent1').emit('wa_message', waMsg);
 
     return res.json({ reply: null });
   });
@@ -205,8 +204,8 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/bot-toggle - enable/disable sending reminders/confirmations (admin only)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/bot-toggle', requireAuth, (req, res) => {
-    if (req.session.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin only' });
+    if (!isAdminOrAgent1(req)) {
+      return res.status(403).json({ error: 'Not authorized' });
     }
     const { enabled } = req.body;
     waService.setBotEnabled(!!enabled);
@@ -230,7 +229,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/business-hours - set business hours (admin only)
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/business-hours', requireAuth, requireAdmin, (req, res) => {
+  router.post('/api/whatsapp/business-hours', requireAuth, canApprove, (req, res) => {
     const { start, end } = req.body;
     const startH = parseInt(start, 10);
     const endH = parseInt(end, 10);
@@ -279,7 +278,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/delete-failed - delete a single failed message (admin only)
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/delete-failed', requireAuth, requireAdmin, (req, res) => {
+  router.post('/api/whatsapp/delete-failed', requireAuth, canApprove, (req, res) => {
     const { id } = req.body;
     if (!id) return res.json({ error: 'id required' });
     const { db } = require('../db/index');
@@ -291,7 +290,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/delete-all-failed - delete all failed/expired messages (admin only)
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/delete-all-failed', requireAuth, requireAdmin, (req, res) => {
+  router.post('/api/whatsapp/delete-all-failed', requireAuth, canApprove, (req, res) => {
     const { db } = require('../db/index');
     const result = db.prepare("DELETE FROM wa_messages WHERE status IN ('failed', 'expired')").run();
     logEvent('info', 'WA all failed messages deleted (' + result.changes + ') by ' + req.session.username);
@@ -306,11 +305,12 @@ function setupWhatsAppRoutes(io) {
     return res.json({ messages });
   });
 
-  // Approval rights: admin and agent1
+  // Admin or agent1 — both have full WhatsApp management rights
+  function isAdminOrAgent1(req) {
+    return (req.session && req.session.role === 'admin') || (req.session && req.session.username === 'agent1');
+  }
   function canApprove(req, res, next) {
-    const role = req.session && req.session.role;
-    const user = req.session && req.session.username;
-    if (role === 'admin' || user === 'agent1') return next();
+    if (isAdminOrAgent1(req)) return next();
     return res.status(403).json({ error: 'Not authorized to approve messages' });
   }
 
@@ -441,7 +441,7 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/reset-appointments - clear and re-queue appointment messages (admin)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/reset-appointments', requireAuth, (req, res) => {
-    if (req.session.role !== 'admin') {
+    if (!isAdminOrAgent1(req)) {
       return res.status(403).json({ error: 'Admin only' });
     }
     const { db } = require('../db/index');
@@ -463,7 +463,7 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/wa-logout - disconnect WhatsApp (admin only)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/wa-logout', requireAuth, async (req, res) => {
-    if (req.session.role !== 'admin') {
+    if (!isAdminOrAgent1(req)) {
       return res.status(403).json({ error: 'Admin only' });
     }
     try {
@@ -480,7 +480,7 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/wa-reconnect - reinitialize WhatsApp client (admin only)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/wa-reconnect', requireAuth, (req, res) => {
-    if (req.session.role !== 'admin') {
+    if (!isAdminOrAgent1(req)) {
       return res.status(403).json({ error: 'Admin only' });
     }
     // Fire-and-forget — initialization takes 10-30s (Puppeteer startup).
@@ -488,6 +488,7 @@ function setupWhatsAppRoutes(io) {
     waClient.initialize().catch((err) => {
       logEvent('error', 'WA reconnect failed: ' + err.message);
       io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'init_failed: ' + err.message });
+      io.to('agent:agent1').emit('wa_connection', { status: 'disconnected', reason: 'init_failed: ' + err.message });
     });
     return res.json({ ok: true, message: 'Initializing — QR code will appear shortly' });
   });
@@ -504,7 +505,7 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/templates — save a template (admin only)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/templates', requireAuth, (req, res) => {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    if (!isAdminOrAgent1(req)) return res.status(403).json({ error: 'Not authorized' });
     const { key, text } = req.body;
     if (!key || !text) return res.json({ error: 'key and text required' });
     const templates = require('../services/messageTemplates');
@@ -518,7 +519,7 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/templates/reset — reset template to default (admin)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/templates/reset', requireAuth, (req, res) => {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    if (!isAdminOrAgent1(req)) return res.status(403).json({ error: 'Not authorized' });
     const { key } = req.body;
     if (!key) return res.json({ error: 'key required' });
     const templates = require('../services/messageTemplates');
@@ -530,7 +531,7 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/templates/create — create a new custom template (admin)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/templates/create', requireAuth, (req, res) => {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    if (!isAdminOrAgent1(req)) return res.status(403).json({ error: 'Not authorized' });
     const { name, text } = req.body;
     if (!name || !text) return res.json({ error: 'name and text required' });
     const templates = require('../services/messageTemplates');
@@ -544,7 +545,7 @@ function setupWhatsAppRoutes(io) {
   // POST /api/whatsapp/templates/delete — delete a custom template (admin)
   // -----------------------------------------------------------------------
   router.post('/api/whatsapp/templates/delete', requireAuth, (req, res) => {
-    if (req.session.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    if (!isAdminOrAgent1(req)) return res.status(403).json({ error: 'Not authorized' });
     const { key } = req.body;
     if (!key) return res.json({ error: 'key required' });
     const templates = require('../services/messageTemplates');
@@ -623,7 +624,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/service-templates — save a service-specific template
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/service-templates', requireAuth, requireAdmin, (req, res) => {
+  router.post('/api/whatsapp/service-templates', requireAuth, canApprove, (req, res) => {
     const { type, service, text } = req.body;
     if (!type || !service || !text) return res.json({ error: 'type, service, and text required' });
     const templates = require('../services/messageTemplates');
@@ -635,7 +636,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // DELETE /api/whatsapp/service-templates — delete a service-specific template (revert to default)
   // -----------------------------------------------------------------------
-  router.delete('/api/whatsapp/service-templates', requireAuth, requireAdmin, (req, res) => {
+  router.delete('/api/whatsapp/service-templates', requireAuth, canApprove, (req, res) => {
     const { type, service } = req.body;
     if (!type || !service) return res.json({ error: 'type and service required' });
     const templates = require('../services/messageTemplates');
@@ -664,7 +665,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // POST /api/whatsapp/doctor-templates — save doctor-specific template
   // -----------------------------------------------------------------------
-  router.post('/api/whatsapp/doctor-templates', requireAuth, requireAdmin, (req, res) => {
+  router.post('/api/whatsapp/doctor-templates', requireAuth, canApprove, (req, res) => {
     const { type, doctor, text } = req.body;
     if (!type || !doctor || !text) return res.json({ error: 'type, doctor, and text required' });
     const templates = require('../services/messageTemplates');
@@ -676,7 +677,7 @@ function setupWhatsAppRoutes(io) {
   // -----------------------------------------------------------------------
   // DELETE /api/whatsapp/doctor-templates — delete doctor-specific template
   // -----------------------------------------------------------------------
-  router.delete('/api/whatsapp/doctor-templates', requireAuth, requireAdmin, (req, res) => {
+  router.delete('/api/whatsapp/doctor-templates', requireAuth, canApprove, (req, res) => {
     const { type, doctor } = req.body;
     if (!type || !doctor) return res.json({ error: 'type and doctor required' });
     const templates = require('../services/messageTemplates');
