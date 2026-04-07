@@ -24,10 +24,11 @@ let client = null;
 let io = null;
 let connectionStatus = 'disconnected'; // 'disconnected' | 'qr' | 'authenticated' | 'ready'
 let sendInterval = null;
+let keepaliveInterval = null;
 let reinitTimeout = null;
 let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 10;
-const BASE_RECONNECT_DELAY_MS = 30_000; // 30 seconds
+const MAX_RECONNECT_ATTEMPTS = 15;
+const BASE_RECONNECT_DELAY_MS = 15_000; // 15 seconds (faster first retry)
 
 function setIO(socketIO) {
   io = socketIO;
@@ -124,6 +125,9 @@ async function initialize() {
 
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: '.wwebjs_auth' }),
+    restartOnAuthFail: true,
+    takeoverOnConflict: true,
+    takeoverTimeoutMs: 10000,
     puppeteer: {
       headless: true,
       args: [
@@ -132,6 +136,10 @@ async function initialize() {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--no-first-run',
+        '--disable-extensions',
+        '--disable-background-timer-throttling',
+        '--disable-renderer-backgrounding',
+        '--disable-backgrounding-occluded-windows',
       ],
     },
   });
@@ -158,9 +166,31 @@ async function initialize() {
   // --- Ready ---
   client.on('ready', () => {
     connectionStatus = 'ready';
-    reconnectAttempts = 0; // reset backoff on successful connection
+    reconnectAttempts = 0;
     if (io) io.to('role:admin').emit('wa_connection', { status: 'ready' });
     logEvent('info', 'WA client ready and connected');
+
+    // Start keepalive — check connection every 2 minutes
+    if (keepaliveInterval) clearInterval(keepaliveInterval);
+    keepaliveInterval = setInterval(async () => {
+      if (connectionStatus !== 'ready' || !client) return;
+      try {
+        const state = await client.getState();
+        if (state !== 'CONNECTED') {
+          logEvent('warn', 'WA keepalive: state is ' + state + ', triggering reconnect');
+          connectionStatus = 'disconnected';
+          if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'keepalive_stale' });
+          clearInterval(keepaliveInterval);
+          initialize().catch(e => logEvent('error', 'WA keepalive reconnect failed: ' + e.message));
+        }
+      } catch (e) {
+        logEvent('warn', 'WA keepalive check failed: ' + e.message + ' — triggering reconnect');
+        connectionStatus = 'disconnected';
+        if (io) io.to('role:admin').emit('wa_connection', { status: 'disconnected', reason: 'keepalive_error' });
+        clearInterval(keepaliveInterval);
+        initialize().catch(err => logEvent('error', 'WA keepalive reconnect failed: ' + err.message));
+      }
+    }, 2 * 60 * 1000);
   });
 
   // --- Disconnected ---
@@ -243,10 +273,8 @@ async function initialize() {
 // ---------------------------------------------------------------------------
 
 async function logout() {
-  if (reinitTimeout) {
-    clearTimeout(reinitTimeout);
-    reinitTimeout = null;
-  }
+  if (reinitTimeout) { clearTimeout(reinitTimeout); reinitTimeout = null; }
+  if (keepaliveInterval) { clearInterval(keepaliveInterval); keepaliveInterval = null; }
   if (client) {
     try {
       await client.logout();
@@ -266,6 +294,7 @@ async function logout() {
 
 async function destroy() {
   if (sendInterval) clearInterval(sendInterval);
+  if (keepaliveInterval) clearInterval(keepaliveInterval);
   if (reinitTimeout) clearTimeout(reinitTimeout);
   if (client) {
     try { await client.destroy(); } catch (e) { /* ignore */ }
