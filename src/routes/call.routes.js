@@ -495,19 +495,25 @@ router.post('/api/calls/:id/resolve', requireAuth, (req, res) => {
     const call = db.prepare('SELECT * FROM calls WHERE id = ?').get(id);
     if (!call) return res.status(404).json({ error: 'Call not found' });
 
-    // Mark call as resolved (answered)
+    // Mark this call AND all other missed calls from the same number as resolved
     db.prepare("UPDATE calls SET call_status = 'answered', notes = COALESCE(notes || ' | ', '') || ? WHERE id = ?")
       .run('Manually resolved by ' + req.session.username, id);
 
-    // Resolve any pending callback for this number
+    // Also resolve other missed/unknown calls from same number
+    const otherResolved = db.prepare(
+      "UPDATE calls SET call_status = 'answered', notes = COALESCE(notes || ' | ', '') || ? WHERE caller_number = ? AND call_status IN ('missed','unknown','rejected') AND id != ?"
+    ).run('Auto-resolved: same number resolved', call.caller_number, id);
+    if (otherResolved.changes > 0) {
+      logEvent('info', 'Auto-resolved ' + otherResolved.changes + ' other missed call(s) for ' + call.caller_number);
+    }
+
+    // Resolve ALL pending callbacks for this number (not just one)
     try {
-      const cbRepo = require('../db/callbacks.repo');
-      const pending = db.prepare(
-        "SELECT id FROM callbacks WHERE caller_number = ? AND callback_status IN ('pending','assigned') LIMIT 1"
-      ).get(call.caller_number);
-      if (pending) {
-        db.prepare("UPDATE callbacks SET callback_status = 'resolved', resolved_at = datetime('now'), callback_notes = COALESCE(callback_notes || ' | ', '') || ? WHERE id = ?")
-          .run('Manually resolved by ' + req.session.username, pending.id);
+      const result = db.prepare(
+        "UPDATE callbacks SET callback_status = 'resolved', resolved_at = datetime('now'), callback_notes = COALESCE(callback_notes || ' | ', '') || ? WHERE caller_number = ? AND callback_status IN ('pending','assigned')"
+      ).run('Manually resolved by ' + req.session.username, call.caller_number);
+      if (result.changes > 0) {
+        logEvent('info', 'Auto-resolved ' + result.changes + ' callback(s) for ' + call.caller_number);
       }
     } catch (_) {}
 
