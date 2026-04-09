@@ -517,11 +517,10 @@ function _applyAndSend(templateKey, vars, title, phone, name, type, appointmentI
       if (!d) return; // cancelled
       if (d.ok) {
         showErrorToast(title + ' queued for ' + name, 'success');
-        // Mark confirmation/reminder as sent on this appointment
-        if (appointmentId && (type === 'confirmation' || type === 'reminder')) {
-          waFetch('/api/whatsapp/mark-sent', { method: 'POST', body: JSON.stringify({ appointmentId: appointmentId, type: type }) })
-            .then(function() { if (typeof loadCalendar === 'function') loadCalendar(); })
-            .catch(function() {});
+        // Mark sent on this appointment + update card in-place (no page reload)
+        if (appointmentId && (type === 'confirmation' || type === 'reminder' || type === 'review' || type === 'aftercare')) {
+          waFetch('/api/whatsapp/mark-sent', { method: 'POST', body: JSON.stringify({ appointmentId: appointmentId, type: type }) }).catch(function() {});
+          if (typeof markCalendarCardSent === 'function') markCalendarCardSent(appointmentId, type);
         }
       } else {
         showErrorToast('Error: ' + (d.error || 'Unknown'));
@@ -539,10 +538,9 @@ function _applyAndSend(templateKey, vars, title, phone, name, type, appointmentI
             if (!d) return;
             if (d.ok) {
               showErrorToast(title + ' queued for ' + name, 'success');
-              if (appointmentId && (type === 'confirmation' || type === 'reminder')) {
-                waFetch('/api/whatsapp/mark-sent', { method: 'POST', body: JSON.stringify({ appointmentId: appointmentId, type: type }) })
-                  .then(function() { if (typeof loadCalendar === 'function') loadCalendar(); })
-                  .catch(function() {});
+              if (appointmentId && (type === 'confirmation' || type === 'reminder' || type === 'review' || type === 'aftercare')) {
+                waFetch('/api/whatsapp/mark-sent', { method: 'POST', body: JSON.stringify({ appointmentId: appointmentId, type: type }) }).catch(function() {});
+                if (typeof markCalendarCardSent === 'function') markCalendarCardSent(appointmentId, type);
               }
             } else showErrorToast('Error: ' + (d.error || 'Unknown'));
           })

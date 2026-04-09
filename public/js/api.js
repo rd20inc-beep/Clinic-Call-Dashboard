@@ -1031,7 +1031,7 @@ async function loadCalendar() {
         if (trackInfo.aftercareSent) msgBadges += '<span style="background:#059669;color:white;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:4px;">Aftercare Sent</span>';
       }
 
-      html += '<div class="calendar-card ' + statusClass + '" data-name="' + escapeHtml(apt.patientName) + '" data-status="' + aptStatusBadge + '" data-doctor="' + escapeHtml(apt.doctor || '') + '" data-service="' + escapeHtml(apt.service || '') + '" onclick="openProfileById(\'' + escapeHtml(String(apt.patientID)) + '\', \'' + escapeHtml(apt.patientName) + '\')">';
+      html += '<div class="calendar-card ' + statusClass + '" data-name="' + escapeHtml(apt.patientName) + '" data-status="' + aptStatusBadge + '" data-doctor="' + escapeHtml(apt.doctor || '') + '" data-service="' + escapeHtml(apt.service || '') + '" data-apt-id="' + escapeHtml(String(apt.appointmentID || '')) + '" onclick="openProfileById(\'' + escapeHtml(String(apt.patientID)) + '\', \'' + escapeHtml(apt.patientName) + '\')">';
       html += '<div class="calendar-card-left">';
       html += '<h4>' + escapeHtml(apt.patientName) + '</h4>';
       html += '<p>' + escapeHtml(apt.service || 'Appointment');
@@ -1070,6 +1070,51 @@ async function loadCalendar() {
     listEl.innerHTML = '<div class="empty-state"><p>Failed to load appointments</p></div>';
     console.error('Calendar load error:', err);
   }
+}
+
+// ===== CALENDAR: IN-PLACE CARD UPDATE AFTER SEND =====
+function markCalendarCardSent(appointmentId, type) {
+  var card = document.querySelector('.calendar-card[data-apt-id="' + appointmentId + '"]');
+  if (!card) return;
+
+  // Add "Queued" badge to the card
+  var leftDiv = card.querySelector('.calendar-card-left');
+  if (leftDiv) {
+    // Remove existing badge container if re-sending
+    var existingBadges = leftDiv.querySelector('.msg-badges');
+    if (!existingBadges) {
+      existingBadges = document.createElement('div');
+      existingBadges.className = 'msg-badges';
+      existingBadges.style.cssText = 'margin-top:4px;';
+      leftDiv.appendChild(existingBadges);
+    }
+
+    var badgeColor = type === 'confirmation' ? '#2ecc71' : type === 'reminder' ? '#3498db' : '#8b5cf6';
+    var badgeLabel = type === 'confirmation' ? 'Confirmation Queued' : type === 'reminder' ? 'Reminder Queued' : type.charAt(0).toUpperCase() + type.slice(1) + ' Queued';
+    var badge = document.createElement('span');
+    badge.style.cssText = 'background:' + badgeColor + ';color:white;font-size:9px;padding:2px 6px;border-radius:3px;margin-right:4px;';
+    badge.textContent = badgeLabel;
+    existingBadges.appendChild(badge);
+  }
+
+  // Hide the button that was just clicked (Confirm/Remind)
+  var buttons = card.querySelectorAll('button');
+  buttons.forEach(function(btn) {
+    var text = btn.textContent.toLowerCase();
+    if (type === 'confirmation' && text === 'confirm') btn.style.display = 'none';
+    if (type === 'reminder' && text === 'remind') btn.style.display = 'none';
+    if (type === 'review' && text === 'review') btn.style.display = 'none';
+    if (type === 'aftercare' && text === 'aftercare') btn.style.display = 'none';
+  });
+
+  // Move card to bottom of the list
+  var parent = card.parentElement;
+  if (parent) {
+    parent.appendChild(card);
+  }
+
+  // Dim the card slightly to show it's been handled
+  card.style.opacity = '0.7';
 }
 
 // ===== PATIENTS =====
