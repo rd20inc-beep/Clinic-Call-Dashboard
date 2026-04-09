@@ -149,7 +149,7 @@ module.exports = {
    */
   autoResolvePending() {
     const pending = db.prepare(
-      "SELECT id, caller_number, call_time FROM callbacks WHERE callback_status IN ('pending', 'assigned')"
+      "SELECT id, caller_number, call_time, call_id FROM callbacks WHERE callback_status IN ('pending', 'assigned')"
     ).all();
 
     if (pending.length === 0) return 0;
@@ -160,26 +160,34 @@ module.exports = {
       if (!phone || phone.length < 7) continue;
       const phoneSuffix = '%' + phone.slice(-10) + '%';
 
-      // Check 1: outbound call made to this number after the missed call
-      const outbound = db.prepare(
-        "SELECT id FROM calls WHERE caller_number LIKE ? AND direction = 'outbound' AND timestamp > ? LIMIT 1"
-      ).get(phoneSuffix, cb.call_time);
+      // Check 1: the original call itself was resolved (manually or auto)
+      let originalResolved = false;
+      if (cb.call_id) {
+        const orig = db.prepare("SELECT call_status FROM calls WHERE id = ?").get(cb.call_id);
+        if (orig && orig.call_status === 'answered') originalResolved = true;
+      }
 
-      // Check 2: inbound call answered from this number after the missed call
+      // Check 2: ANY answered call from this number (same time or later)
       const answered = db.prepare(
-        "SELECT id FROM calls WHERE caller_number LIKE ? AND call_status = 'answered' AND timestamp > ? LIMIT 1"
-      ).get(phoneSuffix, cb.call_time);
+        "SELECT id FROM calls WHERE caller_number LIKE ? AND call_status = 'answered' LIMIT 1"
+      ).get(phoneSuffix);
 
-      // Check 3: appointment booked for this phone after the missed call
+      // Check 3: outbound call made to this number
+      const outbound = db.prepare(
+        "SELECT id FROM calls WHERE caller_number LIKE ? AND direction = 'outbound' LIMIT 1"
+      ).get(phoneSuffix);
+
+      // Check 4: appointment booked for this phone
       const appointment = db.prepare(
-        "SELECT id FROM wa_appointment_tracking WHERE patient_phone LIKE ? AND created_at > ? LIMIT 1"
-      ).get(phoneSuffix, cb.call_time);
+        "SELECT id FROM wa_appointment_tracking WHERE patient_phone LIKE ? LIMIT 1"
+      ).get(phoneSuffix);
 
-      if (outbound || answered || appointment) {
-        const reason = outbound ? 'called_back' : answered ? 'resolved' : 'resolved';
+      if (originalResolved || answered || outbound || appointment) {
+        const reason = originalResolved ? 'resolved' : outbound ? 'called_back' : answered ? 'resolved' : 'resolved';
+        const detail = originalResolved ? 'original call resolved' : outbound ? 'outbound call made' : answered ? 'call answered' : 'appointment booked';
         db.prepare(
           "UPDATE callbacks SET callback_status = ?, resolved_at = datetime('now'), callback_notes = COALESCE(callback_notes || ' | ', '') || ? WHERE id = ?"
-        ).run(reason, 'Auto-resolved: ' + (outbound ? 'outbound call made' : answered ? 'call answered' : 'appointment booked'), cb.id);
+        ).run(reason, 'Auto-resolved: ' + detail, cb.id);
         resolved++;
       }
     }
