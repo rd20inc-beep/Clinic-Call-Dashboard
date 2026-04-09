@@ -163,11 +163,11 @@ module.exports = function setupAdminRoutes(io) {
           ? "SELECT COUNT(DISTINCT c1.caller_number) as c FROM calls c1 " +
             "WHERE " + TODAY.replace(/timestamp/g, 'c1.timestamp') + " AND c1.call_status IN ('missed','rejected','unknown') " +
             "AND NOT EXISTS (SELECT 1 FROM calls c2 WHERE c2.caller_number = c1.caller_number " +
-            "AND c2.call_status = 'answered' AND c2.timestamp >= c1.timestamp)"
+            "AND c2.call_status IN ('answered','resolved') AND c2.timestamp >= c1.timestamp)"
           : "SELECT COUNT(DISTINCT c1.caller_number) as c FROM calls c1 " +
             "WHERE c1.agent = ? AND " + TODAY.replace(/timestamp/g, 'c1.timestamp') + " AND c1.call_status IN ('missed','rejected','unknown') " +
             "AND NOT EXISTS (SELECT 1 FROM calls c2 WHERE c2.caller_number = c1.caller_number " +
-            "AND c2.call_status = 'answered' AND c2.timestamp >= c1.timestamp)";
+            "AND c2.call_status IN ('answered','resolved') AND c2.timestamp >= c1.timestamp)";
         todayUnresolvedMissed = isAdmin ? q(unresolvedQuery).c : q(unresolvedQuery, agent).c;
         todayResolvedMissed = totalMissedRaw - todayUnresolvedMissed;
         if (todayResolvedMissed < 0) todayResolvedMissed = 0;
