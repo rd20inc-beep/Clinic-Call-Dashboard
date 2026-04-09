@@ -125,6 +125,43 @@ server.listen(PORT, () => {
     } catch (e) { /* ignore */ }
   }, 2 * 60 * 1000));
 
+  // Background: gradually import full appointment history for all patients
+  // Runs every hour, processes 10 patients per run (avoids API flooding)
+  intervals.push(setInterval(async () => {
+    try {
+      const { isClinicaConfigured } = require('./config/env');
+      if (!isClinicaConfigured()) return;
+
+      const { db } = require('./db/index');
+      const cliniceaService = require('./services/clinicea.service');
+      if (!cliniceaService || !cliniceaService.fetchProfileByPatientId) return;
+
+      // Find patients with a clinicea_id who haven't had their full history imported
+      // We track this by checking if they have fewer than 2 appointments in local DB
+      // (most patients have at least a few — if they have 0-1, we haven't imported yet)
+      const patients = db.prepare(
+        "SELECT p.clinicea_id, p.name, p.phone, " +
+        "(SELECT COUNT(*) FROM wa_appointment_tracking t WHERE t.patient_phone = p.phone) as apt_count " +
+        "FROM patients p " +
+        "WHERE p.clinicea_id IS NOT NULL AND p.clinicea_id != '' " +
+        "ORDER BY apt_count ASC LIMIT 10"
+      ).all();
+
+      let imported = 0;
+      for (const p of patients) {
+        if (p.apt_count > 5) continue; // likely already imported
+        try {
+          await cliniceaService.fetchProfileByPatientId(p.clinicea_id);
+          imported++;
+          await new Promise(r => setTimeout(r, 2000)); // 2s delay between patients
+        } catch (e) { /* skip this patient */ }
+      }
+      if (imported > 0) {
+        logEvent('info', `Background import: fetched full history for ${imported} patient(s)`);
+      }
+    } catch (e) { /* ignore */ }
+  }, 60 * 60 * 1000)); // every hour
+
   // Initialize WhatsApp Web client (QR code auth)
   initWhatsAppClient().catch((err) => {
     logEvent('error', 'WhatsApp client init failed: ' + err.message);

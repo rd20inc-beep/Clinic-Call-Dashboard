@@ -430,11 +430,49 @@ async function fetchProfileByPatientId(patientId) {
   if (cached && Date.now() < cached.expiry) return cached.data;
 
   const safeId = encodeURIComponent(patientId);
-  const [details, appointments, bills] = await Promise.all([
+
+  // Fetch details + bills in parallel, appointments paginated separately
+  const [details, bills] = await Promise.all([
     cliniceaFetch(`/api/v3/patients/getPatientByID?patientID=${safeId}`),
-    cliniceaFetch(`/api/v2/appointments/getAppointmentsByPatient?patientID=${safeId}&appointmentType=2&pageNo=1&pageSize=50`),
     cliniceaFetch(`/api/v2/bills/getBillsByPatient?patientID=${safeId}&billStatus=0&pageNo=1&pageSize=50`),
   ]);
+
+  // Fetch ALL appointments (paginate through every page)
+  let allAppointments = [];
+  for (let pageNo = 1; pageNo <= 50; pageNo++) { // max 50 pages = 2500 appointments
+    const page = await cliniceaFetch(
+      `/api/v2/appointments/getAppointmentsByPatient?patientID=${safeId}&appointmentType=2&pageNo=${pageNo}&pageSize=50`
+    );
+    if (!Array.isArray(page) || page.length === 0) break;
+    allAppointments = allAppointments.concat(page);
+    if (page.length < 50) break; // last page
+  }
+
+  // Save ALL appointments to local DB (background, non-blocking)
+  try {
+    const waRepo = require('../db/whatsapp.repo');
+    const { normalizePKPhone } = require('../utils/phone');
+    for (const apt of allAppointments) {
+      const aptId = String(apt.AppointmentID || apt.ID || apt.Id || '');
+      if (!aptId) continue;
+      const mapped = mapAppointmentFields(apt);
+      let phone = (mapped.phone || '').replace(/[\s\-()]/g, '');
+      if (phone) {
+        phone = normalizePKPhone(phone) || phone;
+        if (!phone.startsWith('+')) phone = '+' + phone;
+      }
+      if (!phone) continue;
+      waRepo.upsertAppointmentTracking(
+        aptId, String(apt.PatientID || apt.patientID || ''),
+        mapped.patientName, phone, mapped.startTime,
+        mapped.doctor, mapped.service, mapped.createdBy,
+        { status: mapped.status, endTime: mapped.endTime, duration: mapped.duration, notes: mapped.notes }
+      );
+    }
+    if (allAppointments.length > 0) {
+      logEvent('info', `Saved ${allAppointments.length} appointments for patient ${patientId} to local DB`);
+    }
+  } catch (e) { /* best-effort save */ }
 
   const pat = Array.isArray(details) ? (details[0] || {}) : (details || {});
   const patientName =
@@ -446,7 +484,7 @@ async function fetchProfileByPatientId(patientId) {
 
   const result = {
     patient: details,
-    appointments: Array.isArray(appointments) ? appointments : [],
+    appointments: allAppointments,
     bills: Array.isArray(bills) ? bills : [],
     patientName,
     patientID: patientId,
