@@ -151,10 +151,28 @@ module.exports = function setupAdminRoutes(io) {
         if (lastHourMissed > 3) alerts.push({ type: 'warn', text: lastHourMissed + ' missed calls in the last hour' });
       }
 
+      // Unresolved missed: missed calls where the same number was NOT
+      // answered or called back later today
+      let todayUnresolvedMissed = 0;
+      try {
+        const unresolvedQuery = isAdmin
+          ? "SELECT COUNT(DISTINCT c1.caller_number) as c FROM calls c1 " +
+            "WHERE " + TODAY.replace(/timestamp/g, 'c1.timestamp') + " AND c1.call_status IN ('missed','rejected','unknown') " +
+            "AND NOT EXISTS (SELECT 1 FROM calls c2 WHERE c2.caller_number = c1.caller_number " +
+            "AND c2.call_status = 'answered' AND c2.timestamp >= c1.timestamp)"
+          : "SELECT COUNT(DISTINCT c1.caller_number) as c FROM calls c1 " +
+            "WHERE c1.agent = ? AND " + TODAY.replace(/timestamp/g, 'c1.timestamp') + " AND c1.call_status IN ('missed','rejected','unknown') " +
+            "AND NOT EXISTS (SELECT 1 FROM calls c2 WHERE c2.caller_number = c1.caller_number " +
+            "AND c2.call_status = 'answered' AND c2.timestamp >= c1.timestamp)";
+        todayUnresolvedMissed = isAdmin ? q(unresolvedQuery).c : q(unresolvedQuery, agent).c;
+      } catch (_) {
+        todayUnresolvedMissed = (todayMissed || 0) + (todayRejected || 0) + (todayUnknown || 0);
+      }
+
       res.json({
         total, inbound, outbound, answered, missed, unknown, rejected,
         avgDuration: Math.round(avgDuration || 0),
-        today: { total: todayTotal, inbound: todayInbound, outbound: todayOutbound, answered: todayAnswered, missed: todayMissed, unknown: todayUnknown, rejected: todayRejected, talkTime: todayTalkTime },
+        today: { total: todayTotal, inbound: todayInbound, outbound: todayOutbound, answered: todayAnswered, missed: todayMissed, unknown: todayUnknown, rejected: todayRejected, unresolvedMissed: todayUnresolvedMissed, talkTime: todayTalkTime },
         agentSnapshot,
         recentCalls,
         alerts,

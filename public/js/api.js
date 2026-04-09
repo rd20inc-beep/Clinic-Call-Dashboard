@@ -457,8 +457,7 @@ async function loadCallStats() {
 
     var todayTalkTime = data.today.talkTime || 0;
 
-    // Missed = missed + rejected + unknown (all unanswered calls)
-    var totalMissed = (data.today.missed || 0) + (data.today.rejected || 0) + (data.today.unknown || 0);
+    var totalMissed = data.today.unresolvedMissed != null ? data.today.unresolvedMissed : ((data.today.missed || 0) + (data.today.rejected || 0) + (data.today.unknown || 0));
 
     el.innerHTML =
       dashStatCard('Today', data.today.total || 0, '', 'all') +
