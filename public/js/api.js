@@ -399,7 +399,24 @@ function resolveCall(callId) {
     .then(function(d) {
       if (d.ok) {
         showErrorToast('Call resolved', 'success');
-        loadCallHistory();
+        // Remove this row and all other rows with the same caller number (in-place, no page reload)
+        var row = document.querySelector('tr[data-call-id="' + callId + '"]');
+        if (row) {
+          var callerNumber = row.getAttribute('data-caller-number');
+          // Remove all rows with the same number that are missed/rejected/unknown
+          if (callerNumber) {
+            document.querySelectorAll('tr[data-caller-number="' + callerNumber + '"]').forEach(function(r) {
+              var statusEl = r.querySelector('.call-st');
+              if (statusEl && (statusEl.classList.contains('missed') || statusEl.classList.contains('unknown') || statusEl.textContent === 'Rejected')) {
+                r.remove();
+              }
+            });
+          }
+          // If this specific row is still there, remove it too
+          row = document.querySelector('tr[data-call-id="' + callId + '"]');
+          if (row) row.remove();
+        }
+        // Update stats without reloading
         loadCallStats();
       } else {
         showErrorToast('Error: ' + (d.error || 'Failed'));
