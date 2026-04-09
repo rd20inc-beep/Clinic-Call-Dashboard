@@ -1072,6 +1072,106 @@ async function loadCalendar() {
   }
 }
 
+// ===== CALENDAR: SEND ALL CONFIRMATIONS/REMINDERS =====
+
+function calSendAllConfirmations() {
+  _calSendAll('confirmation');
+}
+
+function calSendAllReminders() {
+  _calSendAll('reminder');
+}
+
+function _calSendAll(type) {
+  var apts = window._calAppointments || [];
+  var date = window._calDate || '';
+  if (apts.length === 0) { showErrorToast('No appointments to send'); return; }
+
+  // Filter: only appointments that have a phone, aren't cancelled/noshow, and haven't been sent yet
+  var pending = [];
+  apts.forEach(function(apt) {
+    var phone = (apt.phone || apt.patientPhone || apt.mobile || '').replace(/[\s\-()]/g, '');
+    if (!phone) return;
+    var status = (apt.status || '').toLowerCase();
+    if (status.indexOf('cancel') >= 0 || status.indexOf('no show') >= 0 || status.indexOf('noshow') >= 0) return;
+
+    // Check if already sent by looking at the card's badge
+    var card = document.querySelector('.calendar-card[data-apt-id="' + apt.appointmentID + '"]');
+    if (card) {
+      var badges = card.querySelector('.msg-badges');
+      if (badges && badges.textContent.toLowerCase().indexOf(type) >= 0) return; // already queued
+    }
+
+    // Check DB flags
+    if (type === 'confirmation' && apt.confirmationSent) return;
+    if (type === 'reminder' && apt.reminderSent) return;
+
+    pending.push(apt);
+  });
+
+  if (pending.length === 0) {
+    showErrorToast('All ' + type + 's already sent', 'success');
+    return;
+  }
+
+  var label = type === 'confirmation' ? 'Confirm' : 'Remind';
+  if (!confirm('Send ' + label + ' to ' + pending.length + ' patient(s)?')) return;
+
+  var sent = 0;
+  var failed = 0;
+
+  function sendNext(index) {
+    if (index >= pending.length) {
+      showErrorToast(sent + ' ' + type + '(s) queued' + (failed > 0 ? ', ' + failed + ' failed' : ''), 'success');
+      return;
+    }
+
+    var apt = pending[index];
+    var phone = (apt.phone || apt.patientPhone || apt.mobile || '').replace(/[\s\-()]/g, '');
+    var timeStr = '';
+    try {
+      if (apt.startTime && apt.startTime.indexOf('T') >= 0) {
+        var d = new Date(apt.startTime);
+        var h = d.getHours(); var m = String(d.getMinutes()).padStart(2, '0');
+        var ampm = h >= 12 ? 'PM' : 'AM'; h = h === 0 ? 12 : h > 12 ? h - 12 : h;
+        timeStr = h + ':' + m + ' ' + ampm;
+      }
+    } catch(e) {}
+
+    var dateObj = new Date(date + 'T00:00:00');
+    var dateStr = dateObj.toLocaleDateString('en-PK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    var aptLine = dateStr + ' at ' + timeStr;
+    if (apt.service) aptLine += ' — ' + apt.service;
+    if (apt.doctor) aptLine += ' (' + apt.doctor + ')';
+
+    var vars = type === 'confirmation'
+      ? { name: apt.patientName, date: dateStr, time: timeStr, service: apt.service || '', doctor: apt.doctor || '', appointments: aptLine }
+      : { date: dateStr, time: timeStr, service: apt.service || '', doctor: apt.doctor || '', appointments: aptLine };
+
+    var templateKey = type;
+
+    waFetch('/api/whatsapp/send', { method: 'POST', body: JSON.stringify({ phone: phone, template: templateKey, vars: vars, type: type }) })
+      .then(function(d) {
+        if (d && d.ok) {
+          sent++;
+          // Mark sent on server
+          if (apt.appointmentID) {
+            waFetch('/api/whatsapp/mark-sent', { method: 'POST', body: JSON.stringify({ appointmentId: apt.appointmentID, type: type }) }).catch(function() {});
+          }
+          // Update card in-place
+          if (typeof markCalendarCardSent === 'function') markCalendarCardSent(apt.appointmentID, type);
+        } else { failed++; }
+      })
+      .catch(function() { failed++; })
+      .finally(function() {
+        // Small delay between sends to avoid flooding
+        setTimeout(function() { sendNext(index + 1); }, 300);
+      });
+  }
+
+  sendNext(0);
+}
+
 // ===== CALENDAR: IN-PLACE CARD UPDATE AFTER SEND =====
 function markCalendarCardSent(appointmentId, type) {
   var card = document.querySelector('.calendar-card[data-apt-id="' + appointmentId + '"]');

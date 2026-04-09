@@ -222,7 +222,10 @@
           <button onclick="calendarToday()" class="active">Today</button>
           <span class="calendar-date-label" id="calendarDateLabel"></span>
           <span class="calendar-count" id="calendarCount"></span>
-          <span style="margin-left:auto;cursor:help;font-size:11px;color:#94a3b8;" title="Scheduled = Booked, not arrived yet&#10;Confirmed = Patient confirmed attendance&#10;Engaged = Patient is with the doctor&#10;Check Out = Visit complete, patient left&#10;Cancelled = Appointment cancelled&#10;No Show = Patient didn't show up">&#9432; Status Guide</span>
+          <span style="flex:1;"></span>
+          <button onclick="calSendAllConfirmations()" style="padding:4px 10px;border:none;border-radius:4px;background:#2ecc71;color:white;font-size:11px;font-weight:600;cursor:pointer;">Confirm All</button>
+          <button onclick="calSendAllReminders()" style="padding:4px 10px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:11px;font-weight:600;cursor:pointer;">Remind All</button>
+          <span style="cursor:help;font-size:11px;color:#94a3b8;" title="Scheduled = Booked, not arrived yet&#10;Confirmed = Patient confirmed attendance&#10;Engaged = Patient is with the doctor&#10;Check Out = Visit complete, patient left&#10;Cancelled = Appointment cancelled&#10;No Show = Patient didn't show up">&#9432;</span>
         </div>
         <div id="calendarFilters" style="display:none;padding:8px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
           <input id="calSearchInput" type="text" placeholder="Search patient..." oninput="filterCalendar()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:4px;font-size:12px;width:150px;">
