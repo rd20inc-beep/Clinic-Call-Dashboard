@@ -457,13 +457,15 @@ async function loadCallStats() {
 
     var todayTalkTime = data.today.talkTime || 0;
 
+    var resolvedMissed = data.today.resolvedMissed || 0;
+    var totalAnswered = (data.today.answered || 0) + resolvedMissed;
     var totalMissed = data.today.unresolvedMissed != null ? data.today.unresolvedMissed : ((data.today.missed || 0) + (data.today.rejected || 0) + (data.today.unknown || 0));
 
     el.innerHTML =
       dashStatCard('Today', data.today.total || 0, '', 'all') +
       dashStatCard('Inbound', data.today.inbound || 0, 'inbound', 'direction=inbound') +
       dashStatCard('Outbound', data.today.outbound || 0, 'outbound', 'direction=outbound') +
-      dashStatCard('Answered', data.today.answered || 0, 'answered', 'status=answered') +
+      dashStatCard('Answered', totalAnswered, 'answered', 'status=answered') +
       dashStatCard('Missed', totalMissed, 'missed', 'status=missed') +
       dashStatCard('Talk Time', formatCallDuration(todayTalkTime), '', 'status=answered') +
       dashStatCard('Avg Duration', formatCallDuration(data.avgDuration));

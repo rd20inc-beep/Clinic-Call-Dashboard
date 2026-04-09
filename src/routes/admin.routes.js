@@ -153,8 +153,11 @@ module.exports = function setupAdminRoutes(io) {
 
       // Unresolved missed: missed calls where the same number was NOT
       // answered or called back later today
+      // Resolved missed: calls that were missed but the same number was answered/called back later
       let todayUnresolvedMissed = 0;
+      let todayResolvedMissed = 0;
       try {
+        const totalMissedRaw = (todayMissed || 0) + (todayRejected || 0) + (todayUnknown || 0);
         const unresolvedQuery = isAdmin
           ? "SELECT COUNT(DISTINCT c1.caller_number) as c FROM calls c1 " +
             "WHERE " + TODAY.replace(/timestamp/g, 'c1.timestamp') + " AND c1.call_status IN ('missed','rejected','unknown') " +
@@ -165,6 +168,8 @@ module.exports = function setupAdminRoutes(io) {
             "AND NOT EXISTS (SELECT 1 FROM calls c2 WHERE c2.caller_number = c1.caller_number " +
             "AND c2.call_status = 'answered' AND c2.timestamp >= c1.timestamp)";
         todayUnresolvedMissed = isAdmin ? q(unresolvedQuery).c : q(unresolvedQuery, agent).c;
+        todayResolvedMissed = totalMissedRaw - todayUnresolvedMissed;
+        if (todayResolvedMissed < 0) todayResolvedMissed = 0;
       } catch (_) {
         todayUnresolvedMissed = (todayMissed || 0) + (todayRejected || 0) + (todayUnknown || 0);
       }
@@ -172,7 +177,7 @@ module.exports = function setupAdminRoutes(io) {
       res.json({
         total, inbound, outbound, answered, missed, unknown, rejected,
         avgDuration: Math.round(avgDuration || 0),
-        today: { total: todayTotal, inbound: todayInbound, outbound: todayOutbound, answered: todayAnswered, missed: todayMissed, unknown: todayUnknown, rejected: todayRejected, unresolvedMissed: todayUnresolvedMissed, talkTime: todayTalkTime },
+        today: { total: todayTotal, inbound: todayInbound, outbound: todayOutbound, answered: todayAnswered, missed: todayMissed, unknown: todayUnknown, rejected: todayRejected, unresolvedMissed: todayUnresolvedMissed, resolvedMissed: todayResolvedMissed, talkTime: todayTalkTime },
         agentSnapshot,
         recentCalls,
         alerts,
