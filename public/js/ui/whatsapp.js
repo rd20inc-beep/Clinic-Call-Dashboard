@@ -893,7 +893,7 @@ function waShowFailed() {
           '<h3 style="margin:0;font-size:16px;font-weight:600;color:#e74c3c;">Failed Messages (' + data.messages.length + ')</h3>' +
           '<div>' +
             '<button onclick="waRetryAll()" style="padding:6px 14px;border:none;border-radius:6px;background:#f39c12;color:white;font-weight:600;cursor:pointer;margin-right:8px;">Retry All</button>' +
-            (myRole === 'admin' ? '<button onclick="waDeleteAllFailed()" style="padding:6px 14px;border:none;border-radius:6px;background:#e74c3c;color:white;font-weight:600;cursor:pointer;margin-right:8px;">Delete All</button>' : '') +
+            '<button onclick="waDeleteAllFailed()" style="padding:6px 14px;border:none;border-radius:6px;background:#e74c3c;color:white;font-weight:600;cursor:pointer;margin-right:8px;">Delete All</button>' +
             '<button onclick="loadWaConversations()" style="padding:6px 14px;border:none;border-radius:6px;background:rgba(255,255,255,0.2);color:white;font-weight:600;cursor:pointer;">Back</button>' +
           '</div>' +
         '</div>';
@@ -908,7 +908,7 @@ function waShowFailed() {
             '</div>' +
             '<div style="display:flex;flex-direction:column;gap:4px;margin-left:8px;">' +
               '<button onclick="waRetryOne(' + m.id + ')" style="padding:4px 12px;border:none;border-radius:4px;background:#f39c12;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">Retry</button>' +
-              (myRole === 'admin' ? '<button onclick="waDeleteFailed(' + m.id + ')" style="padding:4px 12px;border:none;border-radius:4px;background:#e74c3c;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">Delete</button>' : '') +
+              '<button onclick="waDeleteFailed(' + m.id + ')" style="padding:4px 12px;border:none;border-radius:4px;background:#e74c3c;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">Delete</button>' +
             '</div>' +
           '</div>' +
         '</div>';
