@@ -96,12 +96,15 @@ server.listen(PORT, () => {
     });
   }, 30 * 60 * 1000));
 
-  // Auto-finalize stale unknown calls every 2 minutes
-  // (PC monitor sends ringing but never sends call_ended)
+  // Auto-finalize stale unknown calls + auto-resolve callbacks every 2 minutes
   intervals.push(setInterval(() => {
     try {
       const callsRepo = require('./db/calls.repo');
       callsRepo.finalizeStale();
+    } catch (e) { /* ignore */ }
+    try {
+      const cbRepo = require('./db/callbacks.repo');
+      cbRepo.autoResolvePending();
     } catch (e) { /* ignore */ }
   }, 2 * 60 * 1000));
 

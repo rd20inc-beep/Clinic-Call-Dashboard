@@ -63,6 +63,15 @@ module.exports = {
     // Don't create duplicate
     if (callId && stmtExistsForCall.get(callId)) return null;
     if (callerNumber && stmtExistsForNumber.get(callerNumber)) return null;
+
+    // Don't create callback if the same number was already answered later
+    try {
+      const answered = db.prepare(
+        "SELECT id FROM calls WHERE caller_number = ? AND call_status = 'answered' AND timestamp >= ? LIMIT 1"
+      ).get(callerNumber, callTime || '2000-01-01');
+      if (answered) return null;
+    } catch (_) {}
+
     const result = stmtInsert.run(callId || null, callerNumber, patientName || null, agent || null, callTime || new Date().toISOString());
     return result.lastInsertRowid;
   },
