@@ -303,4 +303,40 @@ module.exports = {
   updateNotes(callId, notes) {
     stmtUpdateNotes.run(notes, callId);
   },
+
+  /**
+   * Auto-resolve missed calls when an outbound or answered call exists for the same number.
+   * Called after every outbound call is recorded and periodically by the finalize timer.
+   * Resolves across ALL agents — if Agent1 missed and Agent2 called back, it resolves.
+   */
+  resolveMatchedMissedCalls(callerNumber) {
+    if (!callerNumber || callerNumber === 'Unknown') return 0;
+    try {
+      const phone = callerNumber.replace(/[\s\-()]/g, '');
+      if (phone.length < 7) return 0;
+      const suffix = '%' + phone.slice(-10) + '%';
+
+      // Resolve all missed/unknown/rejected calls from this number
+      const result = db.prepare(
+        "UPDATE calls SET call_status = 'resolved', notes = COALESCE(notes || ' | ', '') || 'Auto-resolved: outbound call made to this number' " +
+        "WHERE caller_number LIKE ? AND call_status IN ('missed', 'unknown', 'rejected')"
+      ).run(suffix);
+
+      // Also resolve callbacks
+      if (result.changes > 0) {
+        try {
+          db.prepare(
+            "UPDATE callbacks SET callback_status = 'resolved', resolved_at = datetime('now'), " +
+            "callback_notes = COALESCE(callback_notes || ' | ', '') || 'Auto-resolved: outbound call made' " +
+            "WHERE caller_number LIKE ? AND callback_status IN ('pending', 'assigned')"
+          ).run(suffix);
+        } catch (_) {}
+      }
+
+      return result.changes;
+    } catch (e) {
+      console.error('[calls] resolveMatchedMissedCalls error:', e.message);
+      return 0;
+    }
+  },
 };

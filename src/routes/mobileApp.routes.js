@@ -318,6 +318,12 @@ router.post('/api/incoming-call', (req, res) => {
       }
     } catch (e) { console.error('[mobile] Clinicea service not available:', e.message); }
 
+    // If outbound ringing: resolve any missed calls from this number immediately
+    if (direction === 'outbound') {
+      const resolved = callsRepo.resolveMatchedMissedCalls(caller);
+      if (resolved > 0) logEvent('info', 'Auto-resolved ' + resolved + ' missed call(s) for ' + caller + ' (outbound ringing by ' + agent + ')');
+    }
+
     return res.json({ status: 'ok', callId });
 
   } else if (event === 'call_ended') {
@@ -355,6 +361,12 @@ router.post('/api/incoming-call', (req, res) => {
         // Update patient name from contact if available
         if (caller_name) callsRepo.updatePatientName(recent.id, caller_name);
         logEvent('info', 'Mobile call ended: ' + caller + ' (' + agent + ') — ' + finalStatus + ' ' + direction + ', ' + dur + 's');
+
+        // If outbound or answered: resolve any missed calls from this number (across all agents)
+        if (direction === 'outbound' || finalStatus === 'answered') {
+          const resolved = callsRepo.resolveMatchedMissedCalls(caller);
+          if (resolved > 0) logEvent('info', 'Auto-resolved ' + resolved + ' missed call(s) for ' + caller + ' (outbound/answered by ' + agent + ')');
+        }
       } else {
         // No matching ringing event — create new record (outgoing calls don't send ringing)
         const cliniceaUrl = config.CLINICEA_BASE_URL + '?tp=pat&m=' + encodeURIComponent(caller);
@@ -365,6 +377,12 @@ router.post('/api/incoming-call', (req, res) => {
         if (dur > 0) callsRepo.updateCallDuration(callId, dur);
         if (caller_name) callsRepo.updatePatientName(callId, caller_name);
         logEvent('info', 'Mobile call (new): ' + caller + ' (' + agent + ') — ' + finalStatus + ' ' + direction + ', ' + dur + 's');
+
+        // If outbound: resolve any missed calls from this number
+        if (direction === 'outbound') {
+          const resolved = callsRepo.resolveMatchedMissedCalls(caller);
+          if (resolved > 0) logEvent('info', 'Auto-resolved ' + resolved + ' missed call(s) for ' + caller + ' (outbound by ' + agent + ')');
+        }
 
         // Route to dashboard for outgoing calls too
         routeCallEvent('incoming_call', {

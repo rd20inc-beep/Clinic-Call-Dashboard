@@ -96,11 +96,28 @@ server.listen(PORT, () => {
     });
   }, 30 * 60 * 1000));
 
-  // Auto-finalize stale unknown calls + auto-resolve callbacks every 2 minutes
+  // Auto-finalize stale unknown calls + auto-resolve missed calls every 2 minutes
   intervals.push(setInterval(() => {
     try {
       const callsRepo = require('./db/calls.repo');
       callsRepo.finalizeStale();
+
+      // Find all outbound calls and resolve any missed calls for those numbers
+      const { db } = require('./db/index');
+      const outboundNumbers = db.prepare(
+        "SELECT DISTINCT caller_number FROM calls WHERE direction = 'outbound' AND caller_number IS NOT NULL"
+      ).all();
+      for (const row of outboundNumbers) {
+        callsRepo.resolveMatchedMissedCalls(row.caller_number);
+      }
+
+      // Also resolve by answered inbound calls
+      const answeredNumbers = db.prepare(
+        "SELECT DISTINCT caller_number FROM calls WHERE call_status IN ('answered','resolved') AND caller_number IS NOT NULL"
+      ).all();
+      for (const row of answeredNumbers) {
+        callsRepo.resolveMatchedMissedCalls(row.caller_number);
+      }
     } catch (e) { /* ignore */ }
     try {
       const cbRepo = require('./db/callbacks.repo');
