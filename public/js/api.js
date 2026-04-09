@@ -457,23 +457,17 @@ async function loadCallStats() {
 
     var todayTalkTime = data.today.talkTime || 0;
 
-    var todayUnknown = data.today.unknown || 0;
-    var todayRejected = data.today.rejected || 0;
-    var pending = todayUnknown > 0 ? ' <span style="color:#f39c12;font-size:10px;">(' + todayUnknown + ' pending)</span>' : '';
+    // Missed = missed + rejected + unknown (all unanswered calls)
+    var totalMissed = (data.today.missed || 0) + (data.today.rejected || 0) + (data.today.unknown || 0);
 
     el.innerHTML =
       dashStatCard('Today', data.today.total || 0, '', 'all') +
       dashStatCard('Inbound', data.today.inbound || 0, 'inbound', 'direction=inbound') +
       dashStatCard('Outbound', data.today.outbound || 0, 'outbound', 'direction=outbound') +
       dashStatCard('Answered', data.today.answered || 0, 'answered', 'status=answered') +
-      dashStatCard('Missed', (data.today.missed || 0) + (todayRejected || 0), 'missed', 'status=missed') +
+      dashStatCard('Missed', totalMissed, 'missed', 'status=missed') +
       dashStatCard('Talk Time', formatCallDuration(todayTalkTime), '', 'status=answered') +
       dashStatCard('Avg Duration', formatCallDuration(data.avgDuration));
-
-    // Show pending/unknown count if any
-    if (todayUnknown > 0) {
-      el.innerHTML += dashStatCard('Pending', todayUnknown, 'pending', 'status=unknown');
-    }
 
     // Admin-only sections
     var adminRow = document.getElementById('dashAdminRow');
