@@ -64,6 +64,9 @@ module.exports = function setupAdminRoutes(io) {
       const isAdmin = req.session.role === 'admin';
       const agent = req.session.username;
 
+      // Finalize stale unknown calls before computing stats
+      try { require('../db/calls.repo').finalizeStale(); } catch (_) {}
+
       function q(sql, ...params) {
         return db.prepare(sql).get(...params);
       }

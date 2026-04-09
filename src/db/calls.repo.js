@@ -55,7 +55,7 @@ const stmtSelectByAgent = db.prepare(
 //   OR (call_status = 'unknown' AND timestamp < datetime('now', '-15 minutes'))
 // This excludes calls still ringing (< 5 min old with unknown status)
 // ---------------------------------------------------------------------------
-const FINALIZED_WHERE = "(call_status IN ('answered','missed','rejected','completed','failed','cancelled') OR (call_status = 'unknown' AND timestamp < datetime('now', '-15 minutes')))";
+const FINALIZED_WHERE = "(call_status IN ('answered','missed','rejected','completed','failed','cancelled') OR (call_status = 'unknown' AND timestamp < datetime('now', '-5 minutes')))";
 
 // Per-agent performance aggregation — parameterized by date filter
 function buildPerfQuery(dateFilter) {
@@ -109,13 +109,14 @@ const stmtAgentHourly = db.prepare(`
 
 // Auto-finalize stale unknown inbound calls (older than 15 minutes → missed)
 // Outbound calls are finalized as 'answered' since the agent initiated them
+// Finalize after 5 minutes (was 15 — PC monitor never sends call_ended)
 const stmtFinalizeStaleInbound = db.prepare(`
   UPDATE calls SET call_status = 'missed'
-  WHERE call_status = 'unknown' AND direction != 'outbound' AND timestamp < datetime('now', '-15 minutes')
+  WHERE call_status = 'unknown' AND direction != 'outbound' AND timestamp < datetime('now', '-5 minutes')
 `);
 const stmtFinalizeStaleOutbound = db.prepare(`
   UPDATE calls SET call_status = 'answered'
-  WHERE call_status = 'unknown' AND direction = 'outbound' AND timestamp < datetime('now', '-15 minutes')
+  WHERE call_status = 'unknown' AND direction = 'outbound' AND timestamp < datetime('now', '-5 minutes')
 `);
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -238,7 +239,7 @@ module.exports = {
   /** Auto-finalize stale unknown calls. Inbound → missed, outbound → answered. Creates callbacks for missed. Returns count finalized. */
   finalizeStale() {
     // Get inbound stale calls (for callbacks)
-    const stale = db.prepare("SELECT id, caller_number, patient_name, agent, timestamp FROM calls WHERE call_status = 'unknown' AND direction != 'outbound' AND timestamp < datetime('now', '-15 minutes')").all();
+    const stale = db.prepare("SELECT id, caller_number, patient_name, agent, timestamp FROM calls WHERE call_status = 'unknown' AND direction != 'outbound' AND timestamp < datetime('now', '-5 minutes')").all();
 
     const inboundChanges = stmtFinalizeStaleInbound.run().changes;
     const outboundChanges = stmtFinalizeStaleOutbound.run().changes;

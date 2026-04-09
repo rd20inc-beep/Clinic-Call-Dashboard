@@ -96,6 +96,15 @@ server.listen(PORT, () => {
     });
   }, 30 * 60 * 1000));
 
+  // Auto-finalize stale unknown calls every 2 minutes
+  // (PC monitor sends ringing but never sends call_ended)
+  intervals.push(setInterval(() => {
+    try {
+      const callsRepo = require('./db/calls.repo');
+      callsRepo.finalizeStale();
+    } catch (e) { /* ignore */ }
+  }, 2 * 60 * 1000));
+
   // Initialize WhatsApp Web client (QR code auth)
   initWhatsAppClient().catch((err) => {
     logEvent('error', 'WhatsApp client init failed: ' + err.message);
