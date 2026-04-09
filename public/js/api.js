@@ -392,6 +392,22 @@ function addCallNote(callId) {
     .catch(function() {});
 }
 
+function resolveCall(callId) {
+  if (!confirm('Mark this call as resolved? (e.g. called back via WhatsApp)')) return;
+  fetch('/api/calls/' + callId + '/resolve', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' } })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        showErrorToast('Call resolved', 'success');
+        loadCallHistory();
+        loadCallStats();
+      } else {
+        showErrorToast('Error: ' + (d.error || 'Failed'));
+      }
+    })
+    .catch(function() { showErrorToast('Failed to resolve'); });
+}
+
 // ===== AGENT STATUS SELECTOR =====
 function setMyStatus(status) {
   fetch('/api/agent/set-status', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ status: status }) }).catch(function() {});
@@ -769,6 +785,7 @@ async function loadCallHistory(page) {
             '<option value="existing_patient"' + (call.disposition === 'existing_patient' ? ' selected' : '') + '>Existing</option>' +
           '</select>' +
           '<button style="padding:2px 5px;border:1px solid #e2e8f0;border-radius:3px;background:#fff;color:#64748b;font-size:9px;cursor:pointer;" onclick="addCallNote(' + call.id + ')" title="' + escapeHtml(call.notes || 'Add note') + '">' + (call.notes ? '📝' : '✏️') + '</button>' +
+          (st === 'missed' || st === 'rejected' || st === 'unknown' ? '<button style="padding:2px 5px;border:1px solid #bbf7d0;border-radius:3px;background:#f0fdf4;color:#16a34a;font-size:9px;font-weight:600;cursor:pointer;" onclick="resolveCall(' + call.id + ')" title="Mark as resolved (called back via WhatsApp etc)">✓ Resolve</button>' : '') +
           (myRole === 'admin' && call.agent ? '<button style="padding:2px 5px;border:1px solid #e2e8f0;border-radius:3px;background:#fff;color:#3b82f6;font-size:9px;cursor:pointer;" onclick="quickMessageAgent(\'' + escapeHtml(call.agent) + '\',\'' + escapeHtml(displayNumber) + '\',\'' + escapeHtml(call.call_status || '') + '\',\'' + escapeHtml(call.patient_name || '') + '\')">Msg</button>' : '') +
         '</td>' +
       '</tr>';

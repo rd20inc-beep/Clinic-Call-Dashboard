@@ -485,6 +485,40 @@ router.post('/api/calls/:id/notes', requireAuth, requireCallOwnership, (req, res
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/calls/:id/resolve — manually resolve a missed call (e.g. called back via WhatsApp)
+// ---------------------------------------------------------------------------
+router.post('/api/calls/:id/resolve', requireAuth, (req, res) => {
+  const id = parseInt(req.params.id);
+  if (!id) return res.json({ error: 'id required' });
+  try {
+    const { db } = require('../db/index');
+    const call = db.prepare('SELECT * FROM calls WHERE id = ?').get(id);
+    if (!call) return res.status(404).json({ error: 'Call not found' });
+
+    // Mark call as resolved (answered)
+    db.prepare("UPDATE calls SET call_status = 'answered', notes = COALESCE(notes || ' | ', '') || ? WHERE id = ?")
+      .run('Manually resolved by ' + req.session.username, id);
+
+    // Resolve any pending callback for this number
+    try {
+      const cbRepo = require('../db/callbacks.repo');
+      const pending = db.prepare(
+        "SELECT id FROM callbacks WHERE caller_number = ? AND callback_status IN ('pending','assigned') LIMIT 1"
+      ).get(call.caller_number);
+      if (pending) {
+        db.prepare("UPDATE callbacks SET callback_status = 'resolved', resolved_at = datetime('now'), callback_notes = COALESCE(callback_notes || ' | ', '') || ? WHERE id = ?")
+          .run('Manually resolved by ' + req.session.username, pending.id);
+      }
+    } catch (_) {}
+
+    logEvent('info', 'Call #' + id + ' manually resolved by ' + req.session.username);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to resolve call' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // POST /api/agent/set-status — agent sets own status (available/busy/break)
 // ---------------------------------------------------------------------------
 router.post('/api/agent/set-status', requireAuth, (req, res) => {
