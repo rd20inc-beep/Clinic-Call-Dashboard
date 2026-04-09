@@ -385,7 +385,8 @@ function setupWhatsAppRoutes(io) {
     try {
       const { db } = require('../db/index');
       let dateFilter = "date(created_at) = date('now')";
-      if (period === 'week') dateFilter = "created_at >= datetime('now', '-7 days')";
+      if (period === 'yesterday') dateFilter = "date(created_at) = date('now', '-1 day')";
+      else if (period === 'week') dateFilter = "created_at >= datetime('now', '-7 days')";
       else if (period === 'month') dateFilter = "created_at >= datetime('now', '-30 days')";
       else if (period === 'all') dateFilter = '1=1';
 

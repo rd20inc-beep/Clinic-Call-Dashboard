@@ -1371,7 +1371,7 @@ function setWaPeriod(period) {
 function loadWaStats() {
   waFetch('/api/whatsapp/stats?period=' + _waPeriod)
     .then(function(data) {
-      var labels = { today: 'Today', week: 'This Week', month: 'This Month', all: 'All Time' };
+      var labels = { today: 'Today', yesterday: 'Yesterday', week: 'This Week', month: 'This Month', all: 'All Time' };
       document.getElementById('waTotalMessages').textContent = data.totalMessages || 0;
       document.getElementById('waTodayMessages').textContent = data.periodMessages || data.todayMessages || 0;
       document.getElementById('waConfirmations').textContent = data.totalConfirmations || 0;
