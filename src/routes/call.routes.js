@@ -496,12 +496,12 @@ router.post('/api/calls/:id/resolve', requireAuth, (req, res) => {
     if (!call) return res.status(404).json({ error: 'Call not found' });
 
     // Mark this call AND all other missed calls from the same number as resolved
-    db.prepare("UPDATE calls SET call_status = 'answered', notes = COALESCE(notes || ' | ', '') || ? WHERE id = ?")
-      .run('Manually resolved by ' + req.session.username, id);
+    db.prepare("UPDATE calls SET call_status = 'resolved', notes = COALESCE(notes || ' | ', '') || ? WHERE id = ?")
+      .run('Resolved by ' + req.session.username, id);
 
     // Also resolve other missed/unknown calls from same number
     const otherResolved = db.prepare(
-      "UPDATE calls SET call_status = 'answered', notes = COALESCE(notes || ' | ', '') || ? WHERE caller_number = ? AND call_status IN ('missed','unknown','rejected') AND id != ?"
+      "UPDATE calls SET call_status = 'resolved', notes = COALESCE(notes || ' | ', '') || ? WHERE caller_number = ? AND call_status IN ('missed','unknown','rejected') AND id != ?"
     ).run('Auto-resolved: same number resolved', call.caller_number, id);
     if (otherResolved.changes > 0) {
       logEvent('info', 'Auto-resolved ' + otherResolved.changes + ' other missed call(s) for ' + call.caller_number);

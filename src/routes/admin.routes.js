@@ -81,7 +81,7 @@ module.exports = function setupAdminRoutes(io) {
         total = q('SELECT COUNT(*) as c FROM calls').c;
         inbound = q("SELECT COUNT(*) as c FROM calls WHERE direction = 'inbound'").c;
         outbound = q("SELECT COUNT(*) as c FROM calls WHERE direction = 'outbound'").c;
-        answered = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'answered'").c;
+        answered = q("SELECT COUNT(*) as c FROM calls WHERE call_status IN ('answered','resolved')").c;
         missed = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'missed'").c;
         unknown = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'unknown'").c;
         rejected = q("SELECT COUNT(*) as c FROM calls WHERE call_status = 'rejected'").c;
@@ -89,7 +89,7 @@ module.exports = function setupAdminRoutes(io) {
         todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY).c;
         todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND direction = 'inbound'").c;
         todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND direction = 'outbound'").c;
-        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND call_status = 'answered'").c;
+        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND call_status IN ('answered','resolved')").c;
         todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND call_status = 'missed'").c;
         todayUnknown = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND call_status = 'unknown'").c;
         todayRejected = q("SELECT COUNT(*) as c FROM calls WHERE " + TODAY + " AND call_status = 'rejected'").c;
@@ -97,7 +97,7 @@ module.exports = function setupAdminRoutes(io) {
         total = q('SELECT COUNT(*) as c FROM calls WHERE agent = ?', agent).c;
         inbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND direction = 'inbound'", agent).c;
         outbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND direction = 'outbound'", agent).c;
-        answered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'answered'", agent).c;
+        answered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status IN ('answered','resolved')", agent).c;
         missed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'missed'", agent).c;
         unknown = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'unknown'", agent).c;
         rejected = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND call_status = 'rejected'", agent).c;
@@ -105,7 +105,7 @@ module.exports = function setupAdminRoutes(io) {
         todayTotal = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY, agent).c;
         todayInbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND direction = 'inbound'", agent).c;
         todayOutbound = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND direction = 'outbound'", agent).c;
-        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND call_status = 'answered'", agent).c;
+        todayAnswered = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND call_status IN ('answered','resolved')", agent).c;
         todayMissed = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND call_status = 'missed'", agent).c;
         todayUnknown = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND call_status = 'unknown'", agent).c;
         todayRejected = q("SELECT COUNT(*) as c FROM calls WHERE agent = ? AND " + TODAY + " AND call_status = 'rejected'", agent).c;

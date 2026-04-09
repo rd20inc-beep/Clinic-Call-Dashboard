@@ -751,6 +751,7 @@ async function loadCallHistory(page) {
       // Status badge
       var st = call.call_status || 'unknown';
       var stBadge = st === 'answered' ? '<span class="call-st answered">Answered</span>'
+        : st === 'resolved' ? '<span class="call-st answered" style="background:#dcfce7;color:#16a34a;">Resolved</span>'
         : st === 'missed' ? '<span class="call-st missed">Missed</span>'
         : st === 'rejected' ? '<span class="call-st missed">Rejected</span>'
         : '<span class="call-st unknown">--</span>';
@@ -786,6 +787,7 @@ async function loadCallHistory(page) {
           '</select>' +
           '<button style="padding:2px 5px;border:1px solid #e2e8f0;border-radius:3px;background:#fff;color:#64748b;font-size:9px;cursor:pointer;" onclick="addCallNote(' + call.id + ')" title="' + escapeHtml(call.notes || 'Add note') + '">' + (call.notes ? '📝' : '✏️') + '</button>' +
           (st === 'missed' || st === 'rejected' || st === 'unknown' ? '<button style="padding:2px 5px;border:1px solid #bbf7d0;border-radius:3px;background:#f0fdf4;color:#16a34a;font-size:9px;font-weight:600;cursor:pointer;" onclick="resolveCall(' + call.id + ')" title="Mark as resolved (called back via WhatsApp etc)">✓ Resolve</button>' : '') +
+          (st === 'resolved' ? '<span style="padding:2px 5px;border-radius:3px;background:#dcfce7;color:#16a34a;font-size:9px;font-weight:600;">✓ Resolved</span>' : '') +
           (myRole === 'admin' && call.agent ? '<button style="padding:2px 5px;border:1px solid #e2e8f0;border-radius:3px;background:#fff;color:#3b82f6;font-size:9px;cursor:pointer;" onclick="quickMessageAgent(\'' + escapeHtml(call.agent) + '\',\'' + escapeHtml(displayNumber) + '\',\'' + escapeHtml(call.call_status || '') + '\',\'' + escapeHtml(call.patient_name || '') + '\')">Msg</button>' : '') +
         '</td>' +
       '</tr>';

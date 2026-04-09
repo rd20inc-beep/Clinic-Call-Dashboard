@@ -164,12 +164,12 @@ module.exports = {
       let originalResolved = false;
       if (cb.call_id) {
         const orig = db.prepare("SELECT call_status FROM calls WHERE id = ?").get(cb.call_id);
-        if (orig && orig.call_status === 'answered') originalResolved = true;
+        if (orig && (orig.call_status === 'answered' || orig.call_status === 'resolved')) originalResolved = true;
       }
 
-      // Check 2: ANY answered call from this number (same time or later)
+      // Check 2: ANY answered/resolved call from this number
       const answered = db.prepare(
-        "SELECT id FROM calls WHERE caller_number LIKE ? AND call_status = 'answered' LIMIT 1"
+        "SELECT id FROM calls WHERE caller_number LIKE ? AND call_status IN ('answered','resolved') LIMIT 1"
       ).get(phoneSuffix);
 
       // Check 3: outbound call made to this number
