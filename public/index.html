@@ -358,6 +358,18 @@
           <p style="margin-top:12px;font-size:12px;color:#999;">QR code refreshes automatically. Keep this page open.</p>
         </div>
 
+        <!-- Period filter -->
+        <div style="display:flex;gap:6px;margin-bottom:12px;align-items:center;">
+          <button class="wa-period-btn active" onclick="setWaPeriod('today')" data-wap="today">Today</button>
+          <button class="wa-period-btn" onclick="setWaPeriod('week')" data-wap="week">This Week</button>
+          <button class="wa-period-btn" onclick="setWaPeriod('month')" data-wap="month">This Month</button>
+          <button class="wa-period-btn" onclick="setWaPeriod('all')" data-wap="all">All Time</button>
+        </div>
+        <style>
+          .wa-period-btn { padding:5px 14px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;background:transparent;color:#ccc;font-size:12px;font-weight:600;cursor:pointer; }
+          .wa-period-btn.active { background:rgba(46,204,113,0.2);border-color:rgba(46,204,113,0.4);color:#2ecc71; }
+        </style>
+
         <!-- Stats Cards -->
         <div class="wa-stats" id="waStats">
           <div class="wa-stat-card">
@@ -370,11 +382,11 @@
           </div>
           <div class="wa-stat-card">
             <div class="wa-stat-number" id="waConfirmations">-</div>
-            <div class="wa-stat-label">Confirmations Sent</div>
+            <div class="wa-stat-label">Confirmations</div>
           </div>
           <div class="wa-stat-card">
             <div class="wa-stat-number" id="waReminders">-</div>
-            <div class="wa-stat-label">Reminders Sent</div>
+            <div class="wa-stat-label">Reminders</div>
           </div>
           <div class="wa-stat-card">
             <div class="wa-stat-number" id="waPending">-</div>

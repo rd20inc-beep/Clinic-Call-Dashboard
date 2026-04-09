@@ -1359,14 +1359,28 @@ async function loadPatients(page) {
 }
 
 // ===== WHATSAPP API =====
+var _waPeriod = 'today';
+function setWaPeriod(period) {
+  _waPeriod = period;
+  document.querySelectorAll('.wa-period-btn').forEach(function(b) {
+    b.classList.toggle('active', b.getAttribute('data-wap') === period);
+  });
+  loadWaStats();
+}
+
 function loadWaStats() {
-  waFetch('/api/whatsapp/stats')
+  waFetch('/api/whatsapp/stats?period=' + _waPeriod)
     .then(function(data) {
+      var labels = { today: 'Today', week: 'This Week', month: 'This Month', all: 'All Time' };
       document.getElementById('waTotalMessages').textContent = data.totalMessages || 0;
-      document.getElementById('waTodayMessages').textContent = data.todayMessages || 0;
+      document.getElementById('waTodayMessages').textContent = data.periodMessages || data.todayMessages || 0;
       document.getElementById('waConfirmations').textContent = data.totalConfirmations || 0;
       document.getElementById('waReminders').textContent = data.totalReminders || 0;
       document.getElementById('waPending').textContent = data.pendingMessages || 0;
+
+      // Update label to show period
+      var todayLabel = document.querySelector('#waTodayMessages + .wa-stat-label');
+      if (todayLabel) todayLabel.textContent = labels[_waPeriod] || 'Today';
 
       // Failed + expired messages card
       var failed = (data.failedMessages || 0) + (data.expiredMessages || 0);

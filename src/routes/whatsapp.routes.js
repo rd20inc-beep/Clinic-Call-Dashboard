@@ -379,10 +379,59 @@ function setupWhatsAppRoutes(io) {
   router.get('/api/whatsapp/stats', requireAuth, (req, res) => {
     const isAdmin = req.session.role === 'admin';
     const agent = req.session.username;
-    const stats = waRepo.getStats(isAdmin, agent);
-    stats.botEnabled = waService.isBotEnabled();
-    stats.waConnectionStatus = waClient.getStatus();
-    return res.json(stats);
+    const period = req.query.period || 'today';
+
+    // Period-aware stats using direct DB query
+    try {
+      const { db } = require('../db/index');
+      let dateFilter = "date(created_at) = date('now')";
+      if (period === 'week') dateFilter = "created_at >= datetime('now', '-7 days')";
+      else if (period === 'month') dateFilter = "created_at >= datetime('now', '-30 days')";
+      else if (period === 'all') dateFilter = '1=1';
+
+      const agentWhere = isAdmin ? '' : " AND agent = '" + agent.replace(/'/g, "''") + "'";
+
+      const msgStats = db.prepare(
+        "SELECT COUNT(*) AS totalMessages, " +
+        "SUM(CASE WHEN " + dateFilter + " THEN 1 ELSE 0 END) AS periodMessages, " +
+        "SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pendingMessages, " +
+        "SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedMessages, " +
+        "SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) AS expiredMessages " +
+        "FROM wa_messages WHERE 1=1" + agentWhere
+      ).get();
+
+      const trackStats = db.prepare(
+        "SELECT " +
+        "(SELECT COUNT(*) FROM wa_messages WHERE message_type = 'confirmation' AND direction = 'out' AND " + dateFilter + ") AS totalConfirmations, " +
+        "(SELECT COUNT(*) FROM wa_messages WHERE message_type = 'reminder' AND direction = 'out' AND " + dateFilter + ") AS totalReminders, " +
+        "(SELECT COUNT(*) FROM wa_messages WHERE message_type = 'review' AND direction = 'out' AND " + dateFilter + ") AS totalReviews, " +
+        "(SELECT COUNT(*) FROM wa_messages WHERE message_type = 'aftercare' AND direction = 'out' AND " + dateFilter + ") AS totalAftercares, " +
+        "(SELECT COUNT(*) FROM wa_messages WHERE message_type IN ('confirmation','reminder') AND status = 'pending' AND direction = 'out') AS pendingConfirmations"
+      ).get();
+
+      return res.json({
+        totalMessages: msgStats.totalMessages || 0,
+        periodMessages: msgStats.periodMessages || 0,
+        todayMessages: msgStats.periodMessages || 0, // backward compat
+        pendingMessages: msgStats.pendingMessages || 0,
+        failedMessages: msgStats.failedMessages || 0,
+        expiredMessages: msgStats.expiredMessages || 0,
+        totalConfirmations: trackStats.totalConfirmations || 0,
+        totalReminders: trackStats.totalReminders || 0,
+        totalReviews: trackStats.totalReviews || 0,
+        totalAftercares: trackStats.totalAftercares || 0,
+        pendingConfirmations: trackStats.pendingConfirmations || 0,
+        period: period,
+        botEnabled: waService.isBotEnabled(),
+        waConnectionStatus: waClient.getStatus(),
+      });
+    } catch (e) {
+      // Fallback to original stats
+      const stats = waRepo.getStats(isAdmin, agent);
+      stats.botEnabled = waService.isBotEnabled();
+      stats.waConnectionStatus = waClient.getStatus();
+      return res.json(stats);
+    }
   });
 
   // -----------------------------------------------------------------------
