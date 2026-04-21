@@ -6,6 +6,14 @@ socket.on('connect', function() {
   statusDot.classList.add('connected');
   statusText.textContent = 'Connected';
   console.log('[Dashboard] Socket connected. My identity:', myUsername, myRole);
+  // Re-fetch WA connection status on socket reconnect to recover any missed events
+  if (typeof waFetch === 'function' && typeof waUpdateConnectionUI === 'function') {
+    waFetch('/api/whatsapp/connection-status')
+      .then(function(data) {
+        if (data && data.status) waUpdateConnectionUI(data.status, data.qrDataUrl);
+      })
+      .catch(function() {});
+  }
 });
 
 // Server confirms which rooms this socket joined

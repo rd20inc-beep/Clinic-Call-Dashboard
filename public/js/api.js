@@ -1435,9 +1435,9 @@ function loadWaStats() {
       // Global bot toggle state
       waUpdateBotToggle(data.botEnabled !== false);
 
-      // WhatsApp connection status
+      // WhatsApp connection status (include QR data URL so it shows on page load)
       if (data.waConnectionStatus && typeof waUpdateConnectionUI === 'function') {
-        waUpdateConnectionUI(data.waConnectionStatus);
+        waUpdateConnectionUI(data.waConnectionStatus, data.waQrDataUrl);
       }
 
       // Load business hours
