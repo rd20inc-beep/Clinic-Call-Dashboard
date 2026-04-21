@@ -420,6 +420,48 @@
 
         <div id="waTemplatesSection" style="display:none;"></div>
 
+        <!-- Send Queue timer (visible while a batch is draining or a cap is hit) -->
+        <div id="waSendQueuePanel" style="display:none;margin:16px 0 20px;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span id="waSqDot" style="width:10px;height:10px;border-radius:50%;background:#3498db;display:inline-block;"></span>
+              <span style="font-weight:700;font-size:14px;color:#0f172a;">Send Queue</span>
+              <span id="waSqBigBatch" style="display:none;background:#8b5cf6;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">BULK SEND</span>
+              <span id="waSqCapBadge" style="display:none;background:#e74c3c;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;">HOURLY CAP HIT</span>
+            </div>
+            <div style="font-size:12px;color:#64748b;">
+              <span id="waSqHourly">0</span> / <span id="waSqHourlyCap">45</span> this hour &nbsp;·&nbsp;
+              <span id="waSqDaily">0</span> / <span id="waSqDailyCap">400</span> last 24 h
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px;">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <div style="font-size:10px;color:#94a3b8;font-weight:600;letter-spacing:.5px;">QUEUED</div>
+              <div id="waSqQueue" style="font-size:20px;font-weight:700;color:#0f172a;">0</div>
+              <div id="waSqQueueBreak" style="font-size:10px;color:#94a3b8;">0 approved · 0 in-flight</div>
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <div style="font-size:10px;color:#94a3b8;font-weight:600;letter-spacing:.5px;">NEXT SEND</div>
+              <div id="waSqNext" style="font-size:20px;font-weight:700;color:#0f172a;">now</div>
+              <div id="waSqGap" style="font-size:10px;color:#94a3b8;">~20 s between msgs</div>
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <div style="font-size:10px;color:#94a3b8;font-weight:600;letter-spacing:.5px;">ETA TO DRAIN</div>
+              <div id="waSqEta" style="font-size:20px;font-weight:700;color:#0f172a;">—</div>
+              <div id="waSqEtaFinish" style="font-size:10px;color:#94a3b8;">&nbsp;</div>
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
+              <div style="font-size:10px;color:#94a3b8;font-weight:600;letter-spacing:.5px;">PACING</div>
+              <div id="waSqRate" style="font-size:20px;font-weight:700;color:#0f172a;">3 / min</div>
+              <div style="font-size:10px;color:#94a3b8;">hard cap: 4 / min</div>
+            </div>
+          </div>
+          <div id="waSqProgressWrap" style="height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;">
+            <div id="waSqProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#10b981);transition:width .4s ease;"></div>
+          </div>
+          <div id="waSqNote" style="margin-top:8px;font-size:11px;color:#64748b;"></div>
+        </div>
+
         <!-- Approval Queue -->
         <div id="waApprovalSection" style="display:none;margin-bottom:20px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin:24px 0 12px;">

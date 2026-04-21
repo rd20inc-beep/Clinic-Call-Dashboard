@@ -305,6 +305,87 @@ function setupWhatsAppRoutes(io) {
     return res.json({ messages });
   });
 
+  // -----------------------------------------------------------------------
+  // GET /api/whatsapp/send-queue — live sender status (throughput, ETA, caps)
+  // Powers the WhatsApp tab's "Send Queue" timer panel so admins can see
+  // how a large approved batch is draining and when the hourly cap lifts.
+  // -----------------------------------------------------------------------
+  router.get('/api/whatsapp/send-queue', requireAuth, (req, res) => {
+    const pacing = waClient.getPacing();
+    const approved = waRepo.countApprovedOutgoing();
+    const sending = waRepo.countSendingOutgoing();
+    const pendingApproval = waRepo.countPendingApproval();
+    const sentLastHour = waRepo.countSentInLastHour();
+    const sentLast24h = waRepo.countSentInLast24h();
+
+    const queue = approved + sending;
+    const hourlyRemaining = Math.max(0, pacing.hourlyCap - sentLastHour);
+    const dailyRemaining = Math.max(0, pacing.dailyCap - sentLast24h);
+    const capHit = hourlyRemaining === 0 || dailyRemaining === 0;
+
+    // Seconds until the next sendable slot:
+    //  - if a cap is hit, wait for the oldest-sent timestamp to age past 1h
+    //  - otherwise 0 (the loop will pick up on its next tick)
+    let nextSlotSec = 0;
+    if (hourlyRemaining === 0) {
+      const oldest = waRepo.oldestSentInLastHour();
+      if (oldest) {
+        const oldestMs = new Date(oldest.replace(' ', 'T') + 'Z').getTime();
+        nextSlotSec = Math.max(0, Math.ceil((oldestMs + 3600_000 - Date.now()) / 1000));
+      } else {
+        nextSlotSec = Math.ceil(pacing.capBackoffMs / 1000);
+      }
+    }
+
+    // ETA to drain the queue accounting for:
+    //  - average inter-message gap
+    //  - the hourly cap (we may have to wait for slots to open up)
+    const avgGapSec = Math.round(pacing.avgGapMs / 1000);
+    let etaSec = 0;
+    if (queue > 0) {
+      if (queue <= hourlyRemaining) {
+        etaSec = queue * avgGapSec;
+      } else {
+        // Phase 1: burn down hourlyRemaining at one msg per avgGap
+        const inWindow = hourlyRemaining * avgGapSec;
+        // Phase 2: remaining messages are throttled by the hourly cap itself
+        // (no more than HOURLY_CAP msgs per 3600s).
+        const overflow = queue - hourlyRemaining;
+        const fullWindows = Math.floor(overflow / pacing.hourlyCap);
+        const tail = overflow % pacing.hourlyCap;
+        etaSec = inWindow + nextSlotSec + fullWindows * 3600 + tail * avgGapSec;
+      }
+    }
+
+    // Sending paused conditions worth surfacing to the UI
+    const botEnabled = waService.isBotEnabled();
+    const withinBusinessHours = waClient.isWithinBusinessHours();
+    const connectionStatus = waClient.getStatus();
+
+    return res.json({
+      queue,
+      approved,
+      sending,
+      pendingApproval,
+      sentLastHour,
+      sentLast24h,
+      hourlyCap: pacing.hourlyCap,
+      dailyCap: pacing.dailyCap,
+      hourlyRemaining,
+      dailyRemaining,
+      capHit,
+      nextSlotSec,
+      etaSec,
+      avgGapSec,
+      minGapSec: Math.round(pacing.minGapMs / 1000),
+      maxGapSec: Math.round(pacing.maxGapMs / 1000),
+      botEnabled,
+      withinBusinessHours,
+      connectionStatus,
+      serverTime: Date.now(),
+    });
+  });
+
   // Admin or agent1 — both have full WhatsApp management rights
   function isAdminOrAgent1(req) {
     return (req.session && req.session.role === 'admin') || (req.session && req.session.username === 'agent1');
@@ -425,12 +506,14 @@ function setupWhatsAppRoutes(io) {
         period: period,
         botEnabled: waService.isBotEnabled(),
         waConnectionStatus: waClient.getStatus(),
+        waQrDataUrl: (req.session.role === 'admin' || req.session.username === 'agent1') ? waClient.getQrDataUrl() : undefined,
       });
     } catch (e) {
       // Fallback to original stats
       const stats = waRepo.getStats(isAdmin, agent);
       stats.botEnabled = waService.isBotEnabled();
       stats.waConnectionStatus = waClient.getStatus();
+      stats.waQrDataUrl = (req.session.role === 'admin' || req.session.username === 'agent1') ? waClient.getQrDataUrl() : undefined;
       return res.json(stats);
     }
   });
@@ -506,7 +589,13 @@ function setupWhatsAppRoutes(io) {
   // GET /api/whatsapp/connection-status - WhatsApp client connection status
   // -----------------------------------------------------------------------
   router.get('/api/whatsapp/connection-status', requireAuth, (req, res) => {
-    return res.json({ status: waClient.getStatus() });
+    const status = waClient.getStatus();
+    const result = { status };
+    // Include QR data URL for admin/agent1 so they can display it on page load
+    if (status === 'qr' && (req.session.role === 'admin' || req.session.username === 'agent1')) {
+      result.qrDataUrl = waClient.getQrDataUrl();
+    }
+    return res.json(result);
   });
 
   // -----------------------------------------------------------------------

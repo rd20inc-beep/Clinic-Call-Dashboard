@@ -40,6 +40,9 @@ function showPage(page) {
   if (page === 'whatsapp') {
     loadWaStats();
     loadWaConversations();
+    if (typeof _waSqStart === 'function') _waSqStart();
+  } else {
+    if (typeof _waSqStop === 'function') _waSqStop();
   }
   if (page === 'admin-console') {
     var frame = document.getElementById('adminConsoleFrame');

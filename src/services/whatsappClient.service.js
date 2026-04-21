@@ -23,12 +23,35 @@ function isWithinBusinessHours() {
 let client = null;
 let io = null;
 let connectionStatus = 'disconnected'; // 'disconnected' | 'qr' | 'authenticated' | 'ready'
-let sendInterval = null;
+let lastQrDataUrl = null;
+let sendTimeout = null;
 let keepaliveInterval = null;
 let reinitTimeout = null;
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 15;
 const BASE_RECONNECT_DELAY_MS = 15_000; // 15 seconds (faster first retry)
+
+// ---------------------------------------------------------------------------
+// Anti-spam pacing — WhatsApp flags numbers that burst-send on a fixed cadence.
+// Every send is wrapped in randomized jitter + a typing indicator to look human,
+// and hard hourly/24h caps cut the loop off before it can earn another strike.
+// ---------------------------------------------------------------------------
+const MIN_GAP_MS = 15_000;          // 15s minimum — caps worst-case at 4 msg/min
+const MAX_GAP_MS = 25_000;          // 25s maximum — avg ~20s (~3 msg/min)
+const TYPING_MIN_MS = 1_000;        // typing indicator shown for at least 1s
+const TYPING_MAX_MS = 3_000;        // ...up to 3s before the message goes out
+const HOURLY_CAP = 45;              // strictly below 50 per rolling hour
+const DAILY_CAP = 400;              // per rolling 24h
+const CAP_BACKOFF_MS = 5 * 60_000;  // pause 5 min when a cap is hit
+const IDLE_POLL_MS = 5_000;         // gap between ticks when nothing to send
+
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function setIO(socketIO) {
   io = socketIO;
@@ -43,6 +66,10 @@ function emitWA(event, data) {
 
 function getStatus() {
   return connectionStatus;
+}
+
+function getQrDataUrl() {
+  return connectionStatus === 'qr' ? lastQrDataUrl : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -60,35 +87,67 @@ function fromWAId(waId) {
 }
 
 // ---------------------------------------------------------------------------
-// Approved message sender (polls every 5 seconds)
+// Approved message sender — self-rescheduling loop with randomized jitter,
+// typing indicator, and rolling hourly/daily caps. One message per tick.
 // ---------------------------------------------------------------------------
 
-function startSendLoop() {
-  if (sendInterval) clearInterval(sendInterval);
-  sendInterval = setInterval(async () => {
-    if (connectionStatus !== 'ready' || !client) return;
-    if (!waService.isBotEnabled()) return; // Admin can pause all message sending
-    if (!isWithinBusinessHours()) return; // Only send during business hours PKT
+function scheduleNextSend(delayMs) {
+  if (sendTimeout) clearTimeout(sendTimeout);
+  sendTimeout = setTimeout(() => { sendTick().catch(() => {}); }, delayMs);
+}
+
+async function sendTick() {
+  if (connectionStatus !== 'ready' || !client) {
+    return scheduleNextSend(IDLE_POLL_MS);
+  }
+  if (!waService.isBotEnabled()) return scheduleNextSend(IDLE_POLL_MS);
+  if (!isWithinBusinessHours()) return scheduleNextSend(IDLE_POLL_MS);
+
+  try {
+    waRepo.expireStaleMessages();
+
+    // Rate limit guards — if a cap is hit, sleep long enough for the window to shift.
+    if (waRepo.countSentInLastHour() >= HOURLY_CAP) {
+      logEvent('warn', `WA hourly cap (${HOURLY_CAP}) reached — pausing ${CAP_BACKOFF_MS / 1000}s`);
+      return scheduleNextSend(CAP_BACKOFF_MS);
+    }
+    if (waRepo.countSentInLast24h() >= DAILY_CAP) {
+      logEvent('warn', `WA daily cap (${DAILY_CAP}) reached — pausing ${CAP_BACKOFF_MS / 1000}s`);
+      return scheduleNextSend(CAP_BACKOFF_MS);
+    }
+
+    const pending = waRepo.getPendingOutgoing(); // LIMIT 1, marks as 'sending'
+    if (pending.length === 0) {
+      return scheduleNextSend(IDLE_POLL_MS);
+    }
+
+    const msg = pending[0];
+    const chatId = toWAId(msg.phone);
 
     try {
-      waRepo.expireStaleMessages();
-      const pending = waRepo.getPendingOutgoing(); // gets approved, marks as 'sending'
+      // Typing indicator — makes the send look like a human composing a reply.
+      try {
+        const chat = await client.getChat(chatId);
+        await chat.sendStateTyping();
+        await sleep(randInt(TYPING_MIN_MS, TYPING_MAX_MS));
+      } catch (_) { /* typing is best-effort */ }
 
-      for (const msg of pending) {
-        try {
-          const chatId = toWAId(msg.phone);
-          await client.sendMessage(chatId, msg.message);
-          waRepo.markMessageSent(msg.id);
-          logEvent('info', 'WA message sent to ' + msg.phone);
-        } catch (err) {
-          waRepo.markMessageFailed(msg.id);
-          logEvent('error', 'WA send failed for ' + msg.phone + ': ' + err.message);
-        }
-      }
+      await client.sendMessage(chatId, msg.message);
+      waRepo.markMessageSent(msg.id);
+      logEvent('info', 'WA message sent to ' + msg.phone);
     } catch (err) {
-      logEvent('error', 'WA send loop error: ' + err.message);
+      waRepo.markMessageFailed(msg.id);
+      logEvent('error', 'WA send failed for ' + msg.phone + ': ' + err.message);
     }
-  }, 5000);
+  } catch (err) {
+    logEvent('error', 'WA send loop error: ' + err.message);
+  }
+
+  scheduleNextSend(randInt(MIN_GAP_MS, MAX_GAP_MS));
+}
+
+function startSendLoop() {
+  scheduleNextSend(IDLE_POLL_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +155,12 @@ function startSendLoop() {
 // ---------------------------------------------------------------------------
 
 async function initialize() {
-  // Clean up any existing client (with timeout — destroy can hang)
+  // Stop timers first to prevent concurrent re-entry
+  if (keepaliveInterval) { clearInterval(keepaliveInterval); keepaliveInterval = null; }
+  if (sendTimeout) { clearTimeout(sendTimeout); sendTimeout = null; }
+  if (reinitTimeout) { clearTimeout(reinitTimeout); reinitTimeout = null; }
+
+  // Clean up any existing client (with timeout — destroy can hang on dead browsers)
   if (client) {
     const oldClient = client;
     client = null;
@@ -107,11 +171,15 @@ async function initialize() {
       ]);
     } catch (e) {
       logEvent('warn', 'WA old client cleanup: ' + e.message);
+      // Kill any zombie Chromium processes left by the dead browser
+      try {
+        const browser = oldClient.pupBrowser;
+        if (browser && browser.process()) {
+          browser.process().kill('SIGKILL');
+          logEvent('info', 'WA killed zombie browser process');
+        }
+      } catch (_) {}
     }
-  }
-  if (reinitTimeout) {
-    clearTimeout(reinitTimeout);
-    reinitTimeout = null;
   }
 
   // Remove stale browser lock file (prevents "already running" errors)
@@ -122,6 +190,7 @@ async function initialize() {
   } catch (_) {}
 
   connectionStatus = 'disconnected';
+  lastQrDataUrl = null;
 
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: '.wwebjs_auth' }),
@@ -153,6 +222,7 @@ async function initialize() {
     try {
       const qrDataUrl = await QRCode.toDataURL(qr, { width: 280, margin: 2 });
       connectionStatus = 'qr';
+      lastQrDataUrl = qrDataUrl;
       emitWA('wa_connection', { status: 'qr', qrDataUrl });
       logEvent('info', 'WA QR code generated — waiting for scan');
     } catch (err) {
@@ -163,6 +233,7 @@ async function initialize() {
   // --- Authenticated ---
   client.on('authenticated', () => {
     connectionStatus = 'authenticated';
+    lastQrDataUrl = null;
     emitWA('wa_connection', { status: 'authenticated' });
     logEvent('info', 'WA client authenticated');
   });
@@ -198,11 +269,15 @@ async function initialize() {
         }
       } catch (e) {
         keepaliveFailCount++;
-        logEvent('warn', 'WA keepalive error: ' + e.message + ' (fail ' + keepaliveFailCount + '/2)');
-        if (keepaliveFailCount >= 2) {
+        const isTargetClosed = e.message && e.message.includes('Target closed');
+        // Target closed = browser is dead, no point waiting for a second failure
+        const threshold = isTargetClosed ? 1 : 2;
+        logEvent('warn', 'WA keepalive error: ' + e.message + ' (fail ' + keepaliveFailCount + '/' + threshold + ')');
+        if (keepaliveFailCount >= threshold) {
           connectionStatus = 'disconnected';
           emitWA('wa_connection', { status: 'disconnected', reason: 'keepalive_error' });
           clearInterval(keepaliveInterval);
+          keepaliveInterval = null;
           keepaliveFailCount = 0;
           initialize().catch(err => logEvent('error', 'WA keepalive reconnect failed: ' + err.message));
         }
@@ -279,7 +354,28 @@ async function initialize() {
   // Start the client
   logEvent('info', 'WA client initializing...');
   emitWA('wa_connection', { status: 'authenticating' });
-  await client.initialize();
+  try {
+    await client.initialize();
+  } catch (err) {
+    logEvent('error', 'WA client.initialize() failed: ' + err.message);
+    // Clean up the failed client
+    try { if (client) { client.destroy().catch(() => {}); } } catch (_) {}
+    client = null;
+    connectionStatus = 'disconnected';
+    emitWA('wa_connection', { status: 'disconnected', reason: 'init_failed' });
+    // Schedule a backoff retry instead of leaving the system dead
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay = Math.min(BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttempts), 5 * 60 * 1000);
+      reconnectAttempts++;
+      logEvent('info', `WA init retry ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${Math.round(delay / 1000)}s`);
+      reinitTimeout = setTimeout(() => {
+        initialize().catch(e => logEvent('error', 'WA init retry failed: ' + e.message));
+      }, delay);
+    } else {
+      logEvent('error', `WA initialization abandoned after ${MAX_RECONNECT_ATTEMPTS} attempts`);
+    }
+    return;
+  }
 
   // Start the send loop
   startSendLoop();
@@ -310,7 +406,7 @@ async function logout() {
 // ---------------------------------------------------------------------------
 
 async function destroy() {
-  if (sendInterval) clearInterval(sendInterval);
+  if (sendTimeout) clearTimeout(sendTimeout);
   if (keepaliveInterval) clearInterval(keepaliveInterval);
   if (reinitTimeout) clearTimeout(reinitTimeout);
   if (client) {
@@ -323,11 +419,28 @@ async function destroy() {
 // Exports
 // ---------------------------------------------------------------------------
 
+// Pacing constants surfaced so the send-queue API can compute ETAs without
+// hardcoding the same numbers in two places.
+function getPacing() {
+  return {
+    minGapMs: MIN_GAP_MS,
+    maxGapMs: MAX_GAP_MS,
+    avgGapMs: Math.round((MIN_GAP_MS + MAX_GAP_MS) / 2),
+    typingMinMs: TYPING_MIN_MS,
+    typingMaxMs: TYPING_MAX_MS,
+    hourlyCap: HOURLY_CAP,
+    dailyCap: DAILY_CAP,
+    capBackoffMs: CAP_BACKOFF_MS,
+  };
+}
+
 module.exports = {
   setIO,
   getStatus,
+  getQrDataUrl,
   initialize,
   logout,
   destroy,
   isWithinBusinessHours,
+  getPacing,
 };

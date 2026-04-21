@@ -2,6 +2,138 @@
 
 var waBotEnabled = true;
 
+// ===== SEND QUEUE TIMER PANEL =====
+// Polls /api/whatsapp/send-queue every 5s and ticks the ETA countdown every 1s
+// so admins can see bulk sends drain and know when the hourly cap lifts.
+var _waSqState = null;   // last snapshot from server
+var _waSqFetchedAt = 0;  // client-side timestamp of last snapshot
+var _waSqPollTimer = null;
+var _waSqTickTimer = null;
+var BIG_BATCH_THRESHOLD = 50;
+
+function _fmtDuration(totalSec) {
+  if (totalSec <= 0) return '0s';
+  var h = Math.floor(totalSec / 3600);
+  var m = Math.floor((totalSec % 3600) / 60);
+  var s = totalSec % 60;
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm ' + s + 's';
+  return s + 's';
+}
+
+function _fmtClockAfter(sec) {
+  var d = new Date(Date.now() + sec * 1000);
+  return d.toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Karachi' });
+}
+
+function _waSqRender() {
+  var panel = document.getElementById('waSendQueuePanel');
+  if (!panel) return;
+  var s = _waSqState;
+  if (!s) { panel.style.display = 'none'; return; }
+
+  var anyActivity = s.queue > 0 || s.pendingApproval > 0 || s.capHit;
+  if (!anyActivity) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  // Drift-correct the ETA / next-slot between server polls
+  var elapsedSec = Math.max(0, Math.round((Date.now() - _waSqFetchedAt) / 1000));
+  var etaSec = Math.max(0, (s.etaSec || 0) - elapsedSec);
+  var nextSec = Math.max(0, (s.nextSlotSec || 0) - elapsedSec);
+
+  document.getElementById('waSqHourly').textContent = s.sentLastHour;
+  document.getElementById('waSqHourlyCap').textContent = s.hourlyCap;
+  document.getElementById('waSqDaily').textContent = s.sentLast24h;
+  document.getElementById('waSqDailyCap').textContent = s.dailyCap;
+
+  document.getElementById('waSqQueue').textContent = s.queue;
+  document.getElementById('waSqQueueBreak').textContent =
+    s.approved + ' approved · ' + s.sending + ' in-flight' +
+    (s.pendingApproval ? ' · ' + s.pendingApproval + ' awaiting approval' : '');
+
+  var nextEl = document.getElementById('waSqNext');
+  if (s.connectionStatus !== 'ready') {
+    nextEl.textContent = 'offline';
+  } else if (!s.botEnabled) {
+    nextEl.textContent = 'paused';
+  } else if (!s.withinBusinessHours) {
+    nextEl.textContent = 'after-hours';
+  } else if (nextSec > 0) {
+    nextEl.textContent = 'in ' + _fmtDuration(nextSec);
+  } else if (s.queue > 0) {
+    nextEl.textContent = 'now';
+  } else {
+    nextEl.textContent = '—';
+  }
+  document.getElementById('waSqGap').textContent =
+    '~' + s.avgGapSec + ' s between msgs (' + s.minGapSec + '–' + s.maxGapSec + ' s jitter)';
+
+  var etaEl = document.getElementById('waSqEta');
+  var etaFinish = document.getElementById('waSqEtaFinish');
+  if (s.queue > 0) {
+    etaEl.textContent = _fmtDuration(etaSec);
+    etaFinish.textContent = etaSec > 0 ? 'finishes ~' + _fmtClockAfter(etaSec) : '';
+  } else {
+    etaEl.textContent = '—';
+    etaFinish.textContent = '';
+  }
+
+  // Effective rate (msg/min) based on hourly cap vs avg gap
+  var perMinFromGap = 60 / Math.max(1, s.avgGapSec);
+  var perMinFromCap = s.hourlyCap / 60;
+  var effective = Math.min(perMinFromGap, perMinFromCap);
+  document.getElementById('waSqRate').textContent = effective.toFixed(1) + ' / min';
+
+  // Progress bar — drained out of (sent + queued) within the current session view
+  var total = s.queue + (s.sentLastHour || 0);
+  var pct = total > 0 ? Math.min(100, Math.round((s.sentLastHour / total) * 100)) : 0;
+  document.getElementById('waSqProgressBar').style.width = pct + '%';
+
+  // Big-batch + cap badges
+  document.getElementById('waSqBigBatch').style.display = s.queue >= BIG_BATCH_THRESHOLD ? '' : 'none';
+  document.getElementById('waSqCapBadge').style.display = s.capHit ? '' : 'none';
+
+  // Status dot color
+  var dot = document.getElementById('waSqDot');
+  if (s.capHit) dot.style.background = '#e74c3c';
+  else if (!s.botEnabled || !s.withinBusinessHours || s.connectionStatus !== 'ready') dot.style.background = '#f39c12';
+  else if (s.queue > 0) dot.style.background = '#2ecc71';
+  else dot.style.background = '#3498db';
+
+  // Context line
+  var note = document.getElementById('waSqNote');
+  var parts = [];
+  if (s.capHit) parts.push('Hourly cap reached — sending resumes in ' + _fmtDuration(nextSec) + '.');
+  if (!s.botEnabled) parts.push('Sending is paused (bot toggle off).');
+  if (!s.withinBusinessHours) parts.push('Outside business hours — queue will resume at 9:00 AM.');
+  if (s.connectionStatus !== 'ready') parts.push('WhatsApp is ' + s.connectionStatus + ' — sends are paused.');
+  if (parts.length === 0 && s.queue >= BIG_BATCH_THRESHOLD) parts.push('Large batch — throttled at ' + effective.toFixed(1) + ' msg/min with randomized delay to avoid spam flags.');
+  note.textContent = parts.join(' ');
+}
+
+function _waSqFetch() {
+  return waFetch('/api/whatsapp/send-queue')
+    .then(function(data) {
+      _waSqState = data;
+      _waSqFetchedAt = Date.now();
+      _waSqRender();
+    })
+    .catch(function() {});
+}
+
+function _waSqStart() {
+  if (_waSqPollTimer) clearInterval(_waSqPollTimer);
+  if (_waSqTickTimer) clearInterval(_waSqTickTimer);
+  _waSqFetch();
+  _waSqPollTimer = setInterval(_waSqFetch, 5000);
+  _waSqTickTimer = setInterval(_waSqRender, 1000);
+}
+
+function _waSqStop() {
+  if (_waSqPollTimer) { clearInterval(_waSqPollTimer); _waSqPollTimer = null; }
+  if (_waSqTickTimer) { clearInterval(_waSqTickTimer); _waSqTickTimer = null; }
+}
+
 // ===== MESSAGE TEMPLATE EDITOR =====
 var templateLabels = {
   confirmation: 'Appointment Confirmation',
@@ -671,6 +803,27 @@ function calSendMessage(phone, name) {
 // Store last status so we can re-apply after identity loads
 var _lastWaStatus = null;
 var _lastWaQrDataUrl = null;
+var _waStatusPollTimer = null;
+
+// Poll server for WA connection status + QR until connected.
+// Covers: page load after QR generated, missed socket events, socket reconnects.
+function _waStartStatusPoll() {
+  _waStopStatusPoll();
+  _waStatusPollTimer = setInterval(function() {
+    waFetch('/api/whatsapp/connection-status')
+      .then(function(data) {
+        if (!data || !data.status) return;
+        waUpdateConnectionUI(data.status, data.qrDataUrl);
+        // Stop polling once connected
+        if (data.status === 'ready') _waStopStatusPoll();
+      })
+      .catch(function() {});
+  }, 5000);
+}
+
+function _waStopStatusPoll() {
+  if (_waStatusPollTimer) { clearInterval(_waStatusPollTimer); _waStatusPollTimer = null; }
+}
 
 function waUpdateConnectionUI(status, qrDataUrl) {
   _lastWaStatus = status;
@@ -699,6 +852,8 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     reconnectBtn.style.display = 'none';
     qrSection.style.display = 'none';
     if (qrImage) qrImage.src = '';
+    _lastWaQrDataUrl = null;
+    _waStopStatusPoll();
     var expiredMsg = document.getElementById('waQRExpired');
     if (expiredMsg) expiredMsg.remove();
   } else if (status === 'qr') {
@@ -711,6 +866,8 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     reconnectBtn.style.display = 'none'; // No reconnect during QR — already connecting
     qrSection.style.display = canManage ? '' : 'none';
     if (qrDataUrl && qrImage) qrImage.src = qrDataUrl;
+    // Start polling so QR refreshes automatically even if socket events are missed
+    if (canManage) _waStartStatusPoll();
     var expiredMsg = document.getElementById('waQRExpired');
     if (expiredMsg) expiredMsg.remove();
   } else if (status === 'authenticated' || status === 'authenticating') {
@@ -721,7 +878,17 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     statusText.style.color = '#3498db';
     logoutBtn.style.display = 'none';
     reconnectBtn.style.display = 'none'; // Connecting in progress — no reconnect needed
-    qrSection.style.display = 'none';
+    // Keep QR visible during authenticating — it may still need scanning
+    if (status === 'authenticating') {
+      qrSection.style.display = 'none';
+    } else {
+      // authenticated = QR was scanned, now connecting — hide QR
+      qrSection.style.display = 'none';
+      if (qrImage) qrImage.src = '';
+      _lastWaQrDataUrl = null;
+    }
+    // Keep polling until ready
+    _waStartStatusPoll();
   } else {
     // Disconnected — show reconnect button, system will also auto-reconnect
     dot.style.background = '#e74c3c';
@@ -733,6 +900,8 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     reconnectBtn.style.display = canManage ? '' : 'none';
     qrSection.style.display = 'none';
     if (qrImage) qrImage.src = '';
+    // Poll for recovery — server may auto-reconnect and produce a new QR
+    if (canManage) _waStartStatusPoll();
   }
 }
 

@@ -9,9 +9,35 @@ const stmtInsertMessage = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-// Extension only picks up 'approved' messages (admin must approve first)
+// Sender picks up one approved message per tick — the send loop paces itself
+// with a randomized inter-message delay to avoid WhatsApp spam-flagging.
 const stmtGetApprovedOutgoing = db.prepare(
-  "SELECT * FROM wa_messages WHERE direction = 'out' AND status = 'approved' ORDER BY created_at ASC LIMIT 5"
+  "SELECT * FROM wa_messages WHERE direction = 'out' AND status = 'approved' ORDER BY created_at ASC LIMIT 1"
+);
+
+// Rate-limit counters (rolling windows against sent_at, UTC)
+const stmtCountSentInLastHour = db.prepare(
+  "SELECT COUNT(*) AS n FROM wa_messages WHERE direction = 'out' AND status = 'sent' AND sent_at > datetime('now', '-1 hour')"
+);
+const stmtCountSentInLast24h = db.prepare(
+  "SELECT COUNT(*) AS n FROM wa_messages WHERE direction = 'out' AND status = 'sent' AND sent_at > datetime('now', '-24 hours')"
+);
+
+// Oldest send inside the rolling-hour window — when this one "ages out",
+// a slot opens up. Used to compute the wait time when the hourly cap is hit.
+const stmtOldestSentInLastHour = db.prepare(
+  "SELECT MIN(sent_at) AS oldest FROM wa_messages WHERE direction = 'out' AND status = 'sent' AND sent_at > datetime('now', '-1 hour')"
+);
+
+// Queue size counters (approved = waiting to send, sending = in flight right now)
+const stmtCountApproved = db.prepare(
+  "SELECT COUNT(*) AS n FROM wa_messages WHERE direction = 'out' AND status = 'approved'"
+);
+const stmtCountSending = db.prepare(
+  "SELECT COUNT(*) AS n FROM wa_messages WHERE direction = 'out' AND status = 'sending'"
+);
+const stmtCountPendingApproval = db.prepare(
+  "SELECT COUNT(*) AS n FROM wa_messages WHERE direction = 'out' AND status = 'pending'"
 );
 
 // Pending = awaiting admin approval
@@ -222,8 +248,8 @@ module.exports = {
   },
 
   /**
-   * Get up to 5 approved outgoing messages and lock them as 'sending'
-   * so they won't be returned again on the next poll (prevents double-send).
+   * Get the next approved outgoing message (one per tick) and lock it as 'sending'
+   * so it won't be returned again on the next poll (prevents double-send).
    * Only approved messages are picked up — pending ones need admin approval first.
    * @returns {object[]}
    */
@@ -233,6 +259,36 @@ module.exports = {
       stmtMarkSending.run(row.id);
     }
     return rows;
+  },
+
+  /** Count messages actually sent in the last hour (for rate limiting). */
+  countSentInLastHour() {
+    return stmtCountSentInLastHour.get().n || 0;
+  },
+
+  /** Count messages actually sent in the last 24 hours (for rate limiting). */
+  countSentInLast24h() {
+    return stmtCountSentInLast24h.get().n || 0;
+  },
+
+  /** ISO-ish timestamp (SQLite UTC string) of the oldest send still inside the rolling hour. */
+  oldestSentInLastHour() {
+    return stmtOldestSentInLastHour.get().oldest || null;
+  },
+
+  /** Count of approved outgoing messages still waiting to be sent. */
+  countApprovedOutgoing() {
+    return stmtCountApproved.get().n || 0;
+  },
+
+  /** Count of outgoing messages currently in flight (locked as 'sending'). */
+  countSendingOutgoing() {
+    return stmtCountSending.get().n || 0;
+  },
+
+  /** Count of outgoing messages awaiting admin approval. */
+  countPendingApproval() {
+    return stmtCountPendingApproval.get().n || 0;
   },
 
   /** Get messages awaiting admin approval. */
