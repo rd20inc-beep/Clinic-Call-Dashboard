@@ -351,10 +351,12 @@
           </div>
         </div>
 
-        <!-- QR Code Display (shown dynamically by waUpdateConnectionUI for admins) -->
-        <div id="waQRSection" style="display:none;text-align:center;padding:24px;margin-bottom:16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;">
+        <!-- QR Code Display (hidden until admin clicks "SCAN QR CODE" in the status bar) -->
+        <div id="waQRSection" style="display:none;position:relative;text-align:center;padding:24px;margin-bottom:16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;">
+          <button onclick="waHideQR()" style="position:absolute;top:8px;right:10px;border:none;background:transparent;color:#94a3b8;font-size:18px;cursor:pointer;line-height:1;padding:4px 8px;" title="Hide QR">&times;</button>
           <p style="margin-bottom:12px;font-size:14px;color:#ccc;">Scan this QR code with WhatsApp on your phone:</p>
           <img id="waQRImage" src="" style="max-width:280px;border-radius:8px;background:white;padding:12px;" />
+          <p id="waQRLoadingMsg" style="display:none;margin-top:12px;font-size:12px;color:#999;">Loading QR…</p>
           <p style="margin-top:12px;font-size:12px;color:#999;">QR code refreshes automatically. Keep this page open.</p>
         </div>
 

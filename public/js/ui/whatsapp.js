@@ -804,6 +804,9 @@ function calSendMessage(phone, name) {
 var _lastWaStatus = null;
 var _lastWaQrDataUrl = null;
 var _waStatusPollTimer = null;
+// QR only appears after admin explicitly clicks "SCAN QR CODE" — avoids
+// flashing a stale code and lets the admin choose when to reveal it.
+var _waQrVisible = false;
 
 // Poll server for WA connection status + QR until connected.
 // Covers: page load after QR generated, missed socket events, socket reconnects.
@@ -841,6 +844,12 @@ function waUpdateConnectionUI(status, qrDataUrl) {
   // Admin and agent1 can manage WhatsApp (wa-manager class elements are shown for both)
   var canManage = (typeof myRole !== 'undefined' && myRole === 'admin') || (typeof myUsername !== 'undefined' && myUsername === 'agent1');
 
+  // Reset status text click affordance each render; we re-enable it below only for the QR state
+  statusText.onclick = null;
+  statusText.style.cursor = '';
+  statusText.style.textDecoration = '';
+  statusText.title = '';
+
   if (status === 'ready') {
     dot.style.background = '#2ecc71';
     bar.style.background = 'rgba(46,204,113,0.15)';
@@ -851,6 +860,7 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     logoutBtn.style.display = canManage ? '' : 'none';
     reconnectBtn.style.display = 'none';
     qrSection.style.display = 'none';
+    _waQrVisible = false;
     if (qrImage) qrImage.src = '';
     _lastWaQrDataUrl = null;
     _waStopStatusPoll();
@@ -864,10 +874,28 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     statusText.style.color = '#f39c12';
     logoutBtn.style.display = 'none';
     reconnectBtn.style.display = 'none'; // No reconnect during QR — already connecting
-    qrSection.style.display = canManage ? '' : 'none';
-    if (qrDataUrl && qrImage) qrImage.src = qrDataUrl;
-    // Start polling so QR refreshes automatically even if socket events are missed
-    if (canManage) _waStartStatusPoll();
+
+    if (canManage) {
+      // Make the status text the click target that reveals the QR code.
+      statusText.style.cursor = 'pointer';
+      statusText.style.textDecoration = 'underline';
+      statusText.title = 'Click to show QR code';
+      statusText.onclick = waShowQR;
+
+      // If the admin already opened the QR, refresh the image in place;
+      // otherwise keep it hidden until they click.
+      if (_waQrVisible) {
+        qrSection.style.display = '';
+        if (qrDataUrl && qrImage) qrImage.src = qrDataUrl;
+      } else {
+        qrSection.style.display = 'none';
+      }
+      _waStartStatusPoll();
+    } else {
+      qrSection.style.display = 'none';
+      _waQrVisible = false;
+    }
+
     var expiredMsg = document.getElementById('waQRExpired');
     if (expiredMsg) expiredMsg.remove();
   } else if (status === 'authenticated' || status === 'authenticating') {
@@ -881,9 +909,11 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     // Keep QR visible during authenticating — it may still need scanning
     if (status === 'authenticating') {
       qrSection.style.display = 'none';
+      _waQrVisible = false;
     } else {
       // authenticated = QR was scanned, now connecting — hide QR
       qrSection.style.display = 'none';
+      _waQrVisible = false;
       if (qrImage) qrImage.src = '';
       _lastWaQrDataUrl = null;
     }
@@ -899,10 +929,56 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     logoutBtn.style.display = 'none';
     reconnectBtn.style.display = canManage ? '' : 'none';
     qrSection.style.display = 'none';
+    _waQrVisible = false;
     if (qrImage) qrImage.src = '';
     // Poll for recovery — server may auto-reconnect and produce a new QR
     if (canManage) _waStartStatusPoll();
   }
+}
+
+// Reveal the QR code. If we already cached one via a prior status update,
+// show it immediately; otherwise fetch the current QR from the server.
+function waShowQR() {
+  var qrSection = document.getElementById('waQRSection');
+  var qrImage = document.getElementById('waQRImage');
+  var loading = document.getElementById('waQRLoadingMsg');
+  if (!qrSection) return;
+
+  _waQrVisible = true;
+  qrSection.style.display = '';
+
+  if (_lastWaQrDataUrl && qrImage) {
+    qrImage.src = _lastWaQrDataUrl;
+    if (loading) loading.style.display = 'none';
+    return;
+  }
+
+  // No cached QR — fetch current one. Status may momentarily not be 'qr'
+  // (e.g. between rotations), in which case the polling loop will update it.
+  if (qrImage) qrImage.src = '';
+  if (loading) loading.style.display = '';
+  waFetch('/api/whatsapp/connection-status')
+    .then(function(data) {
+      if (!data) return;
+      if (data.status === 'qr' && data.qrDataUrl) {
+        _lastWaQrDataUrl = data.qrDataUrl;
+        if (qrImage) qrImage.src = data.qrDataUrl;
+        if (loading) loading.style.display = 'none';
+      } else if (data.status === 'ready') {
+        waHideQR();
+        waUpdateConnectionUI('ready');
+      }
+    })
+    .catch(function() {});
+}
+
+// Collapse the QR panel without affecting connection status.
+function waHideQR() {
+  _waQrVisible = false;
+  var qrSection = document.getElementById('waQRSection');
+  var loading = document.getElementById('waQRLoadingMsg');
+  if (qrSection) qrSection.style.display = 'none';
+  if (loading) loading.style.display = 'none';
 }
 
 // Re-apply connection UI after identity loads (fixes race condition)
