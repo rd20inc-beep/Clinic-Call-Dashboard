@@ -1,0 +1,31 @@
+name: Diagnose VPS (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect server state via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          capture_stdout: true
+          script: |
+            echo '=== PM2 LIST ==='
+            pm2 list 2>&1 || true
+            echo
+            echo '=== PM2 DESCRIBE skinclinic ==='
+            pm2 describe skinclinic 2>&1 | grep -E 'script path|exec cwd|status|name|uptime|PORT|port' || true
+            echo
+            echo '=== PM2 DESCRIBE clinicea-call ==='
+            pm2 describe clinicea-call 2>&1 | grep -E 'script path|exec cwd|status|name|uptime|PORT|port' || true
+            echo
+            echo '=== NGINX proxy_pass lines ==='
+            sudo grep -rhE 'proxy_pass|server_name|listen' /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ 2>/dev/null || echo '(no nginx config accessible)'
+            echo
+            echo '=== Ports listened on by node processes ==='
+            sudo ss -ltnp 2>/dev/null | grep -E 'node|3000|3001|8080' || echo '(ss not available or no node ports)'
