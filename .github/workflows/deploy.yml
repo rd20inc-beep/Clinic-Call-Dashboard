@@ -25,5 +25,15 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             npm install --omit=dev
+            # Orphan 'clinicea-call' from old deploys can't bind port 3000
+            # (skinclinic owns it). Remove it so pm2 list stays clean.
             pm2 delete clinicea-call 2>/dev/null || true
-            TZ=Asia/Karachi pm2 start src/server.js --name clinicea-call
+            # skinclinic is the process actually behind nginx (proxy_pass :3000).
+            # Reload = zero-downtime restart so in-flight requests and Socket.IO
+            # connections survive. Fall back to start on first-ever deploy.
+            if pm2 describe skinclinic >/dev/null 2>&1; then
+              TZ=Asia/Karachi pm2 reload skinclinic --update-env
+            else
+              TZ=Asia/Karachi pm2 start src/server.js --name skinclinic
+            fi
+            pm2 save
