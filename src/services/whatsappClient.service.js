@@ -197,6 +197,15 @@ async function initialize() {
     restartOnAuthFail: true,
     takeoverOnConflict: true,
     takeoverTimeoutMs: 10000,
+    // Pin a recent WA Web HTML so the QR-link handshake matches what
+    // WhatsApp servers expect. Without this, phones reject the link with
+    // "couldn't connect" because the bundled HTML in whatsapp-web.js is
+    // older than the server-side schema.
+    webVersion: '2.3000.1038183521-alpha',
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
+    },
     puppeteer: {
       headless: true,
       handleSIGINT: false,
