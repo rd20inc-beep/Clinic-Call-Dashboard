@@ -805,7 +805,10 @@ var _lastWaStatus = null;
 var _lastWaQrDataUrl = null;
 var _waStatusPollTimer = null;
 // QR only appears after admin explicitly clicks "SCAN QR CODE" — avoids
-// flashing a stale code and lets the admin choose when to reveal it.
+// flashing a stale code. The flag persists across transient states
+// (authenticating, authenticated, disconnected) so once opened the panel
+// auto-reappears on every 'qr' tick (QR rotations, failed-auth retries)
+// until connection succeeds or the admin closes it with the × button.
 var _waQrVisible = false;
 
 // Poll server for WA connection status + QR until connected.
@@ -906,15 +909,12 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     statusText.style.color = '#3498db';
     logoutBtn.style.display = 'none';
     reconnectBtn.style.display = 'none'; // Connecting in progress — no reconnect needed
-    // Keep QR visible during authenticating — it may still need scanning
-    if (status === 'authenticating') {
-      qrSection.style.display = 'none';
-      _waQrVisible = false;
-    } else {
-      // authenticated = QR was scanned, now connecting — hide QR
-      qrSection.style.display = 'none';
-      _waQrVisible = false;
-      if (qrImage) qrImage.src = '';
+    // No QR to display during these transient states — hide the panel visually
+    // but preserve _waQrVisible so it auto-reopens if we bounce back to 'qr'
+    // (e.g. authentication fails or the server rotates the QR).
+    qrSection.style.display = 'none';
+    if (status === 'authenticated' && qrImage) {
+      qrImage.src = '';
       _lastWaQrDataUrl = null;
     }
     // Keep polling until ready
@@ -929,8 +929,10 @@ function waUpdateConnectionUI(status, qrDataUrl) {
     logoutBtn.style.display = 'none';
     reconnectBtn.style.display = canManage ? '' : 'none';
     qrSection.style.display = 'none';
-    _waQrVisible = false;
     if (qrImage) qrImage.src = '';
+    // Preserve _waQrVisible — when the server auto-reconnects and a fresh
+    // 'qr' arrives, the panel reopens on its own so the admin doesn't have
+    // to keep clicking on every disconnect blip.
     // Poll for recovery — server may auto-reconnect and produce a new QR
     if (canManage) _waStartStatusPoll();
   }
