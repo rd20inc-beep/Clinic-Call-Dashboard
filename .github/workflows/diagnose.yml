@@ -29,3 +29,13 @@ jobs:
             echo
             echo '=== Ports listened on by node processes ==='
             sudo ss -ltnp 2>/dev/null | grep -E 'node|3000|3001|8080' || echo '(ss not available or no node ports)'
+            echo
+            echo '=== WA: last 200 lines of skinclinic logs ==='
+            pm2 logs skinclinic --lines 200 --nostream 2>&1 | tail -200 || true
+            echo
+            echo '=== WA: lines mentioning WhatsApp / WA / QR / puppeteer ==='
+            pm2 logs skinclinic --lines 500 --nostream 2>&1 | grep -iE 'whatsapp|^\[.*WA |QR|puppet|chromium|webVersion|auth_failure|disconnect|timeout' | tail -80 || true
+            echo
+            echo '=== WA: auth session on disk ==='
+            ls -la ~/Clinic-Call-Dashboard/.wwebjs_auth/session 2>&1 | head -10 || echo '(no session dir)'
+            ls -la ~/Clinic-Call-Dashboard/.wwebjs_cache 2>&1 | head -10 || echo '(no cache dir)'
