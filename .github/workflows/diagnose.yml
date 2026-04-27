@@ -30,11 +30,12 @@ jobs:
             echo '=== Ports listened on by node processes ==='
             sudo ss -ltnp 2>/dev/null | grep -E 'node|3000|3001|8080' || echo '(ss not available or no node ports)'
             echo
-            echo '=== WA: last 200 lines of skinclinic logs ==='
-            pm2 logs skinclinic --lines 200 --nostream 2>&1 | tail -200 || true
-            echo
-            echo '=== WA: lines mentioning WhatsApp / WA / QR / puppeteer ==='
-            pm2 logs skinclinic --lines 500 --nostream 2>&1 | grep -iE 'whatsapp|^\[.*WA |QR|puppet|chromium|webVersion|auth_failure|disconnect|timeout' | tail -80 || true
+            echo '=== WA: log lines since most recent "Server started" ==='
+            # Slice the PM2 buffer to just the current process lifetime so we
+            # don't conflate errors from a prior session with current state.
+            pm2 logs skinclinic --lines 2000 --nostream 2>&1 \
+              | awk '/Server started on port/{seen=NR} {lines[NR]=$0} END{for(i=seen;i<=NR;i++)print lines[i]}' \
+              | tail -120 || true
             echo
             echo '=== WA: auth session on disk ==='
             ls -la ~/Clinic-Call-Dashboard/.wwebjs_auth/session 2>&1 | head -10 || echo '(no session dir)'
