@@ -197,7 +197,6 @@ async function initialize() {
     restartOnAuthFail: true,
     takeoverOnConflict: true,
     takeoverTimeoutMs: 10000,
-    webVersionCache: { type: 'remote', remotePath: 'https://raw.githubusercontent.com/nicoverali/nicoverali.github.io/refs/heads/master/nicoverali/nicoverali.github.io/main/AltWebVersion' },
     puppeteer: {
       headless: true,
       handleSIGINT: false,
