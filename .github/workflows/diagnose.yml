@@ -43,11 +43,12 @@ jobs:
             echo
             echo '=== WA: send queue counts from calls.db ==='
             sqlite3 ~/Clinic-Call-Dashboard/calls.db "
-              SELECT 'approved_outgoing', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='approved'
-              UNION ALL SELECT 'sending_outgoing', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='sending'
-              UNION ALL SELECT 'pending_approval', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='pending_approval'
-              UNION ALL SELECT 'sent_last_hour', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='sent' AND timestamp >= datetime('now','-1 hour')
-              UNION ALL SELECT 'sent_last_24h', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='sent' AND timestamp >= datetime('now','-24 hours');
+              SELECT 'approved_outgoing', COUNT(*) FROM wa_messages WHERE direction='out' AND status='approved'
+              UNION ALL SELECT 'sending_outgoing', COUNT(*) FROM wa_messages WHERE direction='out' AND status='sending'
+              UNION ALL SELECT 'pending_approval', COUNT(*) FROM wa_messages WHERE direction='out' AND status='pending'
+              UNION ALL SELECT 'sent_last_hour', COUNT(*) FROM wa_messages WHERE direction='out' AND status='sent' AND sent_at > datetime('now','-1 hour')
+              UNION ALL SELECT 'sent_last_24h', COUNT(*) FROM wa_messages WHERE direction='out' AND status='sent' AND sent_at > datetime('now','-24 hours')
+              UNION ALL SELECT 'failed_total', COUNT(*) FROM wa_messages WHERE direction='out' AND status IN ('failed','expired');
             " 2>&1 || echo '(sqlite3 query failed — see error above)'
             echo
             echo '=== WA: nginx proxy_read_timeout for skinclinic site ==='
