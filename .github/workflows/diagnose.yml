@@ -40,3 +40,15 @@ jobs:
             echo '=== WA: auth session on disk ==='
             ls -la ~/Clinic-Call-Dashboard/.wwebjs_auth/session 2>&1 | head -10 || echo '(no session dir)'
             ls -la ~/Clinic-Call-Dashboard/.wwebjs_cache 2>&1 | head -10 || echo '(no cache dir)'
+            echo
+            echo '=== WA: send queue counts from calls.db ==='
+            sqlite3 ~/Clinic-Call-Dashboard/calls.db "
+              SELECT 'approved_outgoing', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='approved'
+              UNION ALL SELECT 'sending_outgoing', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='sending'
+              UNION ALL SELECT 'pending_approval', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='pending_approval'
+              UNION ALL SELECT 'sent_last_hour', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='sent' AND timestamp >= datetime('now','-1 hour')
+              UNION ALL SELECT 'sent_last_24h', COUNT(*) FROM whatsapp_messages WHERE direction='out' AND status='sent' AND timestamp >= datetime('now','-24 hours');
+            " 2>&1 || echo '(sqlite3 query failed — see error above)'
+            echo
+            echo '=== WA: nginx proxy_read_timeout for skinclinic site ==='
+            sudo grep -hE 'proxy_read_timeout|proxy_send_timeout|proxy_connect_timeout' /etc/nginx/sites-enabled/ /etc/nginx/conf.d/ -r 2>/dev/null || echo '(no proxy timeouts set, using nginx defaults)'
